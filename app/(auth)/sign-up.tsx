@@ -5,283 +5,459 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  Alert,
   ActivityIndicator,
   ScrollView,
+  Alert,
+  Modal,
 } from "react-native";
 import { supabase } from "../../supabase";
 import { router, Link } from "expo-router";
 
 export default function SignUpScreen() {
+  const [rol, setRol] = useState<"empleado" | "secretaria">("empleado");
   const [cedula, setCedula] = useState("");
-  const [nombre, setNombre] = useState("");
-  const [apellido, setApellido] = useState("");
+  const [nombres, setNombres] = useState("");
+  const [apellidos, setApellidos] = useState("");
   const [telefono, setTelefono] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Formateadores de entrada
-  const handleCedulaChange = (text: string) => {
-    setCedula(text.replace(/[^0-9]/g, ""));
-  };
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalTitle, setModalTitle] = useState("");
+  const [modalMessage, setModalMessage] = useState("");
 
-  const handleNombreChange = (text: string) => {
-    setNombre(text.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, ""));
-  };
-
-  const handleApellidoChange = (text: string) => {
-    setApellido(text.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, ""));
-  };
-
-  const handleTelefonoChange = (text: string) => {
-    setTelefono(text.replace(/[^0-9+]/g, ""));
-  };
-
-  // Función para vaciar todos los campos del formulario
-  const limpiarFormulario = () => {
+  const limpiarCampos = () => {
     setCedula("");
-    setNombre("");
-    setApellido("");
+    setNombres("");
+    setApellidos("");
     setTelefono("");
     setEmail("");
     setPassword("");
+    setRol("empleado");
   };
 
   const handleSignUp = async () => {
-    // 1. Validaciones básicas de campos vacíos
-    if (!cedula || !nombre || !apellido || !telefono || !email || !password) {
-      Alert.alert("Atención", "Por favor completa todos los campos.");
-      return;
-    }
-
-    if (password.length < 6) {
+    if (!cedula || !nombres || !apellidos || !email || !password || !rol) {
       Alert.alert(
-        "Atención",
-        "La contraseña debe tener al menos 6 caracteres.",
+        "Campos incompletos",
+        "Por favor llena todos los campos obligatorios.",
       );
       return;
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
+    const soloNumeros = /^[0-9]+$/;
+    const soloLetras = /^[a-zA-ZÁÉÍÓÚáéíóúÑñ\s]+$/;
+    const formatoEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!soloNumeros.test(cedula) || cedula.length > 12) {
       Alert.alert(
-        "Correo Inválido",
-        "Por favor ingresa un correo electrónico válido.",
+        "Campo inválido",
+        "La cédula debe contener solo números (máximo 12 dígitos).",
       );
+      return;
+    }
+    if (!soloLetras.test(nombres) || nombres.length > 20) {
+      Alert.alert(
+        "Campo inválido",
+        "Los nombres deben contener solo letras (máximo 20 caracteres).",
+      );
+      return;
+    }
+    if (!soloLetras.test(apellidos) || apellidos.length > 20) {
+      Alert.alert(
+        "Campo inválido",
+        "Los apellidos deben contener solo letras (máximo 20 caracteres).",
+      );
+      return;
+    }
+    if (!soloNumeros.test(telefono) || telefono.length > 15) {
+      Alert.alert(
+        "Campo inválido",
+        "El teléfono debe contener solo números (máximo 15 dígitos).",
+      );
+      return;
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (!formatoEmail.test(cleanEmail)) {
+      Alert.alert("Correo inválido", "Ingresa un correo electrónico válido.");
       return;
     }
 
     setLoading(true);
 
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const adminSession = sessionData.session;
+      // 1. Validar si la cédula ya existe en alguna de las tablas (administradores, empleados, secretaria)
+      const { data: adminCedula } = await supabase
+        .from("administradores")
+        .select("cedula")
+        .eq("cedula", cedula)
+        .maybeSingle();
 
-      // 2. Crear usuario en Supabase Auth
+      const { data: empCedula } = await supabase
+        .from("empleados")
+        .select("cedula")
+        .eq("cedula", cedula)
+        .maybeSingle();
+
+      const { data: secCedula } = await supabase
+        .from("secretaria")
+        .select("cedula")
+        .eq("cedula", cedula)
+        .maybeSingle();
+
+      if (adminCedula || empCedula || secCedula) {
+        setLoading(false);
+        setModalTitle("Cédula ya registrada");
+        setModalMessage(
+          "El número de cédula ingresado ya se encuentra registrado en el sistema.",
+        );
+        setModalVisible(true);
+        return;
+      }
+
+      // 2. Intentar registrar en Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: email.trim().toLowerCase(),
+        email: cleanEmail,
         password: password,
+        options: {
+          data: {
+            rol: rol,
+            cedula: cedula,
+            nombres: nombres,
+            apellidos: apellidos,
+            telefono: telefono,
+          },
+        },
       });
 
-      if (authError) throw authError;
-      if (!authData.user) {
-        throw new Error("No se pudo crear el usuario de autenticación.");
-      }
-
-      const userId = authData.user.id;
-
-      // 3. Insertar en la tabla 'empleados' vinculando el ID de Auth
-      const { error: dbError } = await supabase.from("empleados").insert([
-        {
-          id: userId,
-          cedula: cedula.trim(),
-          nombres: nombre.trim(),
-          apellidos: apellido.trim(),
-          telefono: telefono.trim(),
-          correo: email.trim().toLowerCase(),
-          estado: adminSession ? true : false,
-        },
-      ]);
-
-      if (dbError) {
-        if (dbError.code === "23505") {
-          throw new Error(
-            "La cédula o el correo ya se encuentran registrados en el sistema.",
+      if (authError) {
+        setLoading(false);
+        // Verificar si el error es porque el correo ya está registrado en Auth
+        if (
+          authError.message.toLowerCase().includes("already registered") ||
+          authError.message.toLowerCase().includes("already exists")
+        ) {
+          setModalTitle("Correo ya registrado");
+          setModalMessage(
+            "El correo electrónico ingresado ya pertenece a una cuenta existente.",
           );
+          setModalVisible(true);
+          return;
         }
-        throw new Error(dbError.message);
+
+        Alert.alert("Error de autenticación", authError.message);
+        return;
       }
 
-      // Limpiamos los campos del formulario de inmediato
-      limpiarFormulario();
+      await supabase.auth.signOut();
 
-      // Si había un admin logueado (creado desde el panel)
-      if (adminSession) {
-        await supabase.auth.setSession({
-          access_token: adminSession.access_token,
-          refresh_token: adminSession.refresh_token,
-        });
+      setModalTitle("¡Registro Exitoso!");
+      setModalMessage(
+        "Tu cuenta ha sido registrada correctamente. Queda a la espera de aprobación por parte del administrador para poder iniciar sesión.",
+      );
 
-        Alert.alert(
-          "¡Registro Exitoso!",
-          "El empleado ha sido registrado y guardado correctamente.",
-          [
-            {
-              text: "OK",
-              onPress: () => router.back(), // Vuelve al panel de administración
-            },
-          ],
-        );
-      } else {
-        // Flujo público normal
-        Alert.alert(
-          "¡Registro Exitoso!",
-          "Tu cuenta ha sido creada correctamente. Espera la aprobación del administrador para ingresar.",
-          [
-            {
-              text: "OK",
-              onPress: () => router.replace("/(auth)/sign-in"),
-            },
-          ],
-        );
-      }
+      limpiarCampos();
+      setModalVisible(true);
     } catch (err: any) {
-      let mensajeError = err.message;
-      if (mensajeError.includes("already registered")) {
-        mensajeError = "Este correo electrónico ya se encuentra registrado.";
-      }
-      Alert.alert("Error de Registro", mensajeError);
+      Alert.alert(
+        "Error inesperado",
+        err?.message || "Ocurrió un fallo al procesar tu registro.",
+      );
     } finally {
       setLoading(false);
     }
   };
 
+  const handleModalClose = () => {
+    setModalVisible(false);
+    // Si fue un registro exitoso, redirigir al login; si fue error de duplicado, se queda en el formulario
+    if (modalTitle === "¡Registro Exitoso!") {
+      router.replace("/(auth)/sign-in");
+    }
+  };
+
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Registro de Empleados</Text>
-      <Text style={styles.subtitle}>Crear nueva cuenta en el sistema</Text>
+    <ScrollView contentContainerStyle={styles.scrollContainer}>
+      <View style={styles.card}>
+        <Text style={styles.title}>📝 Crear Cuenta</Text>
+        <Text style={styles.subtitle}>Completa tus datos para registrarte</Text>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Cédula de Identidad (Única)"
-        value={cedula}
-        onChangeText={handleCedulaChange}
-        keyboardType="numeric"
-        placeholderTextColor="#aaa"
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Nombre"
-        value={nombre}
-        onChangeText={handleNombreChange}
-        placeholderTextColor="#aaa"
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Apellido"
-        value={apellido}
-        onChangeText={handleApellidoChange}
-        placeholderTextColor="#aaa"
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Número de Teléfono"
-        value={telefono}
-        onChangeText={handleTelefonoChange}
-        keyboardType="phone-pad"
-        placeholderTextColor="#aaa"
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Correo Electrónico (Único)"
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        keyboardType="email-address"
-        placeholderTextColor="#aaa"
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Contraseña (Mínimo 6 caracteres)"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-        placeholderTextColor="#aaa"
-      />
-
-      <TouchableOpacity
-        style={styles.button}
-        onPress={handleSignUp}
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>Registrarse</Text>
-        )}
-      </TouchableOpacity>
-
-      <View style={styles.registerContainer}>
-        <Text style={styles.registerText}>¿Ya tienes cuenta? </Text>
-        <Link href="/(auth)/sign-in" asChild>
-          <TouchableOpacity>
-            <Text style={styles.registerLink}>Iniciar sesión</Text>
+        <Text style={styles.label}>Selecciona tu Rol:</Text>
+        <View style={styles.rolContainer}>
+          <TouchableOpacity
+            style={[styles.rolButton, rol === "empleado" && styles.rolSelected]}
+            onPress={() => setRol("empleado")}
+          >
+            <Text
+              style={[
+                styles.rolText,
+                rol === "empleado" && styles.rolTextSelected,
+              ]}
+            >
+              Empleado
+            </Text>
           </TouchableOpacity>
-        </Link>
+
+          <TouchableOpacity
+            style={[
+              styles.rolButton,
+              rol === "secretaria" && styles.rolSelected,
+            ]}
+            onPress={() => setRol("secretaria")}
+          >
+            <Text
+              style={[
+                styles.rolText,
+                rol === "secretaria" && styles.rolTextSelected,
+              ]}
+            >
+              Secretaria
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <TextInput
+          style={styles.input}
+          placeholder="Cédula"
+          value={cedula}
+          onChangeText={(text) => setCedula(text.replace(/[^0-9]/g, ""))}
+          keyboardType="numeric"
+          maxLength={12}
+          placeholderTextColor="#a4b0be"
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Nombres"
+          value={nombres}
+          onChangeText={(text) =>
+            setNombres(text.replace(/[^a-zA-ZÁÉÍÓÚáéíóúÑñ\s]/g, ""))
+          }
+          maxLength={20}
+          placeholderTextColor="#a4b0be"
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Apellidos"
+          value={apellidos}
+          onChangeText={(text) =>
+            setApellidos(text.replace(/[^a-zA-ZÁÉÍÓÚáéíóúÑñ\s]/g, ""))
+          }
+          maxLength={20}
+          placeholderTextColor="#a4b0be"
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Número de Teléfono"
+          value={telefono}
+          onChangeText={(text) => setTelefono(text.replace(/[^0-9]/g, ""))}
+          keyboardType="phone-pad"
+          maxLength={15}
+          placeholderTextColor="#a4b0be"
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Correo Electrónico"
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          keyboardType="email-address"
+          placeholderTextColor="#a4b0be"
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Contraseña"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+          placeholderTextColor="#a4b0be"
+        />
+
+        <TouchableOpacity
+          style={styles.button}
+          onPress={handleSignUp}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.buttonText}>Registrarse</Text>
+          )}
+        </TouchableOpacity>
+
+        <View style={styles.loginContainer}>
+          <Text style={styles.loginText}>¿Ya tienes cuenta? </Text>
+          <Link href="/(auth)/sign-in" asChild>
+            <TouchableOpacity>
+              <Text style={styles.loginLink}>Inicia sesión</Text>
+            </TouchableOpacity>
+          </Link>
+        </View>
       </View>
+
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={modalVisible}
+        onRequestClose={handleModalClose}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>{modalTitle}</Text>
+            <Text style={styles.modalMessage}>{modalMessage}</Text>
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={handleModalClose}
+            >
+              <Text style={styles.modalButtonText}>Aceptar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  scrollContainer: {
     flexGrow: 1,
-    padding: 20,
     justifyContent: "center",
-    backgroundColor: "#f5f6fa",
+    alignItems: "center",
+    backgroundColor: "#0f172a",
+    padding: 20,
+  },
+  card: {
+    width: "100%",
+    maxWidth: 420,
+    backgroundColor: "#ffffff",
+    borderRadius: 24,
+    padding: 30,
+    elevation: 8,
   },
   title: {
-    fontSize: 24,
-    fontWeight: "bold",
+    fontSize: 26,
+    fontWeight: "800",
     textAlign: "center",
-    color: "#2f3640",
+    color: "#1e293b",
+    marginBottom: 6,
   },
   subtitle: {
     fontSize: 14,
-    color: "#718093",
     textAlign: "center",
+    color: "#64748b",
     marginBottom: 20,
   },
-  input: {
-    backgroundColor: "#fff",
-    padding: 14,
-    borderRadius: 10,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "#dcdde1",
-    fontSize: 16,
+  label: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#334155",
+    marginBottom: 8,
   },
-  button: {
-    backgroundColor: "#0984e3",
-    padding: 16,
+  rolContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 16,
+  },
+  rolButton: {
+    flex: 1,
+    paddingVertical: 10,
+    marginHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: "#cbd5e1",
     borderRadius: 10,
     alignItems: "center",
-    marginTop: 10,
+    backgroundColor: "#f8fafc",
   },
-  buttonText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
-  registerContainer: {
+  rolSelected: {
+    backgroundColor: "#6366f1",
+    borderColor: "#6366f1",
+  },
+  rolText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#64748b",
+  },
+  rolTextSelected: {
+    color: "#ffffff",
+  },
+  input: {
+    backgroundColor: "#f8fafc",
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 14,
+    borderWidth: 1.5,
+    borderColor: "#e2e8f0",
+    fontSize: 15,
+    color: "#1e293b",
+  },
+  button: {
+    backgroundColor: "#6366f1",
+    padding: 16,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 8,
+  },
+  buttonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  loginContainer: {
     flexDirection: "row",
     justifyContent: "center",
     marginTop: 20,
   },
-  registerText: {
-    color: "#718093",
-    fontSize: 15,
+  loginText: {
+    color: "#64748b",
+    fontSize: 14,
   },
-  registerLink: {
-    color: "#0984e3",
+  loginLink: {
+    color: "#6366f1",
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalContent: {
+    width: "100%",
+    maxWidth: 360,
+    backgroundColor: "#ffffff",
+    borderRadius: 20,
+    padding: 24,
+    alignItems: "center",
+    elevation: 10,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#1e293b",
+    marginBottom: 10,
+    textAlign: "center",
+  },
+  modalMessage: {
     fontSize: 15,
+    color: "#64748b",
+    textAlign: "center",
+    marginBottom: 20,
+    lineHeight: 22,
+  },
+  modalButton: {
+    backgroundColor: "#6366f1",
+    width: "100%",
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  modalButtonText: {
+    color: "#ffffff",
+    fontSize: 16,
     fontWeight: "bold",
   },
 });

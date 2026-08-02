@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import {
-  StyleSheet,
   Text,
   View,
   FlatList,
@@ -10,9 +9,10 @@ import {
   TextInput,
   Modal,
   ScrollView,
+  StyleSheet,
 } from "react-native";
-import { router } from "expo-router";
 import { supabase } from "../../supabase";
+import { colors, globalStyles } from "../../constants/globalStyles";
 
 interface Empleado {
   id: string;
@@ -20,6 +20,7 @@ interface Empleado {
   apellidos: string;
   cedula: string;
   correo: string;
+  telefono?: string;
   estado: boolean;
 }
 
@@ -27,6 +28,7 @@ export default function GestionEmpleadosScreen() {
   const [empleados, setEmpleados] = useState<Empleado[]>([]);
   const [loading, setLoading] = useState(true);
   const [busqueda, setBusqueda] = useState("");
+  const [rolUsuario, setRolUsuario] = useState<string | null>(null);
 
   // Modales generales
   const [modalVerVisible, setModalVerVisible] = useState(false);
@@ -41,21 +43,63 @@ export default function GestionEmpleadosScreen() {
     useState(false);
   const [empleadoAccion, setEmpleadoAccion] = useState<Empleado | null>(null);
 
-  // Campos para editar
-  const [nombresEdit, setNombresEdit] = useState("");
-  const [apellidosEdit, setApellidosEdit] = useState("");
-  const [cedulaEdit, setCedulaEdit] = useState("");
+  // Campos para editar (solo correo y teléfono editables)
   const [correoEdit, setCorreoEdit] = useState("");
+  const [telefonoEdit, setTelefonoEdit] = useState("");
 
   useEffect(() => {
-    cargarEmpleados();
+    verificarRolYCargar();
   }, []);
 
-  const cargarEmpleados = async () => {
+  const verificarRolYCargar = async () => {
     setLoading(true);
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user || !user.email) {
+      Alert.alert("Acceso denegado", "No se encontró una sesión activa.");
+      setLoading(false);
+      return;
+    }
+
+    const correoUsuario = user.email.toLowerCase().trim();
+
+    // 1. Verificar si es Administrador
+    const { data: adminData } = await supabase
+      .from("administradores")
+      .select("correo")
+      .eq("correo", correoUsuario)
+      .single();
+
+    if (adminData) {
+      setRolUsuario("administrador");
+      await cargarEmpleados();
+      return;
+    }
+
+    // 2. Verificar si es Secretaria
+    const { data: secretariaData } = await supabase
+      .from("secretaria")
+      .select("correo")
+      .eq("correo", correoUsuario)
+      .single();
+
+    if (secretariaData) {
+      setRolUsuario("secretaria");
+      await cargarEmpleados();
+      return;
+    }
+
+    // 3. Si no está en ninguna de las anteriores, se asume empleado (Acceso Denegado)
+    setRolUsuario("empleado");
+    setLoading(false);
+  };
+
+  const cargarEmpleados = async () => {
     const { data, error } = await supabase
       .from("empleados")
-      .select("id, nombres, apellidos, cedula, correo, estado")
+      .select("id, nombres, apellidos, cedula, correo, telefono, estado")
       .order("nombres", { ascending: true });
 
     if (error) {
@@ -114,10 +158,8 @@ export default function GestionEmpleadosScreen() {
 
   const abrirEditar = (emp: Empleado) => {
     setEmpleadoSeleccionado(emp);
-    setNombresEdit(emp.nombres);
-    setApellidosEdit(emp.apellidos);
-    setCedulaEdit(emp.cedula);
-    setCorreoEdit(emp.correo);
+    setCorreoEdit(emp.correo || "");
+    setTelefonoEdit(emp.telefono || "");
     setModalEditarVisible(true);
   };
 
@@ -127,17 +169,15 @@ export default function GestionEmpleadosScreen() {
     const { error } = await supabase
       .from("empleados")
       .update({
-        nombres: nombresEdit.trim(),
-        apellidos: apellidosEdit.trim(),
-        cedula: cedulaEdit.trim(),
         correo: correoEdit.trim().toLowerCase(),
+        telefono: telefonoEdit.trim(),
       })
       .eq("id", empleadoSeleccionado.id);
 
     if (error) {
       Alert.alert("Error", error.message);
     } else {
-      Alert.alert("Éxito", "Datos del empleado actualizados.");
+      Alert.alert("Éxito", "Datos de contacto actualizados.");
       setModalEditarVisible(false);
       cargarEmpleados();
     }
@@ -151,41 +191,65 @@ export default function GestionEmpleadosScreen() {
 
   if (loading) {
     return (
-      <View style={styles.loaderContainer}>
-        <ActivityIndicator size="large" color="#0984e3" />
+      <View style={localStyles.loaderContainer}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
+  // Vista bloqueada para empleados
+  if (rolUsuario === "empleado") {
+    return (
+      <View style={localStyles.loaderContainer}>
+        <Text
+          style={[
+            localStyles.headerTitle,
+            { textAlign: "center", marginBottom: 10 },
+          ]}
+        >
+          Acceso Restringido
+        </Text>
+        <Text
+          style={[
+            localStyles.subtitle,
+            { textAlign: "center", paddingHorizontal: 30 },
+          ]}
+        >
+          No tienes permisos para ver esta pantalla. Esta sección es exclusiva
+          para administradores y secretarias.
+        </Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.headerRow}>
+    <View style={localStyles.container}>
+      <View style={localStyles.headerRow}>
         <View>
-          <Text style={styles.headerTitle}>Gestión de Empleados</Text>
-          <Text style={styles.subtitle}>Control de personal y accesos</Text>
+          <Text style={localStyles.headerTitle}>Gestión de Empleados</Text>
+          <Text style={localStyles.subtitle}>
+            Control de personal y accesos
+          </Text>
         </View>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => router.push("/registrar-empleado")}
-        >
-          <Text style={styles.addButtonText}>+ Registrar Empleado</Text>
-        </TouchableOpacity>
       </View>
 
       <TextInput
-        style={styles.searchBar}
+        style={localStyles.searchBar}
         placeholder="🔍 Buscar por cédula, nombre o apellido..."
         value={busqueda}
         onChangeText={setBusqueda}
-        placeholderTextColor="#a4b0be"
+        placeholderTextColor={colors.textSecondary}
       />
 
-      <View style={styles.tableHeader}>
-        <Text style={[styles.tableHeaderText, { flex: 1.5 }]}>
+      <View style={localStyles.tableHeader}>
+        <Text style={[localStyles.tableHeaderText, { flex: 1.5 }]}>
           Nombre y Cédula
         </Text>
         <Text
-          style={[styles.tableHeaderText, { flex: 1.8, textAlign: "center" }]}
+          style={[
+            localStyles.tableHeaderText,
+            { flex: 1.8, textAlign: "center" },
+          ]}
         >
           Acciones de Control
         </Text>
@@ -195,17 +259,17 @@ export default function GestionEmpleadosScreen() {
         data={empleadosFiltrados}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <View style={styles.tableRow}>
+          <View style={localStyles.tableRow}>
             <View style={{ flex: 1.5, justifyContent: "center" }}>
-              <Text style={styles.rowName}>
+              <Text style={localStyles.rowName}>
                 {item.nombres} {item.apellidos}
               </Text>
-              <Text style={styles.rowSub}>Cédula: {item.cedula}</Text>
+              <Text style={localStyles.rowSub}>Cédula: {item.cedula}</Text>
               <Text
                 style={[
-                  styles.rowSub,
+                  localStyles.rowSub,
                   {
-                    color: item.estado ? "#27ae60" : "#c0392b",
+                    color: item.estado ? colors.accentGreen : colors.accentRed,
                     fontWeight: "bold",
                   },
                 ]}
@@ -214,55 +278,68 @@ export default function GestionEmpleadosScreen() {
               </Text>
             </View>
 
-            <View style={styles.actionsContainer}>
+            <View style={localStyles.actionsContainer}>
               <TouchableOpacity
-                style={[styles.actionBtn, { backgroundColor: "#0984e3" }]}
+                style={[
+                  localStyles.actionBtn,
+                  { backgroundColor: colors.primary },
+                ]}
                 onPress={() => {
                   setEmpleadoSeleccionado(item);
                   setModalVerVisible(true);
                 }}
               >
-                <Text style={styles.actionBtnText}>Ver</Text>
+                <Text style={localStyles.actionBtnText}>Ver</Text>
               </TouchableOpacity>
 
               {/* Botón Activar / Desactivar con Modal */}
               <TouchableOpacity
                 style={[
-                  styles.actionBtn,
-                  { backgroundColor: item.estado ? "#e67e22" : "#27ae60" },
+                  localStyles.actionBtn,
+                  {
+                    backgroundColor: item.estado
+                      ? colors.accentBlue
+                      : colors.accentGreen,
+                  },
                 ]}
                 onPress={() => {
                   setEmpleadoAccion(item);
                   setModalConfirmarEstadoVisible(true);
                 }}
               >
-                <Text style={styles.actionBtnText}>
+                <Text style={localStyles.actionBtnText}>
                   {item.estado ? "Desactivar" : "Activar"}
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.actionBtn, { backgroundColor: "#f39c12" }]}
+                style={[
+                  localStyles.actionBtn,
+                  { backgroundColor: colors.accentYellow },
+                ]}
                 onPress={() => abrirEditar(item)}
               >
-                <Text style={styles.actionBtnText}>Editar</Text>
+                <Text style={localStyles.actionBtnText}>Editar</Text>
               </TouchableOpacity>
 
               {/* Botón Borrar con Modal */}
               <TouchableOpacity
-                style={[styles.actionBtn, { backgroundColor: "#e74c3c" }]}
+                style={[
+                  localStyles.actionBtn,
+                  { backgroundColor: colors.accentRed },
+                ]}
                 onPress={() => {
                   setEmpleadoAccion(item);
                   setModalConfirmarBorrarVisible(true);
                 }}
               >
-                <Text style={styles.actionBtnText}>Borrar</Text>
+                <Text style={localStyles.actionBtnText}>Borrar</Text>
               </TouchableOpacity>
             </View>
           </View>
         )}
         ListEmptyComponent={
-          <Text style={styles.emptyText}>
+          <Text style={localStyles.emptyText}>
             No se encontraron empleados registrados.
           </Text>
         }
@@ -274,32 +351,38 @@ export default function GestionEmpleadosScreen() {
         transparent
         animationType="fade"
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Confirmar Acción</Text>
-            <Text style={styles.modalMessageText}>
+        <View style={globalStyles.modalOverlay}>
+          <View style={globalStyles.modalContent}>
+            <Text style={globalStyles.modalTitle}>Confirmar Acción</Text>
+            <Text style={localStyles.modalMessageText}>
               ¿Estás seguro de{" "}
               {empleadoAccion?.estado ? "desactivar" : "activar"} al empleado{" "}
-              <Text style={{ fontWeight: "bold" }}>
+              <Text style={{ fontWeight: "bold", color: colors.textPrimary }}>
                 {empleadoAccion?.nombres} {empleadoAccion?.apellidos}
               </Text>
               ?
             </Text>
-            <View style={styles.modalButtonsRow}>
+            <View style={localStyles.modalButtonsRow}>
               <TouchableOpacity
-                style={[styles.modalBtnAction, { backgroundColor: "#95a5a6" }]}
+                style={[
+                  localStyles.modalBtnAction,
+                  { backgroundColor: colors.border },
+                ]}
                 onPress={() => {
                   setModalConfirmarEstadoVisible(false);
                   setEmpleadoAccion(null);
                 }}
               >
-                <Text style={styles.actionBtnText}>Denegar</Text>
+                <Text style={localStyles.actionBtnText}>Denegar</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalBtnAction, { backgroundColor: "#27ae60" }]}
+                style={[
+                  localStyles.modalBtnAction,
+                  { backgroundColor: colors.accentGreen },
+                ]}
                 onPress={confirmarCambioEstado}
               >
-                <Text style={styles.actionBtnText}>Aceptar</Text>
+                <Text style={localStyles.actionBtnText}>Aceptar</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -312,31 +395,37 @@ export default function GestionEmpleadosScreen() {
         transparent
         animationType="fade"
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Confirmar Eliminación</Text>
-            <Text style={styles.modalMessageText}>
+        <View style={globalStyles.modalOverlay}>
+          <View style={globalStyles.modalContent}>
+            <Text style={globalStyles.modalTitle}>Confirmar Eliminación</Text>
+            <Text style={localStyles.modalMessageText}>
               ¿Estás seguro de eliminar permanentemente a{" "}
-              <Text style={{ fontWeight: "bold" }}>
+              <Text style={{ fontWeight: "bold", color: colors.textPrimary }}>
                 {empleadoAccion?.nombres} {empleadoAccion?.apellidos}
               </Text>
               ? Esta acción no se puede deshacer.
             </Text>
-            <View style={styles.modalButtonsRow}>
+            <View style={localStyles.modalButtonsRow}>
               <TouchableOpacity
-                style={[styles.modalBtnAction, { backgroundColor: "#95a5a6" }]}
+                style={[
+                  localStyles.modalBtnAction,
+                  { backgroundColor: colors.border },
+                ]}
                 onPress={() => {
                   setModalConfirmarBorrarVisible(false);
                   setEmpleadoAccion(null);
                 }}
               >
-                <Text style={styles.actionBtnText}>Denegar</Text>
+                <Text style={localStyles.actionBtnText}>Denegar</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalBtnAction, { backgroundColor: "#e74c3c" }]}
+                style={[
+                  localStyles.modalBtnAction,
+                  { backgroundColor: colors.accentRed },
+                ]}
                 onPress={confirmarBorrarEmpleado}
               >
-                <Text style={styles.actionBtnText}>Aceptar</Text>
+                <Text style={localStyles.actionBtnText}>Aceptar</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -345,39 +434,44 @@ export default function GestionEmpleadosScreen() {
 
       {/* MODAL VER DETALLES */}
       <Modal visible={modalVerVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Detalles del Empleado</Text>
+        <View style={globalStyles.modalOverlay}>
+          <View style={globalStyles.modalContent}>
+            <Text style={globalStyles.modalTitle}>Detalles del Empleado</Text>
             {empleadoSeleccionado && (
-              <View style={styles.modalBody}>
-                <Text style={styles.modalLabel}>Nombres:</Text>
-                <Text style={styles.modalValue}>
+              <View style={localStyles.modalBody}>
+                <Text style={localStyles.modalLabel}>Nombres:</Text>
+                <Text style={localStyles.modalValue}>
                   {empleadoSeleccionado.nombres}
                 </Text>
 
-                <Text style={styles.modalLabel}>Apellidos:</Text>
-                <Text style={styles.modalValue}>
+                <Text style={localStyles.modalLabel}>Apellidos:</Text>
+                <Text style={localStyles.modalValue}>
                   {empleadoSeleccionado.apellidos}
                 </Text>
 
-                <Text style={styles.modalLabel}>Cédula:</Text>
-                <Text style={styles.modalValue}>
+                <Text style={localStyles.modalLabel}>Cédula:</Text>
+                <Text style={localStyles.modalValue}>
                   {empleadoSeleccionado.cedula}
                 </Text>
 
-                <Text style={styles.modalLabel}>Correo:</Text>
-                <Text style={styles.modalValue}>
+                <Text style={localStyles.modalLabel}>Correo:</Text>
+                <Text style={localStyles.modalValue}>
                   {empleadoSeleccionado.correo}
                 </Text>
 
-                <Text style={styles.modalLabel}>Estado de Acceso:</Text>
+                <Text style={localStyles.modalLabel}>Teléfono:</Text>
+                <Text style={localStyles.modalValue}>
+                  {empleadoSeleccionado.telefono || "No registrado"}
+                </Text>
+
+                <Text style={localStyles.modalLabel}>Estado de Acceso:</Text>
                 <Text
                   style={[
-                    styles.modalValue,
+                    localStyles.modalValue,
                     {
                       color: empleadoSeleccionado.estado
-                        ? "#27ae60"
-                        : "#c0392b",
+                        ? colors.accentGreen
+                        : colors.accentRed,
                       fontWeight: "bold",
                     },
                   ]}
@@ -389,10 +483,10 @@ export default function GestionEmpleadosScreen() {
               </View>
             )}
             <TouchableOpacity
-              style={styles.modalCloseBtn}
+              style={localStyles.modalCloseBtn}
               onPress={() => setModalVerVisible(false)}
             >
-              <Text style={styles.modalCloseText}>Cerrar</Text>
+              <Text style={localStyles.modalCloseText}>Cerrar</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -400,55 +494,93 @@ export default function GestionEmpleadosScreen() {
 
       {/* MODAL EDITAR EMPLEADO */}
       <Modal visible={modalEditarVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Editar Empleado</Text>
+        <View style={globalStyles.modalOverlay}>
+          <View style={globalStyles.modalContent}>
+            <Text style={globalStyles.modalTitle}>Editar Contacto</Text>
             <ScrollView>
-              <Text style={styles.inputLabel}>Nombres</Text>
+              {/* Campos visuales de solo lectura: Nombres, Apellidos y Cédula */}
+              <Text style={localStyles.inputLabel}>Nombres</Text>
               <TextInput
-                style={styles.inputModal}
-                value={nombresEdit}
-                onChangeText={setNombresEdit}
+                style={[
+                  localStyles.inputModal,
+                  {
+                    backgroundColor: colors.border,
+                    color: colors.textSecondary,
+                  },
+                ]}
+                value={empleadoSeleccionado?.nombres || ""}
+                editable={false}
               />
 
-              <Text style={styles.inputLabel}>Apellidos</Text>
+              <Text style={localStyles.inputLabel}>Apellidos</Text>
               <TextInput
-                style={styles.inputModal}
-                value={apellidosEdit}
-                onChangeText={setApellidosEdit}
+                style={[
+                  localStyles.inputModal,
+                  {
+                    backgroundColor: colors.border,
+                    color: colors.textSecondary,
+                  },
+                ]}
+                value={empleadoSeleccionado?.apellidos || ""}
+                editable={false}
               />
 
-              <Text style={styles.inputLabel}>Cédula</Text>
+              <Text style={localStyles.inputLabel}>Cédula</Text>
               <TextInput
-                style={styles.inputModal}
-                value={cedulaEdit}
-                onChangeText={(text) =>
-                  setCedulaEdit(text.replace(/[^0-9]/g, ""))
-                }
+                style={[
+                  localStyles.inputModal,
+                  {
+                    backgroundColor: colors.border,
+                    color: colors.textSecondary,
+                  },
+                ]}
+                value={empleadoSeleccionado?.cedula || ""}
+                editable={false}
               />
 
-              <Text style={styles.inputLabel}>Correo Electrónico</Text>
+              {/* Campos editables: Correo y Teléfono */}
+              <Text style={localStyles.inputLabel}>Correo Electrónico</Text>
               <TextInput
-                style={styles.inputModal}
+                style={localStyles.inputModal}
                 value={correoEdit}
                 onChangeText={setCorreoEdit}
                 autoCapitalize="none"
                 keyboardType="email-address"
+                placeholder="correo@ejemplo.com"
+                placeholderTextColor={colors.textSecondary}
+              />
+
+              <Text style={localStyles.inputLabel}>Número de Teléfono</Text>
+              <TextInput
+                style={localStyles.inputModal}
+                value={telefonoEdit}
+                onChangeText={(text) =>
+                  setTelefonoEdit(text.replace(/[^0-9+]/g, ""))
+                }
+                keyboardType="phone-pad"
+                placeholder="Ej. 04141234567"
+                placeholderTextColor={colors.textSecondary}
               />
             </ScrollView>
 
-            <View style={styles.modalButtonsRow}>
+            <View style={localStyles.modalButtonsRow}>
               <TouchableOpacity
-                style={[styles.modalBtnAction, { backgroundColor: "#95a5a6" }]}
+                style={[
+                  localStyles.modalBtnAction,
+                  { backgroundColor: colors.border },
+                ]}
                 onPress={() => setModalEditarVisible(false)}
               >
-                <Text style={styles.actionBtnText}>Cancelar</Text>
+                <Text style={localStyles.actionBtnText}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalBtnAction, { backgroundColor: "#27ae60" }]}
+                style={[
+                  localStyles.modalBtnAction,
+                  { backgroundColor: colors.accentGreen },
+                ]}
                 onPress={guardarEdicion}
               >
-                <Text style={styles.actionBtnText}>Guardar</Text>
+                <Text style={localStyles.actionBtnText}>Guardar</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -458,13 +590,17 @@ export default function GestionEmpleadosScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, backgroundColor: "#f5f6fa" },
+const localStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 20,
+    backgroundColor: colors.background,
+  },
   loaderContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#f5f6fa",
+    backgroundColor: colors.background,
   },
   headerRow: {
     flexDirection: "row",
@@ -473,126 +609,141 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     flexWrap: "wrap",
   },
-  headerTitle: { fontSize: 26, fontWeight: "bold", color: "#2f3640" },
-  subtitle: { fontSize: 14, color: "#718093" },
-  addButton: {
-    backgroundColor: "#2ed573",
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-    borderRadius: 10,
-    elevation: 2,
+  headerTitle: {
+    fontSize: 26,
+    fontWeight: "bold",
+    color: colors.textPrimary,
   },
-  addButtonText: { color: "#fff", fontWeight: "bold", fontSize: 15 },
+  subtitle: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
   searchBar: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.cardBackground,
     padding: 12,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#dcdde1",
+    borderColor: colors.border,
     marginBottom: 16,
     fontSize: 15,
+    color: colors.textPrimary,
   },
   tableHeader: {
     flexDirection: "row",
-    backgroundColor: "#e1f5fe",
+    backgroundColor: colors.cardBackground,
     padding: 12,
     borderTopLeftRadius: 10,
     borderTopRightRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  tableHeaderText: { fontWeight: "bold", color: "#0277bd", fontSize: 15 },
+  tableHeaderText: {
+    fontWeight: "bold",
+    color: colors.accentBlue,
+    fontSize: 15,
+  },
   tableRow: {
     flexDirection: "row",
-    backgroundColor: "#fff",
+    backgroundColor: colors.cardBackground,
     padding: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "#f1f2f6",
+    borderBottomColor: colors.border,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: colors.border,
     alignItems: "center",
   },
-  rowName: { fontSize: 16, fontWeight: "bold", color: "#2f3640" },
-  rowSub: { fontSize: 12, color: "#718093", marginTop: 2 },
+  rowName: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: colors.textPrimary,
+  },
+  rowSub: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
   actionsContainer: {
     flex: 1.8,
     flexDirection: "row",
     justifyContent: "flex-end",
     flexWrap: "wrap",
     gap: 4,
+    alignItems: "center",
   },
   actionBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
     borderRadius: 6,
     alignItems: "center",
     justifyContent: "center",
   },
-  actionBtnText: { color: "#fff", fontSize: 11, fontWeight: "bold" },
+  actionBtnText: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: "bold",
+  },
   emptyText: {
     textAlign: "center",
-    color: "#718093",
+    color: colors.textSecondary,
     marginTop: 40,
     fontSize: 16,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 16,
-  },
-  modalContent: {
-    backgroundColor: "#fff",
-    width: "100%",
-    maxWidth: 500,
-    borderRadius: 16,
-    padding: 24,
-    elevation: 5,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#2f3640",
-    marginBottom: 16,
-  },
   modalMessageText: {
     fontSize: 16,
-    color: "#2f3640",
+    color: colors.textSecondary,
     marginBottom: 20,
     lineHeight: 22,
   },
-  modalBody: { marginBottom: 20 },
-  modalLabel: { fontSize: 13, color: "#718093", marginTop: 8 },
+  modalBody: {
+    marginBottom: 20,
+    width: "100%",
+  },
+  modalLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 8,
+  },
   modalValue: {
     fontSize: 16,
-    color: "#2f3640",
+    color: colors.textPrimary,
     fontWeight: "600",
     marginTop: 2,
   },
   modalCloseBtn: {
-    backgroundColor: "#0984e3",
+    backgroundColor: colors.primary,
     padding: 12,
     borderRadius: 8,
     alignItems: "center",
+    width: "100%",
   },
-  modalCloseText: { color: "#fff", fontWeight: "bold", fontSize: 15 },
+  modalCloseText: {
+    color: colors.textPrimary,
+    fontWeight: "bold",
+    fontSize: 15,
+  },
   inputLabel: {
     fontSize: 13,
-    color: "#2f3640",
+    color: colors.textPrimary,
     fontWeight: "600",
     marginBottom: 4,
     marginTop: 10,
   },
   inputModal: {
-    backgroundColor: "#f8f9fa",
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: "#dcdde1",
+    borderColor: colors.border,
     borderRadius: 8,
     padding: 10,
     fontSize: 15,
+    color: colors.textPrimary,
   },
   modalButtonsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     marginTop: 20,
     gap: 10,
+    width: "100%",
   },
   modalBtnAction: {
     flex: 1,

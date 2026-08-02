@@ -5,67 +5,81 @@ import {
   TextInput,
   View,
   FlatList,
-  TouchableOpacity,
-  Alert,
   ScrollView,
 } from "react-native";
 import { supabase } from "../../supabase";
+import { colors, globalStyles } from "@/constants/globalStyles";
 
 export default function ClientesScreen() {
   const [clientes, setClientes] = useState<any[]>([]);
   const [busqueda, setBusqueda] = useState("");
 
-  // Estados para el formulario de nuevo cliente
-  const [cedula, setCedula] = useState("");
-  const [nombres, setNombres] = useState("");
-  const [apellidos, setApellidos] = useState("");
-  const [telefono, setTelefono] = useState("");
-  const [correo, setCorreo] = useState("");
-  const [direccion, setDireccion] = useState("");
-
   useEffect(() => {
-    obtenerClientes();
+    verificarRolYObtenerClientes();
   }, []);
 
-  const obtenerClientes = async () => {
-    const { data, error } = await supabase
-      .from("clientes")
-      .select("*")
-      .order("cedula", { ascending: false });
-    if (data) setClientes(data);
-  };
+  const verificarRolYObtenerClientes = async () => {
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session || !session.user?.email) return;
 
-  const agregarCliente = async () => {
-    if (!cedula || !nombres || !apellidos) {
-      Alert.alert(
-        "Atención",
-        "La cédula, nombres y apellidos son obligatorios.",
-      );
-      return;
-    }
+      const emailLogueado = session.user.email.trim().toLowerCase();
 
-    const { error } = await supabase.from("clientes").insert([
-      {
-        cedula: cedula.trim(),
-        nombres: nombres.trim(),
-        apellidos: apellidos.trim(),
-        telefono: telefono.trim(),
-        correo: correo.trim().toLowerCase(),
-        direccion: direccion.trim(),
-      },
-    ]);
+      // 1. Verificar si es Administrador
+      const { data: adminData } = await supabase
+        .from("administradores")
+        .select("cedula")
+        .eq("correo", emailLogueado)
+        .maybeSingle();
 
-    if (error) {
-      Alert.alert("Error", error.message);
-    } else {
-      setCedula("");
-      setNombres("");
-      setApellidos("");
-      setTelefono("");
-      setCorreo("");
-      setDireccion("");
-      obtenerClientes();
-      Alert.alert("Éxito", "Cliente registrado correctamente.");
+      if (adminData) {
+        // El administrador ve todos los clientes
+        const { data, error } = await supabase
+          .from("clientes")
+          .select("*")
+          .order("cedula", { ascending: false });
+        if (data) setClientes(data);
+        return;
+      }
+
+      // 2. Verificar si es Secretaria
+      const { data: secData } = await supabase
+        .from("secretaria")
+        .select("cedula")
+        .eq("correo", emailLogueado)
+        .maybeSingle();
+
+      if (secData) {
+        // La secretaría ve todos los clientes (igual que el administrador)
+        const { data, error } = await supabase
+          .from("clientes")
+          .select("*")
+          .order("cedula", { ascending: false });
+        if (data) setClientes(data);
+        return;
+      }
+
+      // 3. Verificar si es Empleado
+      const { data: empData } = await supabase
+        .from("empleados")
+        .select("cedula")
+        .eq("correo", emailLogueado)
+        .maybeSingle();
+
+      if (empData) {
+        // El empleado solo ve los clientes registrados por su propia cédula
+        const { data, error } = await supabase
+          .from("clientes")
+          .select("*")
+          .eq("registrado_por_cedula", empData.cedula)
+          .order("cedula", { ascending: false });
+        if (data) setClientes(data);
+        return;
+      }
+    } catch (error) {
+      console.error("Error al verificar el rol y filtrar clientes:", error);
     }
   };
 
@@ -82,92 +96,47 @@ export default function ClientesScreen() {
     >
       <Text style={styles.title}>Gestión de Clientes</Text>
 
-      {/* Formulario de Registro */}
-      <View style={styles.formContainer}>
-        <Text style={styles.sectionSubtitle}>Registrar Nuevo Cliente</Text>
-
-        <TextInput
-          style={styles.input}
-          placeholder="Cédula (Solo números)"
-          value={cedula}
-          onChangeText={(text) => setCedula(text.replace(/[^0-9]/g, ""))}
-          keyboardType="numeric"
-          placeholderTextColor="#aaa"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Nombres"
-          value={nombres}
-          onChangeText={setNombres}
-          placeholderTextColor="#aaa"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Apellidos"
-          value={apellidos}
-          onChangeText={setApellidos}
-          placeholderTextColor="#aaa"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Teléfono (Solo números)"
-          value={telefono}
-          onChangeText={(text) => setTelefono(text.replace(/[^0-9]/g, ""))}
-          keyboardType="phone-pad"
-          placeholderTextColor="#aaa"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Correo Electrónico"
-          value={correo}
-          onChangeText={setCorreo}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          placeholderTextColor="#aaa"
-        />
-        <TextInput
-          style={[styles.input, { height: 70, textAlignVertical: "top" }]}
-          placeholder="Dirección de Residencia"
-          value={direccion}
-          onChangeText={setDireccion}
-          multiline
-          placeholderTextColor="#aaa"
-        />
-
-        <TouchableOpacity style={styles.addButton} onPress={agregarCliente}>
-          <Text style={styles.addButtonText}>Guardar Cliente</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Listado y Buscador */}
-      <Text style={styles.sectionSubtitle}>Listado de Clientes</Text>
+      {/* Buscador */}
       <TextInput
         style={styles.search}
         placeholder="🔍 Buscar por nombre, apellido o cédula..."
         value={busqueda}
         onChangeText={setBusqueda}
-        placeholderTextColor="#aaa"
+        placeholderTextColor={colors.textSecondary}
       />
 
+      {/* Listado con scroll y diseño moderno y elegante */}
       <FlatList
         data={clientesFiltrados}
         keyExtractor={(item) => item.cedula}
         scrollEnabled={false}
         renderItem={({ item }) => (
           <View style={styles.itemCard}>
-            <Text style={styles.itemName}>
-              {item.nombres} {item.apellidos}
-            </Text>
-            <Text style={styles.itemDetail}>Cédula: {item.cedula}</Text>
-            <Text style={styles.itemDetail}>
-              Teléfono: {item.telefono || "No registrado"}
-            </Text>
-            <Text style={styles.itemDetail}>
-              Correo: {item.correo || "No registrado"}
-            </Text>
-            <Text style={styles.itemDetail}>
-              Dirección: {item.direccion || "No registrada"}
-            </Text>
+            <View style={styles.cardHeader}>
+              <View style={styles.nameContainer}>
+                <Text style={styles.itemName}>
+                  {item.nombres} {item.apellidos}
+                </Text>
+                <Text style={styles.itemCedula}>C.I. {item.cedula}</Text>
+              </View>
+            </View>
+
+            <View style={styles.divider} />
+
+            <View style={styles.detailsContainer}>
+              <Text style={styles.itemDetail}>
+                📞 <Text style={styles.detailLabel}>Teléfono:</Text>{" "}
+                {item.telefono || "No registrado"}
+              </Text>
+              <Text style={styles.itemDetail}>
+                ✉️ <Text style={styles.detailLabel}>Correo:</Text>{" "}
+                {item.correo || "No registrado"}
+              </Text>
+              <Text style={styles.itemDetail}>
+                📍 <Text style={styles.detailLabel}>Dirección:</Text>{" "}
+                {item.direccion || "No registrada"}
+              </Text>
+            </View>
           </View>
         )}
       />
@@ -176,65 +145,77 @@ export default function ClientesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: "#f5f6fa" },
+  container: {
+    flex: 1,
+    padding: 16,
+    backgroundColor: colors.background,
+  },
   title: {
     fontSize: 22,
     fontWeight: "bold",
-    marginBottom: 12,
-    color: "#2f3640",
+    marginBottom: 16,
+    color: colors.textPrimary,
   },
-  sectionSubtitle: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#2f3640",
-    marginBottom: 8,
-    marginTop: 4,
-  },
-  formContainer: {
-    backgroundColor: "#fff",
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 20,
-    elevation: 2,
-  },
-  input: {
-    backgroundColor: "#f8f9fa",
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: "#e1e1e1",
-    fontSize: 15,
-  },
-  addButton: {
-    backgroundColor: "#0984e3",
-    padding: 14,
-    borderRadius: 8,
-    alignItems: "center",
-    marginTop: 4,
-  },
-  addButtonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
   search: {
-    backgroundColor: "#fff",
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 12,
+    backgroundColor: colors.cardBackground,
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: "#dcdde1",
+    borderColor: colors.border,
     fontSize: 15,
+    color: colors.textPrimary,
   },
   itemCard: {
-    backgroundColor: "#fff",
-    padding: 14,
-    borderRadius: 8,
+    backgroundColor: colors.cardBackground,
+    padding: 16,
+    borderRadius: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 8,
-    elevation: 1,
+  },
+  nameContainer: {
+    flex: 1,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 8,
   },
   itemName: {
     fontSize: 16,
     fontWeight: "bold",
-    color: "#2f3640",
-    marginBottom: 2,
+    color: colors.textPrimary,
   },
-  itemDetail: { fontSize: 14, color: "#718093", marginTop: 2 },
+  itemCedula: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.textSecondary,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: 8,
+  },
+  detailsContainer: {
+    gap: 6,
+  },
+  itemDetail: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  detailLabel: {
+    fontWeight: "600",
+    color: colors.textPrimary,
+  },
 });

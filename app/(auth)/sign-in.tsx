@@ -7,6 +7,7 @@ import {
   View,
   ActivityIndicator,
   Modal,
+  Image,
 } from "react-native";
 import { supabase } from "../../supabase";
 import { router, Link } from "expo-router";
@@ -183,7 +184,13 @@ export default function LoginScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.card}>
-        <Text style={styles.title}>🚀 Sistema de Préstamos</Text>
+        <View style={styles.logoContainer}>
+          <Image
+            source={require("../../assets/images/logo.png")}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+        </View>
         <Text style={styles.subtitle}>Inicia sesión para continuar</Text>
 
         <TextInput
@@ -222,6 +229,13 @@ export default function LoginScreen() {
           <Link href="/(auth)/sign-up" asChild>
             <TouchableOpacity>
               <Text style={styles.registerLink}>Regístrate aquí</Text>
+            </TouchableOpacity>
+          </Link>
+        </View>
+        <View style={styles.registerContainer}>
+          <Link href="/(auth)/forgot">
+            <TouchableOpacity>
+              <Text style={styles.registerLink}>¿Olvidaste tu contraseña?</Text>
             </TouchableOpacity>
           </Link>
         </View>
@@ -271,12 +285,13 @@ const styles = StyleSheet.create({
     padding: 30,
     elevation: 8,
   },
-  title: {
-    fontSize: 26,
-    fontWeight: "800",
-    textAlign: "center",
-    color: "#1e293b",
-    marginBottom: 8,
+  logoContainer: {
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  logo: {
+    width: 850,
+    height: 200,
   },
   subtitle: {
     fontSize: 15,

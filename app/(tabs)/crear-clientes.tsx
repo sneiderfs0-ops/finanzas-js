@@ -12,6 +12,7 @@ import {
 import { supabase } from "../../supabase";
 import Colors from "@/constants/Colors";
 import { useColorScheme } from "@/components/useColorScheme";
+import { useRouter } from "expo-router";
 
 export default function CrearClienteModal({
   onClose,
@@ -20,6 +21,7 @@ export default function CrearClienteModal({
   onClose: () => void;
   onClienteCreado: () => void;
 }) {
+  const router = useRouter();
   const colorScheme = useColorScheme();
   const [cedula, setCedula] = useState("");
   const [nombres, setNombres] = useState("");
@@ -143,7 +145,10 @@ export default function CrearClienteModal({
         placeholder="Ej. 12345678"
         placeholderTextColor="#94a3b8"
         value={cedula}
-        onChangeText={setCedula}
+        onChangeText={(text) => {
+          const numericText = text.replace(/[^0-9]/g, "");
+          if (numericText.length <= 10) setCedula(numericText);
+        }}
         keyboardType="numeric"
       />
 
@@ -153,7 +158,10 @@ export default function CrearClienteModal({
         placeholder="Ej. Juan Carlos"
         placeholderTextColor="#94a3b8"
         value={nombres}
-        onChangeText={setNombres}
+        onChangeText={(text) => {
+          const lettersText = text.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, "");
+          if (lettersText.length <= 25) setNombres(lettersText);
+        }}
       />
 
       <Text style={styles.label}>Apellidos *</Text>
@@ -162,16 +170,22 @@ export default function CrearClienteModal({
         placeholder="Ej. Pérez Gómez"
         placeholderTextColor="#94a3b8"
         value={apellidos}
-        onChangeText={setApellidos}
+        onChangeText={(text) => {
+          const lettersText = text.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, "");
+          if (lettersText.length <= 25) setApellidos(lettersText);
+        }}
       />
 
       <Text style={styles.label}>Teléfono *</Text>
       <TextInput
         style={styles.input}
-        placeholder="Ej. 04141234567"
+        placeholder="Ej. 0414123457"
         placeholderTextColor="#94a3b8"
         value={telefono}
-        onChangeText={setTelefono}
+        onChangeText={(text) => {
+          const numericText = text.replace(/[^0-9]/g, "");
+          if (numericText.length <= 15) setTelefono(numericText);
+        }}
         keyboardType="phone-pad"
       />
 
@@ -194,7 +208,10 @@ export default function CrearClienteModal({
         </Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.btnClose} onPress={onClose}>
+      <TouchableOpacity
+        style={styles.btnClose}
+        onPress={() => router.replace("/")} // Redirige directamente al index
+      >
         <Text style={styles.btnCloseText}>Cancelar</Text>
       </TouchableOpacity>
 

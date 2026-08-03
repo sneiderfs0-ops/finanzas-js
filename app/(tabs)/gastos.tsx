@@ -245,15 +245,15 @@ export default function GastosScreen() {
 
   const descargarExcel = () => {
     const csvContent =
-      "data:text/csv;charset=utf-8," +
-      ["Fecha,Descripcion,Responsable,Categoria,Moneda,Monto"]
+      "data:text/csv;charset=utf-8,\uFEFF" +
+      ["Fecha;Descripcion;Responsable;Categoria;Moneda;Monto"]
         .concat(
           gastosFiltrados.map(
             (g) =>
-              `${g.fecha},"${g.descripcion}","${g.nombreResponsable}","${g.categoria}",${g.moneda},${g.monto}`,
+              `"${g.fecha}";"${g.descripcion}";"${g.nombreResponsable}";"${g.categoria}";${g.moneda};${g.monto}`,
           ),
         )
-        .join("\n");
+        .join("\r\n");
 
     if (Platform.OS === "web") {
       const encodedUri = encodeURI(csvContent);
@@ -493,13 +493,13 @@ export default function GastosScreen() {
                   style={styles.exportExcelBtn}
                   onPress={descargarExcel}
                 >
-                  <Text style={styles.exportText}>📥 Excel</Text>
+                  <Text style={styles.exportText}>📥 Descargar Excel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.exportPdfBtn}
                   onPress={descargarPDF}
                 >
-                  <Text style={styles.exportText}>📄 PDF</Text>
+                  <Text style={styles.exportText}>📥 Descargar PDF</Text>
                 </TouchableOpacity>
               </View>
             </View>

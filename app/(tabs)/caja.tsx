@@ -6,9 +6,14 @@ import {
   ScrollView,
   ActivityIndicator,
   Platform,
+  TouchableOpacity,
+  Alert,
+  Dimensions,
 } from "react-native";
 import { supabase } from "../../supabase";
 import { globalStyles } from "@/constants/globalStyles";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
 
 interface Caja {
   id: string;
@@ -19,8 +24,6 @@ interface Caja {
 
 export default function CajaScreen() {
   const [cajas, setCajas] = useState<Caja[]>([]);
-  const [saldoActualUSD, setSaldoActualUSD] = useState(0);
-  const [saldoActualCOP, setSaldoActualCOP] = useState(0);
   const [dineroEnCalleUSD, setDineroEnCalleUSD] = useState(0);
   const [dineroEnCalleCOP, setDineroEnCalleCOP] = useState(0);
   const [totalGastosUSD, setTotalGastosUSD] = useState(0);
@@ -28,15 +31,50 @@ export default function CajaScreen() {
   const [totalGananciaUSD, setTotalGananciaUSD] = useState(0);
   const [totalGananciaCOP, setTotalGananciaCOP] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   useEffect(() => {
-    cargarDatosCaja();
+    verificarAccesoYcargarDatos();
   }, []);
 
-  const cargarDatosCaja = async () => {
+  const verificarAccesoYcargarDatos = async () => {
     setLoading(true);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-    // 1. Cargar cajas y bancos con su moneda
+      if (!session || !session.user?.email) {
+        Alert.alert("Acceso denegado", "Debe iniciar sesión para continuar.");
+        setLoading(false);
+        return;
+      }
+
+      const emailLogueado = session.user.email.trim().toLowerCase();
+
+      const { data: adminData, error: adminError } = await supabase
+        .from("administradores")
+        .select("correo")
+        .eq("correo", emailLogueado)
+        .maybeSingle();
+
+      if (adminError || !adminData) {
+        Alert.alert(
+          "Acceso Restringido",
+          "No tiene permisos de administrador para ver esta sección.",
+        );
+        setLoading(false);
+        return;
+      }
+
+      await cargarDatosCaja();
+    } catch (error) {
+      console.error("Error al verificar el rol de administrador:", error);
+      setLoading(false);
+    }
+  };
+
+  const cargarDatosCaja = async () => {
     const { data: cajasData, error: cajasError } = await supabase
       .from("cajas_bancos")
       .select("id, nombre, moneda, saldo_actual");
@@ -47,29 +85,20 @@ export default function CajaScreen() {
       setCajas(cajasData || []);
     }
 
-    // 2. Cargar Préstamos Activos (Dinero en la Calle y Capital Inicial)
     const { data: prestamosData, error: prestamosError } = await supabase
       .from("prestamos")
-      .select("saldo_pendiente, monto_prestado, estado, moneda")
+      .select("saldo_pendiente, estado, moneda")
       .eq("estado", "activo");
 
-    let sumaCapitalInicialUSD = 0;
-    let sumaCapitalInicialCOP = 0;
     let sumaCalleUSD = 0;
     let sumaCalleCOP = 0;
 
     if (!prestamosError && prestamosData) {
       prestamosData.forEach((curr) => {
         const saldoPendiente = Number(curr.saldo_pendiente || 0);
-        const montoPrestado = Number(
-          curr.monto_prestado || curr.saldo_pendiente || 0,
-        );
-
         if (curr.moneda === "USD") {
-          sumaCapitalInicialUSD += montoPrestado;
           sumaCalleUSD += saldoPendiente;
         } else {
-          sumaCapitalInicialCOP += montoPrestado;
           sumaCalleCOP += saldoPendiente;
         }
       });
@@ -77,32 +106,24 @@ export default function CajaScreen() {
       setDineroEnCalleCOP(sumaCalleCOP);
     }
 
-    // 3. Cargar Pagos (Capital + Intereses recibidos)
     const { data: pagosData, error: pagosError } = await supabase
       .from("pagos")
-      .select("monto_pagado, monto_interes, moneda");
+      .select("monto_interes, moneda");
 
-    let sumaPagosEntradosUSD = 0;
-    let sumaPagosEntradosCOP = 0;
     let sumaInteresesUSD = 0;
     let sumaInteresesCOP = 0;
 
     if (!pagosError && pagosData) {
       pagosData.forEach((curr: any) => {
-        const montoPagado = Number(curr.monto_pagado || 0);
         const montoInteres = Number(curr.monto_interes || 0);
-
         if (curr.moneda === "USD") {
-          sumaPagosEntradosUSD += montoPagado;
           sumaInteresesUSD += montoInteres;
         } else {
-          sumaPagosEntradosCOP += montoPagado;
           sumaInteresesCOP += montoInteres;
         }
       });
     }
 
-    // 4. Cargar el total de gastos
     const { data: gastosData, error: gastosError } = await supabase
       .from("gastos")
       .select("monto, moneda");
@@ -119,13 +140,126 @@ export default function CajaScreen() {
       setTotalGastosCOP(sumaGastosCOP);
     }
 
-    // Cálculos finales
-    setSaldoActualUSD(sumaCapitalInicialUSD + sumaPagosEntradosUSD);
-    setSaldoActualCOP(sumaCapitalInicialCOP + sumaPagosEntradosCOP);
     setTotalGananciaUSD(sumaInteresesUSD - sumaGastosUSD);
     setTotalGananciaCOP(sumaInteresesCOP - sumaGastosCOP);
 
     setLoading(false);
+  };
+
+  let efectivoUSD = 0;
+  let efectivoCOP = 0;
+  let bancosUSD = 0;
+  let bancosCOP = 0;
+
+  cajas.forEach((caja) => {
+    const saldo = Math.max(0, Number(caja.saldo_actual));
+    const nombre = caja.nombre.toLowerCase();
+    if (caja.moneda === "USD") {
+      if (nombre.includes("banco") || nombre.includes("cuenta"))
+        bancosUSD += saldo;
+      else efectivoUSD += saldo;
+    } else {
+      if (nombre.includes("banco") || nombre.includes("cuenta"))
+        bancosCOP += saldo;
+      else efectivoCOP += saldo;
+    }
+  });
+
+  const fechaActual = new Date().toLocaleDateString();
+
+  const handleDownloadPDF = async () => {
+    try {
+      setGeneratingPdf(true);
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <title>Reporte General</title>
+            <style>
+              @page { size: landscape; margin: 10mm; }
+              body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; color: #1e293b; background-color: #ffffff; }
+              h2 { text-align: center; color: #0f172a; margin-bottom: 5px; font-size: 24px; font-weight: 700; }
+              p.subtitle { text-align: center; color: #64748b; margin-top: 0; margin-bottom: 25px; font-size: 14px; }
+              table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+              th, td { border: 1px solid #e2e8f0; padding: 10px 12px; text-align: left; }
+              th { background-color: #0f172a; color: #ffffff; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.05em; }
+              tr:nth-child(even) { background-color: #f8fafc; }
+            </style>
+          </head>
+          <body>
+            <h2>Control de Caja y Bancos</h2>
+            <p class="subtitle">Generado el: ${fechaActual}</p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Efectivo USD</th>
+                  <th>Efectivo COP</th>
+                  <th>Bancos USD</th>
+                  <th>Bancos COP</th>
+                  <th>Calle USD</th>
+                  <th>Calle COP</th>
+                  <th>Gastos USD</th>
+                  <th>Gastos COP</th>
+                  <th>Ganancia USD</th>
+                  <th>Ganancia COP</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><b>${fechaActual}</b></td>
+                  <td>$${Math.max(0, efectivoUSD).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td>$${Math.max(0, efectivoCOP).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td>$${Math.max(0, bancosUSD).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td>$${Math.max(0, bancosCOP).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td>$${Math.max(0, dineroEnCalleUSD).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td>$${Math.max(0, dineroEnCalleCOP).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td>$${Math.max(0, totalGastosUSD).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td>$${Math.max(0, totalGastosCOP).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td>$${Math.max(0, totalGananciaUSD).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td>$${Math.max(0, totalGananciaCOP).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                </tr>
+              </tbody>
+            </table>
+          </body>
+        </html>
+      `;
+
+      if (Platform.OS === "web") {
+        const printWindow = window.open("", "_blank");
+        if (printWindow) {
+          printWindow.document.write(htmlContent);
+          printWindow.document.close();
+          printWindow.focus();
+          setTimeout(() => {
+            printWindow.print();
+          }, 500);
+        } else {
+          Alert.alert(
+            "Aviso",
+            "Por favor permita las ventanas emergentes para descargar el PDF.",
+          );
+        }
+      } else {
+        const { uri } = await Print.printToFileAsync({ html: htmlContent });
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(uri, {
+            mimeType: "application/pdf",
+            dialogTitle: "Reporte Consolidado de Caja",
+            UTI: "com.adobe.pdf",
+          });
+        } else {
+          Alert.alert("Éxito", `PDF guardado en: ${uri}`);
+        }
+      }
+    } catch (error: any) {
+      console.error("Error al generar PDF:", error);
+      Alert.alert("Error", "No se pudo generar el PDF. Intente nuevamente.");
+    } finally {
+      setGeneratingPdf(false);
+    }
   };
 
   if (loading) {
@@ -140,55 +274,48 @@ export default function CajaScreen() {
     <ScrollView
       style={styles.mainContainer}
       contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={true}
     >
-      <View style={styles.headerContainer}>
-        <Text style={styles.headerTitle}>Control de Caja y Bancos</Text>
-        <Text style={styles.subtitle}>
-          Resumen financiero en tiempo real (USD / COP)
-        </Text>
+      <View style={styles.topHeaderRow}>
+        <View style={styles.headerContainer}>
+          <Text style={styles.headerTitle}>Control de Caja y Bancos</Text>
+          <Text style={styles.subtitle}>
+            Saldos reales de efectivo y bancos por transacciones y pagos de
+            clientes (USD / COP)
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          style={styles.pdfButton}
+          onPress={handleDownloadPDF}
+          disabled={generatingPdf}
+        >
+          {generatingPdf ? (
+            <ActivityIndicator size="small" color="#ffffff" />
+          ) : (
+            <Text style={styles.pdfButtonText}>📥 Descargar PDF</Text>
+          )}
+        </TouchableOpacity>
       </View>
 
       <View style={styles.gridContainer}>
-        {cajas.map((caja) => (
-          <View key={caja.id} style={[styles.card, styles.cardCaja]}>
-            <View style={styles.cardHeaderRow}>
-              <Text style={styles.cardTitle}>{caja.nombre}</Text>
-              <Text style={styles.monedaBadge}>{caja.moneda}</Text>
+        {cajas.map((caja) => {
+          const saldoLimpio = Math.max(0, Number(caja.saldo_actual));
+          return (
+            <View key={caja.id} style={[styles.card, styles.cardCaja]}>
+              <View style={styles.cardHeaderRow}>
+                <Text style={styles.cardTitle}>{caja.nombre}</Text>
+                <Text style={styles.monedaBadge}>{caja.moneda}</Text>
+              </View>
+              <Text style={styles.cardValue}>
+                {caja.moneda === "USD" ? "$" : "$ "}
+                {saldoLimpio.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                })}
+              </Text>
             </View>
-            <Text style={styles.cardValue}>
-              {caja.moneda === "USD" ? "$" : "$ "}
-              {Number(caja.saldo_actual).toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-              })}
-            </Text>
-          </View>
-        ))}
-
-        <View style={[styles.card, styles.cardCapital]}>
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitleCapital}>Saldo Actual Acumulado</Text>
-            <Text style={styles.monedaBadgeCapital}>USD</Text>
-          </View>
-          <Text style={styles.cardValueCapital}>
-            $
-            {saldoActualUSD.toLocaleString(undefined, {
-              minimumFractionDigits: 2,
-            })}
-          </Text>
-        </View>
-
-        <View style={[styles.card, styles.cardCapital]}>
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitleCapital}>Saldo Actual Acumulado</Text>
-            <Text style={styles.monedaBadgeCapital}>COP</Text>
-          </View>
-          <Text style={styles.cardValueCapital}>
-            $
-            {saldoActualCOP.toLocaleString(undefined, {
-              minimumFractionDigits: 2,
-            })}
-          </Text>
-        </View>
+          );
+        })}
 
         <View style={[styles.card, styles.cardCalle]}>
           <View style={styles.cardHeaderRow}>
@@ -197,7 +324,7 @@ export default function CajaScreen() {
           </View>
           <Text style={styles.cardValueCalle}>
             $
-            {dineroEnCalleUSD.toLocaleString(undefined, {
+            {Math.max(0, dineroEnCalleUSD).toLocaleString(undefined, {
               minimumFractionDigits: 2,
             })}
           </Text>
@@ -210,7 +337,7 @@ export default function CajaScreen() {
           </View>
           <Text style={styles.cardValueCalle}>
             $
-            {dineroEnCalleCOP.toLocaleString(undefined, {
+            {Math.max(0, dineroEnCalleCOP).toLocaleString(undefined, {
               minimumFractionDigits: 2,
             })}
           </Text>
@@ -223,7 +350,7 @@ export default function CajaScreen() {
           </View>
           <Text style={styles.cardValueGastos}>
             $
-            {totalGastosUSD.toLocaleString(undefined, {
+            {Math.max(0, totalGastosUSD).toLocaleString(undefined, {
               minimumFractionDigits: 2,
             })}
           </Text>
@@ -236,7 +363,7 @@ export default function CajaScreen() {
           </View>
           <Text style={styles.cardValueGastos}>
             $
-            {totalGastosCOP.toLocaleString(undefined, {
+            {Math.max(0, totalGastosCOP).toLocaleString(undefined, {
               minimumFractionDigits: 2,
             })}
           </Text>
@@ -249,7 +376,7 @@ export default function CajaScreen() {
           </View>
           <Text style={styles.cardValueGanancia}>
             $
-            {totalGananciaUSD.toLocaleString(undefined, {
+            {Math.max(0, totalGananciaUSD).toLocaleString(undefined, {
               minimumFractionDigits: 2,
             })}
           </Text>
@@ -262,7 +389,7 @@ export default function CajaScreen() {
           </View>
           <Text style={styles.cardValueGanancia}>
             $
-            {totalGananciaCOP.toLocaleString(undefined, {
+            {Math.max(0, totalGananciaCOP).toLocaleString(undefined, {
               minimumFractionDigits: 2,
             })}
           </Text>
@@ -278,19 +405,26 @@ const styles = StyleSheet.create({
     backgroundColor: "#f8fafc",
   },
   scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
+    padding: 16,
+    paddingBottom: 50,
   },
   loaderContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
   },
+  topHeaderRow: {
+    flexDirection: Platform.OS === "web" ? "row" : "column",
+    justifyContent: "space-between",
+    alignItems: Platform.OS === "web" ? "flex-start" : "stretch",
+    marginBottom: 20,
+    gap: 12,
+  },
   headerContainer: {
-    marginBottom: 24,
+    flex: 1,
   },
   headerTitle: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: "800",
     color: "#0f172a",
     letterSpacing: -0.5,
@@ -299,6 +433,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#64748b",
     marginTop: 4,
+  },
+  pdfButton: {
+    backgroundColor: "#0284c7",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#0284c7",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+    alignSelf: Platform.OS === "web" ? "auto" : "flex-end",
+  },
+  pdfButtonText: {
+    color: "#ffffff",
+    fontWeight: "bold",
+    fontSize: 14,
   },
   gridContainer: {
     flexDirection: "row",
@@ -310,6 +463,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20,
     marginBottom: 16,
+    // En Web mantiene 2 por fila (48.5%). En teléfonos móviles (iOS / Android) ocupa el 100% (1 por fila)
     width: Platform.OS === "web" ? "48.5%" : "100%",
     shadowColor: "#64748b",
     shadowOffset: { width: 0, height: 4 },
@@ -329,10 +483,6 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: "#6366f1",
   },
-  cardCapital: {
-    borderLeftWidth: 4,
-    borderLeftColor: "#f59e0b",
-  },
   cardCalle: {
     borderLeftWidth: 4,
     borderLeftColor: "#0ea5e9",
@@ -349,13 +499,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: "#475569",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  cardTitleCapital: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#b45309",
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
@@ -385,11 +528,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#1e293b",
   },
-  cardValueCapital: {
-    fontSize: 26,
-    fontWeight: "bold",
-    color: "#d97706",
-  },
   cardValueCalle: {
     fontSize: 26,
     fontWeight: "bold",
@@ -410,16 +548,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     backgroundColor: "#e0e7ff",
     color: "#4338ca",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    overflow: "hidden",
-  },
-  monedaBadgeCapital: {
-    fontSize: 12,
-    fontWeight: "bold",
-    backgroundColor: "#fef3c7",
-    color: "#b45309",
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,

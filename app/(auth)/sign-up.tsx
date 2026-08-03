@@ -89,7 +89,7 @@ export default function SignUpScreen() {
     setLoading(true);
 
     try {
-      // 1. Validar si la cédula ya existe en alguna de las tablas (administradores, empleados, secretaria)
+      // 1. Validar si la cédula ya existe en alguna de las tablas
       const { data: adminCedula } = await supabase
         .from("administradores")
         .select("cedula")
@@ -118,24 +118,14 @@ export default function SignUpScreen() {
         return;
       }
 
-      // 2. Intentar registrar en Supabase Auth
+      // 2. Registrar en Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: cleanEmail,
         password: password,
-        options: {
-          data: {
-            rol: rol,
-            cedula: cedula,
-            nombres: nombres,
-            apellidos: apellidos,
-            telefono: telefono,
-          },
-        },
       });
 
       if (authError) {
         setLoading(false);
-        // Verificar si el error es porque el correo ya está registrado en Auth
         if (
           authError.message.toLowerCase().includes("already registered") ||
           authError.message.toLowerCase().includes("already exists")
@@ -152,6 +142,48 @@ export default function SignUpScreen() {
         return;
       }
 
+      // Obtener el ID real generado por Supabase Auth
+      const userId = authData.user?.id;
+      if (!userId) {
+        setLoading(false);
+        Alert.alert(
+          "Error",
+          "No se pudo obtener el ID del usuario autenticado.",
+        );
+        return;
+      }
+
+      // 3. Insertar el registro usando el ID real de Auth en la tabla correspondiente
+      const tablaDestino = rol === "secretaria" ? "secretaria" : "empleados";
+
+      const { error: dbError } = await supabase.from(tablaDestino).insert([
+        {
+          id: userId,
+          cedula: cedula,
+          nombres: nombres,
+          apellidos: apellidos,
+          telefono: telefono,
+          correo: cleanEmail,
+          estado: true,
+          aprobado: "pendiente",
+          rol: rol,
+        },
+      ]);
+
+      if (dbError) {
+        setLoading(false);
+        console.log(
+          "❌ ERROR EN BASE DE DATOS:",
+          JSON.stringify(dbError, null, 2),
+        );
+        Alert.alert(
+          "Error de base de datos",
+          dbError.message + "\n" + (dbError.details || ""),
+        );
+        return;
+      }
+
+      // 4. Cerrar sesión para que espere la aprobación del administrador
       await supabase.auth.signOut();
 
       setModalTitle("¡Registro Exitoso!");
@@ -162,6 +194,8 @@ export default function SignUpScreen() {
       limpiarCampos();
       setModalVisible(true);
     } catch (err: any) {
+      setLoading(false);
+      console.log("❌ ERROR INESPERADO:", JSON.stringify(err, null, 2));
       Alert.alert(
         "Error inesperado",
         err?.message || "Ocurrió un fallo al procesar tu registro.",
@@ -173,7 +207,6 @@ export default function SignUpScreen() {
 
   const handleModalClose = () => {
     setModalVisible(false);
-    // Si fue un registro exitoso, redirigir al login; si fue error de duplicado, se queda en el formulario
     if (modalTitle === "¡Registro Exitoso!") {
       router.replace("/(auth)/sign-in");
     }

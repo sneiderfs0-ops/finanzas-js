@@ -25,19 +25,36 @@ interface Cliente {
   registrado_por_cedula?: string;
 }
 
-export default function CrearPrestamoScreen({ route }: any) {
+interface Prestamo {
+  id: string;
+  cedula: string;
+  moneda: "USD" | "COP";
+  monto_total: number;
+  saldo_pendiente: number;
+  valor_cuota: number;
+  frecuencia: string;
+  cuotas: number;
+  estado: string;
+}
+
+export default function CrearPagoScreen({ route }: any) {
   const clienteCedulaParam = route?.params?.clienteCedula || null;
   const { width } = useWindowDimensions();
 
   const isWebOrTablet = width >= 768;
 
   const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [prestamosCliente, setPrestamosCliente] = useState<Prestamo[]>([]);
   const [cajas, setCajas] = useState<CajaOption[]>([]);
+
   const [clienteSeleccionado, setClienteSeleccionado] = useState<string | null>(
     clienteCedulaParam,
   );
+  const [prestamoSeleccionado, setPrestamoSeleccionado] =
+    useState<Prestamo | null>(null);
 
-  const [modalVisible, setModalVisible] = useState(false);
+  const [modalClienteVisible, setModalClienteVisible] = useState(false);
+  const [modalPrestamoVisible, setModalPrestamoVisible] = useState(false);
   const [nombreBusqueda, setNombreBusqueda] = useState("");
 
   // Estados para los modales personalizados de resultado
@@ -52,13 +69,6 @@ export default function CrearPrestamoScreen({ route }: any) {
   const [tipoPago, setTipoPago] = useState<"efectivo" | "transferencia">(
     "efectivo",
   );
-
-  const [frecuencia, setFrecuencia] = useState<
-    "diario" | "semanal" | "quincenal" | "mensual"
-  >("diario");
-
-  const [porcentaje, setPorcentaje] = useState("20");
-  const [cuotas, setCuotas] = useState("24");
   const [loading, setLoading] = useState(false);
 
   const [usuarioActual, setUsuarioActual] = useState<{
@@ -71,6 +81,13 @@ export default function CrearPrestamoScreen({ route }: any) {
   useEffect(() => {
     obtenerUsuarioLogueadoYCargarDatos();
   }, []);
+
+  // Si viene una cédula por parámetro, cargar sus préstamos activos al tener los clientes listos
+  useEffect(() => {
+    if (clienteCedulaParam && clientes.length > 0) {
+      cargarPrestamosCliente(clienteCedulaParam);
+    }
+  }, [clienteCedulaParam, clientes]);
 
   const obtenerUsuarioLogueadoYCargarDatos = async () => {
     try {
@@ -85,7 +102,7 @@ export default function CrearPrestamoScreen({ route }: any) {
 
       let usuarioInfo: any = null;
 
-      // 1. Buscar en la tabla de ADMINISTRADORES
+      // 1. Buscar en ADMINISTRADORES
       let queryAdmin = supabase
         .from("administradores")
         .select("id, cedula, nombres, apellidos");
@@ -104,7 +121,7 @@ export default function CrearPrestamoScreen({ route }: any) {
         };
       }
 
-      // 2. Si no es admin, buscar en la tabla de SECRETARIA
+      // 2. Buscar en SECRETARIA
       if (!usuarioInfo) {
         let querySec = supabase
           .from("secretaria")
@@ -124,7 +141,7 @@ export default function CrearPrestamoScreen({ route }: any) {
         }
       }
 
-      // 3. Si no es ninguno de los anteriores, buscar en la tabla de EMPLEADOS
+      // 3. Buscar en EMPLEADOS
       if (!usuarioInfo) {
         let queryEmp = supabase
           .from("empleados")
@@ -147,7 +164,7 @@ export default function CrearPrestamoScreen({ route }: any) {
       if (!usuarioInfo || !usuarioInfo.cedula) {
         mostrarMensaje(
           "error",
-          "No se pudo identificar qué empleado, secretaria o administrador está realizando el registro.",
+          "No se pudo identificar qué usuario está realizando el registro.",
         );
         return;
       }
@@ -184,11 +201,9 @@ export default function CrearPrestamoScreen({ route }: any) {
       .select("cedula, nombres, apellidos, registrado_por_cedula")
       .order("nombres");
 
-    // Si es empleado, se restringe estrictamente a los clientes registrados por él
     if (infoUsuario.tipo === "Empleado") {
       query = query.eq("registrado_por_cedula", infoUsuario.cedula);
     }
-    // Administrador y Secretaria ven todos los clientes sin restricción
 
     const { data, error } = await query;
 
@@ -199,24 +214,34 @@ export default function CrearPrestamoScreen({ route }: any) {
     }
   };
 
-  const handleCambiarFrecuencia = (
-    nuevaFrecuencia: "diario" | "semanal" | "quincenal" | "mensual",
-  ) => {
-    setFrecuencia(nuevaFrecuencia);
+  const cargarPrestamosCliente = async (cedulaCliente: string) => {
+    const { data, error } = await supabase
+      .from("prestamos")
+      .select("*")
+      .eq("cedula", cedulaCliente)
+      .eq("estado", "activo");
 
-    if (nuevaFrecuencia === "diario") {
-      setPorcentaje("20");
-      setCuotas("24");
-    } else if (nuevaFrecuencia === "semanal") {
-      setPorcentaje("25");
-      setCuotas("4");
-    } else if (nuevaFrecuencia === "quincenal") {
-      setPorcentaje("25");
-      setCuotas("2");
-    } else if (nuevaFrecuencia === "mensual") {
-      setPorcentaje("25");
-      setCuotas("1");
+    if (error) {
+      console.log("Error cargando préstamos:", error.message);
+      setPrestamosCliente([]);
+    } else if (data) {
+      setPrestamosCliente(data);
+      if (data.length > 0) {
+        // Seleccionar por defecto el primer préstamo activo y ajustar moneda
+        setPrestamoSeleccionado(data[0]);
+        setMoneda(data[0].moneda);
+      } else {
+        setPrestamoSeleccionado(null);
+      }
     }
+  };
+
+  const handleSeleccionarCliente = (cedula: string) => {
+    setClienteSeleccionado(cedula);
+    setPrestamoSeleccionado(null);
+    setModalClienteVisible(false);
+    setNombreBusqueda("");
+    cargarPrestamosCliente(cedula);
   };
 
   const handleMontoChange = (text: string) => {
@@ -235,18 +260,6 @@ export default function CrearPrestamoScreen({ route }: any) {
     }
   };
 
-  const handleCambiarMoneda = (nuevaMoneda: "USD" | "COP") => {
-    setMoneda(nuevaMoneda);
-    if (monto) {
-      const soloNumeros = monto.replace(/\D/g, "");
-      if (nuevaMoneda === "COP") {
-        setMonto(Number(soloNumeros).toLocaleString("es-CO"));
-      } else {
-        setMonto(soloNumeros);
-      }
-    }
-  };
-
   const obtenerCajaIdAutomatica = () => {
     const terminoBusqueda = tipoPago === "efectivo" ? "efectivo" : "banco";
     const cajaEncontrada = cajas.find(
@@ -258,12 +271,6 @@ export default function CrearPrestamoScreen({ route }: any) {
   };
 
   const montoNum = parseFloat(monto.replace(/\./g, "")) || 0;
-  const porcentajeNum = parseFloat(porcentaje) || 0;
-  const cuotasNum = parseInt(cuotas) || 1;
-
-  const totalInteres = (montoNum * porcentajeNum) / 100;
-  const montoTotal = montoNum + totalInteres;
-  const valorCuota = cuotasNum > 0 ? montoTotal / cuotasNum : 0;
 
   const mostrarMensaje = (tipo: "exito" | "error", mensaje: string) => {
     setTipoResultado(tipo);
@@ -271,23 +278,28 @@ export default function CrearPrestamoScreen({ route }: any) {
     setModalResultadoVisible(true);
   };
 
-  const guardarPrestamo = async () => {
+  const guardarPago = async () => {
     if (!clienteSeleccionado) {
-      mostrarMensaje(
-        "error",
-        "Por favor seleccione un cliente antes de continuar.",
-      );
+      mostrarMensaje("error", "Por favor seleccione un cliente.");
+      return;
+    }
+    if (!prestamoSeleccionado) {
+      mostrarMensaje("error", "Por favor seleccione el préstamo a abonar.");
       return;
     }
     if (montoNum <= 0) {
-      mostrarMensaje("error", "Ingrese un monto de préstamo válido mayor a 0.");
+      mostrarMensaje("error", "Ingrese un monto de pago válido mayor a 0.");
+      return;
+    }
+    if (montoNum > prestamoSeleccionado.saldo_pendiente) {
+      mostrarMensaje(
+        "error",
+        `El monto a pagar no puede ser mayor al saldo pendiente ($ ${prestamoSeleccionado.saldo_pendiente.toFixed(2)} ${moneda}).`,
+      );
       return;
     }
     if (!usuarioActual) {
-      mostrarMensaje(
-        "error",
-        "No se pudo identificar qué empleado, secretaria o administrador está realizando el registro.",
-      );
+      mostrarMensaje("error", "No se pudo identificar el usuario logueado.");
       return;
     }
 
@@ -303,42 +315,50 @@ export default function CrearPrestamoScreen({ route }: any) {
     setLoading(true);
 
     try {
-      // 1. Insertar el préstamo
-      const { error: errorPrestamo } = await supabase.from("prestamos").insert([
+      // 1. Insertar el pago
+      const { error: errorPago } = await supabase.from("pagos").insert([
         {
-          cedula: clienteSeleccionado,
+          prestamo_id: prestamoSeleccionado.id,
           moneda: moneda,
-          monto_prestado: montoNum,
-          tasa_interes: porcentajeNum,
-          monto_total: montoTotal,
-          saldo_pendiente: montoTotal,
-          estado: "activo",
-          frecuencia: frecuencia,
-          cuotas: cuotasNum,
-          valor_cuota: valorCuota,
+          monto_pagado: montoNum,
           registrado_por_cedula: usuarioActual.cedula,
         },
       ]);
 
-      if (errorPrestamo) throw errorPrestamo;
+      if (errorPago) throw errorPago;
 
-      // 2. Registrar la transacción de egreso
+      // 2. Calcular nuevo saldo pendiente y nuevo estado
+      const nuevoSaldo = prestamoSeleccionado.saldo_pendiente - montoNum;
+      const nuevoEstado = nuevoSaldo <= 0 ? "pagado" : "activo";
+
+      // 3. Actualizar el préstamo
+      const { error: errorUpdatePrestamo } = await supabase
+        .from("prestamos")
+        .update({
+          saldo_pendiente: nuevoSaldo,
+          estado: nuevoEstado,
+        })
+        .eq("id", prestamoSeleccionado.id);
+
+      if (errorUpdatePrestamo) throw errorUpdatePrestamo;
+
+      // 4. Registrar transacción de ingreso
       const { error: errorTransaccion } = await supabase
         .from("transacciones")
         .insert([
           {
             caja_id: cajaSeleccionada.id,
-            tipo: "egreso",
+            tipo: "ingreso",
             moneda: moneda,
             monto: montoNum,
-            descripcion: `Desembolso de préstamo a cliente Cédula: ${clienteSeleccionado}`,
+            descripcion: `Cobro / Abono a préstamo de cliente Cédula: ${clienteSeleccionado}`,
             registrado_por_cedula: usuarioActual.cedula,
           },
         ]);
 
       if (errorTransaccion) throw errorTransaccion;
 
-      // 3. Actualizar saldo actual de caja/banco
+      // 5. Actualizar saldo actual de caja/banco (Sumar por ser ingreso)
       const { data: cajaActualData } = await supabase
         .from("cajas_bancos")
         .select("saldo_actual")
@@ -346,10 +366,10 @@ export default function CrearPrestamoScreen({ route }: any) {
         .single();
 
       if (cajaActualData) {
-        const nuevoSaldo = Number(cajaActualData.saldo_actual) - montoNum;
+        const nuevoSaldoCaja = Number(cajaActualData.saldo_actual) + montoNum;
         const { error: errorUpdateCaja } = await supabase
           .from("cajas_bancos")
-          .update({ saldo_actual: nuevoSaldo })
+          .update({ saldo_actual: nuevoSaldoCaja })
           .eq("id", cajaSeleccionada.id);
 
         if (errorUpdateCaja) throw errorUpdateCaja;
@@ -357,17 +377,18 @@ export default function CrearPrestamoScreen({ route }: any) {
 
       setMonto("");
       setClienteSeleccionado(null);
-      setNombreBusqueda("");
+      setPrestamoSeleccionado(null);
+      setPrestamosCliente([]);
       mostrarMensaje(
         "exito",
-        "El préstamo se ha registrado satisfactoriamente y la caja ha sido actualizada.",
+        "El pago se ha registrado satisfactoriamente y la caja ha sido actualizada.",
       );
     } catch (err: any) {
-      console.log("Error al guardar préstamo:", err.message);
+      console.log("Error al guardar pago:", err.message);
       mostrarMensaje(
         "error",
         err.message ||
-          "Ocurrió un error inesperado al intentar guardar el préstamo.",
+          "Ocurrió un error inesperado al intentar registrar el pago.",
       );
     } finally {
       setLoading(false);
@@ -393,7 +414,7 @@ export default function CrearPrestamoScreen({ route }: any) {
       ]}
     >
       <View style={[styles.mainCard, isWebOrTablet && styles.mainCardWeb]}>
-        <Text style={styles.title}>Nuevo Préstamo</Text>
+        <Text style={styles.title}>Registrar Cobro / Pago</Text>
 
         {usuarioActual && (
           <View style={styles.userCard}>
@@ -406,30 +427,63 @@ export default function CrearPrestamoScreen({ route }: any) {
           </View>
         )}
 
-        <Text style={styles.label}>1. Seleccionar Moneda</Text>
-        <View style={styles.rowSelector}>
-          {(["USD", "COP"] as const).map((m) => (
-            <TouchableOpacity
-              key={m}
-              style={[
-                styles.selectChip,
-                moneda === m && styles.selectChipActive,
-              ]}
-              onPress={() => handleCambiarMoneda(m)}
-            >
-              <Text
-                style={[
-                  styles.selectChipTxt,
-                  moneda === m && styles.selectChipTxtActive,
-                ]}
-              >
-                {m === "USD" ? "💵 Dólares (USD)" : "🇨🇴 Pesos (COP)"}
+        <Text style={styles.label}>1. Cliente</Text>
+        <TouchableOpacity
+          style={styles.dropdownTrigger}
+          activeOpacity={0.7}
+          onPress={() => setModalClienteVisible(true)}
+        >
+          {clienteObjetoSeleccionado ? (
+            <View style={{ flex: 1 }}>
+              <Text style={styles.dropdownTriggerTitle}>
+                {clienteObjetoSeleccionado.nombres}{" "}
+                {clienteObjetoSeleccionado.apellidos}
               </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+              <Text style={styles.dropdownTriggerSubtitle}>
+                Cédula: {clienteObjetoSeleccionado.cedula}
+              </Text>
+            </View>
+          ) : (
+            <Text style={styles.dropdownTriggerPlaceholder}>
+              Seleccionar cliente...
+            </Text>
+          )}
+          <Text style={styles.dropdownTriggerIcon}>▼</Text>
+        </TouchableOpacity>
 
-        <Text style={styles.label}>2. Método de Desembolso</Text>
+        <Text style={styles.label}>2. Préstamo Activo</Text>
+        <TouchableOpacity
+          style={[
+            styles.dropdownTrigger,
+            !clienteSeleccionado && { opacity: 0.6 },
+          ]}
+          activeOpacity={0.7}
+          disabled={!clienteSeleccionado}
+          onPress={() => setModalPrestamoVisible(true)}
+        >
+          {prestamoSeleccionado ? (
+            <View style={{ flex: 1 }}>
+              <Text style={styles.dropdownTriggerTitle}>
+                Préstamo en {prestamoSeleccionado.moneda} - Saldo: ${" "}
+                {prestamoSeleccionado.saldo_pendiente.toFixed(2)}
+              </Text>
+              <Text style={styles.dropdownTriggerSubtitle}>
+                Cuota sugerida: ${" "}
+                {prestamoSeleccionado.valor_cuota?.toFixed(2) || "0.00"} (
+                {prestamoSeleccionado.frecuencia})
+              </Text>
+            </View>
+          ) : (
+            <Text style={styles.dropdownTriggerPlaceholder}>
+              {clienteSeleccionado
+                ? "Seleccionar préstamo activo..."
+                : "Primero seleccione un cliente"}
+            </Text>
+          )}
+          <Text style={styles.dropdownTriggerIcon}>▼</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.label}>3. Método de Cobro</Text>
         <View style={styles.rowSelector}>
           {[
             { id: "efectivo", label: `Efectivo (${moneda})` },
@@ -455,70 +509,10 @@ export default function CrearPrestamoScreen({ route }: any) {
           ))}
         </View>
 
-        <Text style={styles.label}>3. Cliente</Text>
-        <TouchableOpacity
-          style={styles.dropdownTrigger}
-          activeOpacity={0.7}
-          onPress={() => setModalVisible(true)}
-        >
-          {clienteObjetoSeleccionado ? (
-            <View style={{ flex: 1 }}>
-              <Text style={styles.dropdownTriggerTitle}>
-                {clienteObjetoSeleccionado.nombres}{" "}
-                {clienteObjetoSeleccionado.apellidos}
-              </Text>
-              <Text style={styles.dropdownTriggerSubtitle}>
-                Cédula: {clienteObjetoSeleccionado.cedula}
-              </Text>
-            </View>
-          ) : (
-            <Text style={styles.dropdownTriggerPlaceholder}>
-              Seleccionar cliente...
-            </Text>
-          )}
-          <Text style={styles.dropdownTriggerIcon}>▼</Text>
-        </TouchableOpacity>
-
-        <Text style={styles.label}>4. Modalidad / Frecuencia de Pago</Text>
-        <View style={styles.frecuenciaContainer}>
-          {[
-            { id: "diario", label: "Diario", desc: "24 cuotas (20%)" },
-            { id: "semanal", label: "Semanal", desc: "4 cuotas (25%)" },
-            { id: "quincenal", label: "Quincenal", desc: "2 cuotas (25%)" },
-            { id: "mensual", label: "Mensual", desc: "1 cuota (25%)" },
-          ].map((item) => (
-            <TouchableOpacity
-              key={item.id}
-              style={[
-                styles.frecuenciaBtn,
-                frecuencia === item.id && styles.frecuenciaBtnActive,
-              ]}
-              onPress={() => handleCambiarFrecuencia(item.id as any)}
-            >
-              <Text
-                style={[
-                  styles.frecuenciaTxt,
-                  frecuencia === item.id && styles.frecuenciaTxtActive,
-                ]}
-              >
-                {item.label}
-              </Text>
-              <Text
-                style={[
-                  styles.frecuenciaSubTxt,
-                  frecuencia === item.id && styles.frecuenciaSubTxtActive,
-                ]}
-              >
-                {item.desc}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <Text style={styles.label}>5. Monto del Préstamo</Text>
+        <Text style={styles.label}>4. Monto del Pago</Text>
         <TextInput
           style={styles.input}
-          placeholder={`Monto a prestar en ${moneda}`}
+          placeholder={`Monto a abonar en ${moneda}`}
           value={monto}
           onChangeText={handleMontoChange}
           keyboardType="numeric"
@@ -526,46 +520,57 @@ export default function CrearPrestamoScreen({ route }: any) {
         />
 
         <View style={styles.calcBox}>
-          <Text style={styles.calcTitle}>Resumen de Operación</Text>
+          <Text style={styles.calcTitle}>Resumen del Cobro</Text>
           <View style={styles.calcRow}>
-            <Text style={styles.calcText}>Frecuencia:</Text>
-            <Text style={styles.bold}>{frecuencia.toUpperCase()}</Text>
-          </View>
-          <View style={styles.calcRow}>
-            <Text style={styles.calcText}>Total con Interés:</Text>
+            <Text style={styles.calcText}>Saldo Actual Pendiente:</Text>
             <Text style={styles.bold}>
-              $ {montoTotal.toFixed(2)} {moneda}
+              ${" "}
+              {prestamoSeleccionado
+                ? prestamoSeleccionado.saldo_pendiente.toFixed(2)
+                : "0.00"}{" "}
+              {moneda}
             </Text>
           </View>
           <View style={styles.calcRow}>
-            <Text style={styles.calcText}>
-              Valor por Cuota ({cuotas} cuotas):
-            </Text>
+            <Text style={styles.calcText}>Monto a Abonar:</Text>
             <Text style={styles.boldPrimary}>
-              $ {valorCuota.toFixed(2)} {moneda}
+              $ {montoNum.toFixed(2)} {moneda}
+            </Text>
+          </View>
+          <View style={styles.calcRow}>
+            <Text style={styles.calcText}>Nuevo Saldo Resultante:</Text>
+            <Text style={styles.bold}>
+              ${" "}
+              {prestamoSeleccionado
+                ? Math.max(
+                    0,
+                    prestamoSeleccionado.saldo_pendiente - montoNum,
+                  ).toFixed(2)
+                : "0.00"}{" "}
+              {moneda}
             </Text>
           </View>
         </View>
 
         <TouchableOpacity
           style={[styles.button, loading && { opacity: 0.7 }]}
-          onPress={guardarPrestamo}
+          onPress={guardarPago}
           disabled={loading}
         >
           {loading ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.buttonText}>Registrar Préstamo</Text>
+            <Text style={styles.buttonText}>Registrar Pago</Text>
           )}
         </TouchableOpacity>
       </View>
 
       {/* MODAL DE SELECCIÓN DE CLIENTE */}
       <Modal
-        visible={modalVisible}
+        visible={modalClienteVisible}
         animationType="fade"
         transparent={true}
-        onRequestClose={() => setModalVisible(false)}
+        onRequestClose={() => setModalClienteVisible(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
@@ -574,7 +579,7 @@ export default function CrearPrestamoScreen({ route }: any) {
                 Buscar y Seleccionar Cliente
               </Text>
               <TouchableOpacity
-                onPress={() => setModalVisible(false)}
+                onPress={() => setModalClienteVisible(false)}
                 style={styles.closeBtn}
               >
                 <Text style={styles.closeBtnText}>✕</Text>
@@ -606,10 +611,7 @@ export default function CrearPrestamoScreen({ route }: any) {
                       styles.modalClientCard,
                       isSelected && styles.modalClientCardSelected,
                     ]}
-                    onPress={() => {
-                      setClienteSeleccionado(item.cedula);
-                      setModalVisible(false);
-                    }}
+                    onPress={() => handleSeleccionarCliente(item.cedula)}
                   >
                     <View style={{ flex: 1 }}>
                       <Text
@@ -652,6 +654,88 @@ export default function CrearPrestamoScreen({ route }: any) {
         </View>
       </Modal>
 
+      {/* MODAL DE SELECCIÓN DE PRÉSTAMO */}
+      <Modal
+        visible={modalPrestamoVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setModalPrestamoVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Seleccionar Préstamo Activo</Text>
+              <TouchableOpacity
+                onPress={() => setModalPrestamoVisible(false)}
+                style={styles.closeBtn}
+              >
+                <Text style={styles.closeBtnText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              style={styles.modalList}
+              contentContainerStyle={styles.modalListContent}
+              showsVerticalScrollIndicator={true}
+            >
+              {prestamosCliente.map((item) => {
+                const isSelected = prestamoSeleccionado?.id === item.id;
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[
+                      styles.modalClientCard,
+                      isSelected && styles.modalClientCardSelected,
+                    ]}
+                    onPress={() => {
+                      setPrestamoSeleccionado(item);
+                      setMoneda(item.moneda);
+                      setModalPrestamoVisible(false);
+                    }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={[
+                          styles.modalClientName,
+                          isSelected && styles.textWhite,
+                        ]}
+                      >
+                        Préstamo: $ {item.saldo_pendiente.toFixed(2)}{" "}
+                        {item.moneda}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.modalClientCedula,
+                          isSelected && styles.textWhiteSub,
+                        ]}
+                      >
+                        Cuota: $ {item.valor_cuota?.toFixed(2) || "0.00"} (
+                        {item.frecuencia})
+                      </Text>
+                    </View>
+                    {isSelected && (
+                      <View style={styles.badgeSelected}>
+                        <Text style={styles.badgeSelectedText}>
+                          ✓ Seleccionado
+                        </Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+
+              {prestamosCliente.length === 0 && (
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>
+                    Este cliente no tiene préstamos activos registrados.
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       {/* MODAL PERSONALIZADO DE RESULTADO (ÉXITO / ERROR) */}
       <Modal
         visible={modalResultadoVisible}
@@ -672,7 +756,7 @@ export default function CrearPrestamoScreen({ route }: any) {
               </Text>
             </View>
             <Text style={styles.modalExitoTitle}>
-              {tipoResultado === "exito" ? "¡Préstamo Registrado!" : "Atención"}
+              {tipoResultado === "exito" ? "¡Pago Registrado!" : "Atención"}
             </Text>
             <Text style={styles.modalExitoMessage}>{mensajeResultado}</Text>
             <TouchableOpacity
@@ -821,42 +905,6 @@ const styles = StyleSheet.create({
     borderColor: "#cbd5e1",
     fontSize: 16,
     color: "#1e293b",
-  },
-  frecuenciaContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-  frecuenciaBtn: {
-    width: "48%",
-    backgroundColor: "#f8fafc",
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  frecuenciaBtnActive: {
-    backgroundColor: "#0284c7",
-    borderColor: "#0284c7",
-  },
-  frecuenciaTxt: {
-    fontSize: 14,
-    color: "#1e293b",
-    fontWeight: "bold",
-  },
-  frecuenciaSubTxt: {
-    fontSize: 12,
-    color: "#64748b",
-    marginTop: 2,
-  },
-  frecuenciaTxtActive: {
-    color: "#fff",
-  },
-  frecuenciaSubTxtActive: {
-    color: "#e2e8f0",
   },
   calcBox: {
     backgroundColor: "#f8fafc",
@@ -1062,17 +1110,17 @@ const styles = StyleSheet.create({
   },
   successButton: {
     backgroundColor: "#10b981",
-    paddingVertical: 14,
+    paddingVertical: 12,
     paddingHorizontal: 32,
     borderRadius: 12,
-    width: "100%",
     alignItems: "center",
+    width: "100%",
   },
   errorButton: {
     backgroundColor: "#ef4444",
   },
   successButtonText: {
-    color: "#fff",
+    color: "#ffffff",
     fontSize: 16,
     fontWeight: "bold",
   },

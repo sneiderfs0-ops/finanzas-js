@@ -19,10 +19,53 @@ import { supabase } from "../../supabase";
 
 function CustomDrawerContent(props: any) {
   const router = useRouter();
+  const [canAccessPrivileged, setCanAccessPrivileged] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    verificarPermisosUsuario();
+  }, []);
+
+  const verificarPermisosUsuario = async () => {
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session || !session.user?.email) return;
+
+      const email = session.user.email.trim().toLowerCase();
+
+      // Verificar si es administrador
+      const { data: adminData } = await supabase
+        .from("administradores")
+        .select("*")
+        .eq("correo", email)
+        .maybeSingle();
+
+      if (adminData) {
+        setIsAdmin(true);
+        setCanAccessPrivileged(true);
+        return;
+      }
+
+      // Verificar si es secretaria
+      const { data: secretariaData } = await supabase
+        .from("secretaria")
+        .select("*")
+        .eq("correo", email)
+        .eq("aprobado", "aprobado")
+        .maybeSingle();
+
+      if (secretariaData) {
+        setCanAccessPrivileged(true);
+      }
+    } catch (error) {
+      console.error("Error al verificar permisos en el menú:", error);
+    }
+  };
 
   const handleSignOut = async () => {
     try {
-      // Se usa scope: 'local' para limpiar la sesión localmente y evitar errores 403 en web
       const { error } = await supabase.auth.signOut({ scope: "local" });
       if (error) {
         console.log("Error al cerrar sesión:", error.message);
@@ -48,19 +91,41 @@ function CustomDrawerContent(props: any) {
           <Text style={localStyles.navText}>🏠 Inicio</Text>
         </Pressable>
 
-        <Pressable
-          style={localStyles.navItem}
-          onPress={() => router.push("/(tabs)/caja")}
-        >
-          <Text style={localStyles.navText}>📊 Balance General</Text>
-        </Pressable>
+        {isAdmin && (
+          <Pressable
+            style={localStyles.navItem}
+            onPress={() => router.push("/(tabs)/caja")}
+          >
+            <Text style={localStyles.navText}>📊 Balance General</Text>
+          </Pressable>
+        )}
 
-        <Pressable
-          style={localStyles.navItem}
-          onPress={() => router.push("/(tabs)/empleados")}
-        >
-          <Text style={localStyles.navText}>👥 Empleados</Text>
-        </Pressable>
+        {canAccessPrivileged && (
+          <Pressable
+            style={localStyles.navItem}
+            onPress={() => router.push("/(tabs)/empleados")}
+          >
+            <Text style={localStyles.navText}>👥 Empleados</Text>
+          </Pressable>
+        )}
+
+        {isAdmin && (
+          <Pressable
+            style={localStyles.navItem}
+            onPress={() => router.push("/(tabs)/lista-prestamos")}
+          >
+            <Text style={localStyles.navText}>📋 Lista de Préstamos</Text>
+          </Pressable>
+        )}
+
+        {canAccessPrivileged && (
+          <Pressable
+            style={localStyles.navItem}
+            onPress={() => router.push("/(tabs)/lista-pagos")}
+          >
+            <Text style={localStyles.navText}>📋 Lista de Cobros Semanal</Text>
+          </Pressable>
+        )}
 
         <Pressable
           style={localStyles.navItem}
@@ -78,23 +143,16 @@ function CustomDrawerContent(props: any) {
 
         <Pressable
           style={localStyles.navItem}
-          onPress={() => router.push("/(tabs)/detalle-prestamo")}
-        >
-          <Text style={localStyles.navText}>💸 Cobros</Text>
-        </Pressable>
-
-        <Pressable
-          style={localStyles.navItem}
-          onPress={() => router.push("/(tabs)/lista-prestamos")}
-        >
-          <Text style={localStyles.navText}>📋 Lista de Préstamos</Text>
-        </Pressable>
-
-        <Pressable
-          style={localStyles.navItem}
           onPress={() => router.push("/(tabs)/crear-prestamo")}
         >
           <Text style={localStyles.navText}>📝 Nuevo Préstamo</Text>
+        </Pressable>
+
+        <Pressable
+          style={localStyles.navItem}
+          onPress={() => router.push("/(tabs)/pagos")}
+        >
+          <Text style={localStyles.navText}>📝 Registrar pago de clientes</Text>
         </Pressable>
 
         <Pressable
@@ -103,16 +161,15 @@ function CustomDrawerContent(props: any) {
         >
           <Text style={localStyles.navText}>📉 Gastos</Text>
         </Pressable>
-
-        <Pressable
-          style={localStyles.navItem}
-          onPress={() => router.push("/(tabs)/cierre-caja")}
-        >
-          <Text style={localStyles.navText}>📈 Cierre de Caja</Text>
-        </Pressable>
       </View>
 
       <View style={localStyles.drawerFooter}>
+        <Pressable
+          style={localStyles.navItem}
+          onPress={() => router.push("/(tabs)/informacion-perfil")}
+        >
+          <Text style={localStyles.navText}>Configuración</Text>
+        </Pressable>
         <Pressable style={localStyles.logoutBtn} onPress={handleSignOut}>
           <Text style={localStyles.logoutBtnText}>🚪 Cerrar Sesión</Text>
         </Pressable>
@@ -121,7 +178,6 @@ function CustomDrawerContent(props: any) {
   );
 }
 
-// Componente Integrado de Notificaciones con la lógica de solicitudes
 function NotificacionesEmpleadosHeader() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
@@ -160,15 +216,21 @@ function NotificacionesEmpleadosHeader() {
 
   const cargarSolicitudesPendientes = async () => {
     try {
-      const { data: empPendientes } = await supabase
+      const { data: empPendientes, error: errEmp } = await supabase
         .from("empleados")
         .select("*")
         .eq("aprobado", "pendiente");
 
-      const { data: secPendientes } = await supabase
+      if (errEmp)
+        console.error("Error cargando empleados pendientes:", errEmp.message);
+
+      const { data: secPendientes, error: errSec } = await supabase
         .from("secretaria")
         .select("*")
         .eq("aprobado", "pendiente");
+
+      if (errSec)
+        console.error("Error cargando secretarias pendientes:", errSec.message);
 
       const listaEmpleados = (empPendientes || []).map((item) => ({
         ...item,
@@ -200,29 +262,40 @@ function NotificacionesEmpleadosHeader() {
   };
 
   const gestionarSolicitud = async (
-    id: string,
+    idRegistro: string,
     tablaDestino: string,
-    nuevoEstado: "aprobado" | "denegado",
+    accion: "aprobado" | "eliminar",
   ) => {
     try {
-      const { error } = await supabase
-        .from(tablaDestino)
-        .update({ aprobado: nuevoEstado })
-        .eq("id", id);
+      if (accion === "eliminar") {
+        // Borra directamente el registro de la base de datos para no acumular basura
+        const { error } = await supabase
+          .from(tablaDestino)
+          .delete()
+          .eq("id", idRegistro);
 
-      if (error) throw error;
-
-      if (nuevoEstado === "aprobado") {
-        Alert.alert("Éxito", "Usuario aprobado correctamente en el sistema.");
+        if (error) throw error;
+        Alert.alert(
+          "Aviso",
+          "La solicitud fue denegada y el registro se eliminó correctamente.",
+        );
       } else {
-        Alert.alert("Aviso", "La solicitud ha sido denegada.");
+        // Actualiza el estado a aprobado
+        const { error } = await supabase
+          .from(tablaDestino)
+          .update({ aprobado: "aprobado" })
+          .eq("id", idRegistro);
+
+        if (error) throw error;
+        Alert.alert("Éxito", "Usuario aprobado correctamente en el sistema.");
       }
 
       await cargarSolicitudesPendientes();
     } catch (error: any) {
       Alert.alert(
         "Error",
-        error.message || "No se pudo procesar la solicitud.",
+        error.message ||
+          "No se pudo procesar la solicitud en la base de datos.",
       );
     }
   };
@@ -270,8 +343,11 @@ function NotificacionesEmpleadosHeader() {
                   No hay solicitudes pendientes en este momento.
                 </Text>
               ) : (
-                pendientes.map((item) => (
-                  <View key={item.id} style={localStyles.cardItem}>
+                pendientes.map((item, index) => (
+                  <View
+                    key={item.id || item.correo || index}
+                    style={localStyles.cardItem}
+                  >
                     <View style={{ flex: 1, marginRight: 8 }}>
                       <Text style={localStyles.cardName}>
                         {item.nombres} {item.apellidos}
@@ -300,7 +376,7 @@ function NotificacionesEmpleadosHeader() {
                           gestionarSolicitud(
                             item.id,
                             item.tablaDestino,
-                            "denegado",
+                            "eliminar",
                           )
                         }
                       >
@@ -417,12 +493,18 @@ export default function TabLayout() {
         options={{ title: "Nuevo Préstamo", headerRight: renderHeaderRight }}
       />
       <Drawer.Screen
-        name="detalle-prestamo"
-        options={{ title: "Cobros", headerRight: renderHeaderRight }}
+        name="lista-prestamos"
+        options={{
+          title: "Lista de Préstamos",
+          headerRight: renderHeaderRight,
+        }}
       />
       <Drawer.Screen
-        name="lista-prestamos"
-        options={{ title: "Lista Préstamos", headerRight: renderHeaderRight }}
+        name="lista-pagos"
+        options={{
+          title: "Lista de Cobros Semanales",
+          headerRight: renderHeaderRight,
+        }}
       />
       <Drawer.Screen
         name="gastos"
@@ -437,8 +519,15 @@ export default function TabLayout() {
         options={{ title: "Empleados", headerRight: renderHeaderRight }}
       />
       <Drawer.Screen
-        name="cierre-caja"
-        options={{ title: "Cierre de Caja", headerRight: renderHeaderRight }}
+        name="pagos"
+        options={{ title: "Pagos de clientes", headerRight: renderHeaderRight }}
+      />
+      <Drawer.Screen
+        name="informacion-perfil"
+        options={{
+          title: "Configuración del perfil",
+          headerRight: renderHeaderRight,
+        }}
       />
     </Drawer>
   );

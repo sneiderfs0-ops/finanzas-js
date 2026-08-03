@@ -36,14 +36,14 @@ export default function GestionEmpleadosScreen() {
   const [empleadoSeleccionado, setEmpleadoSeleccionado] =
     useState<Empleado | null>(null);
 
-  // Estados para los nuevos Modales de Confirmación Personalizados
+  // Estados para los Modales de Confirmación Personalizados
   const [modalConfirmarEstadoVisible, setModalConfirmarEstadoVisible] =
     useState(false);
   const [modalConfirmarBorrarVisible, setModalConfirmarBorrarVisible] =
     useState(false);
   const [empleadoAccion, setEmpleadoAccion] = useState<Empleado | null>(null);
 
-  // Campos para editar (solo correo y teléfono editables)
+  // Campos para editar (correo y teléfono)
   const [correoEdit, setCorreoEdit] = useState("");
   const [telefonoEdit, setTelefonoEdit] = useState("");
 
@@ -91,7 +91,7 @@ export default function GestionEmpleadosScreen() {
       return;
     }
 
-    // 3. Si no está en ninguna de las anteriores, se asume empleado (Acceso Denegado)
+    // 3. Si no es ni admin ni secretaria, se bloquea el acceso
     setRolUsuario("empleado");
     setLoading(false);
   };
@@ -111,7 +111,7 @@ export default function GestionEmpleadosScreen() {
     setLoading(false);
   };
 
-  // Ejecutar Cambio de Estado
+  // Ejecutar Cambio de Estado (Activar / Desactivar)
   const confirmarCambioEstado = async () => {
     if (!empleadoAccion) return;
 
@@ -130,7 +130,7 @@ export default function GestionEmpleadosScreen() {
     } else if (!data || data.length === 0) {
       Alert.alert(
         "Aviso",
-        "No se aplicaron cambios. Revisa las políticas RLS.",
+        "No se aplicaron cambios. Verifica las políticas RLS en Supabase para la tabla empleados.",
       );
     } else {
       cargarEmpleados();
@@ -152,6 +152,7 @@ export default function GestionEmpleadosScreen() {
     if (error) {
       Alert.alert("Error", "No se pudo eliminar el empleado: " + error.message);
     } else {
+      Alert.alert("Éxito", "Empleado eliminado correctamente.");
       cargarEmpleados();
     }
   };
@@ -197,7 +198,7 @@ export default function GestionEmpleadosScreen() {
     );
   }
 
-  // Vista bloqueada para empleados
+  // Vista bloqueada para empleados comunes
   if (rolUsuario === "empleado") {
     return (
       <View style={localStyles.loaderContainer}>
@@ -228,7 +229,7 @@ export default function GestionEmpleadosScreen() {
         <View>
           <Text style={localStyles.headerTitle}>Gestión de Empleados</Text>
           <Text style={localStyles.subtitle}>
-            Control de personal y accesos
+            Control de personal y accesos ({rolUsuario})
           </Text>
         </View>
       </View>
@@ -292,7 +293,6 @@ export default function GestionEmpleadosScreen() {
                 <Text style={localStyles.actionBtnText}>Ver</Text>
               </TouchableOpacity>
 
-              {/* Botón Activar / Desactivar con Modal */}
               <TouchableOpacity
                 style={[
                   localStyles.actionBtn,
@@ -322,7 +322,6 @@ export default function GestionEmpleadosScreen() {
                 <Text style={localStyles.actionBtnText}>Editar</Text>
               </TouchableOpacity>
 
-              {/* Botón Borrar con Modal */}
               <TouchableOpacity
                 style={[
                   localStyles.actionBtn,
@@ -345,7 +344,7 @@ export default function GestionEmpleadosScreen() {
         }
       />
 
-      {/* MODAL: CONFIRMAR CAMBIO DE ESTADO (ACTIVAR / DESACTIVAR) */}
+      {/* MODAL: CONFIRMAR CAMBIO DE ESTADO */}
       <Modal
         visible={modalConfirmarEstadoVisible}
         transparent
@@ -373,7 +372,7 @@ export default function GestionEmpleadosScreen() {
                   setEmpleadoAccion(null);
                 }}
               >
-                <Text style={localStyles.actionBtnText}>Denegar</Text>
+                <Text style={localStyles.actionBtnText}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
@@ -416,7 +415,7 @@ export default function GestionEmpleadosScreen() {
                   setEmpleadoAccion(null);
                 }}
               >
-                <Text style={localStyles.actionBtnText}>Denegar</Text>
+                <Text style={localStyles.actionBtnText}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
@@ -425,7 +424,7 @@ export default function GestionEmpleadosScreen() {
                 ]}
                 onPress={confirmarBorrarEmpleado}
               >
-                <Text style={localStyles.actionBtnText}>Aceptar</Text>
+                <Text style={localStyles.actionBtnText}>Eliminar</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -497,8 +496,7 @@ export default function GestionEmpleadosScreen() {
         <View style={globalStyles.modalOverlay}>
           <View style={globalStyles.modalContent}>
             <Text style={globalStyles.modalTitle}>Editar Contacto</Text>
-            <ScrollView>
-              {/* Campos visuales de solo lectura: Nombres, Apellidos y Cédula */}
+            <ScrollView style={{ width: "100%" }}>
               <Text style={localStyles.inputLabel}>Nombres</Text>
               <TextInput
                 style={[
@@ -538,7 +536,6 @@ export default function GestionEmpleadosScreen() {
                 editable={false}
               />
 
-              {/* Campos editables: Correo y Teléfono */}
               <Text style={localStyles.inputLabel}>Correo Electrónico</Text>
               <TextInput
                 style={localStyles.inputModal}
@@ -673,14 +670,14 @@ const localStyles = StyleSheet.create({
   },
   actionBtn: {
     paddingVertical: 8,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     borderRadius: 6,
     alignItems: "center",
     justifyContent: "center",
   },
   actionBtnText: {
     color: colors.textPrimary,
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: "bold",
   },
   emptyText: {

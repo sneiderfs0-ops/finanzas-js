@@ -371,7 +371,7 @@ export default function CajaScreen() {
 
         <View style={[styles.card, styles.cardGanancia]}>
           <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitleGanancia}>Ganancia Neta</Text>
+            <Text style={styles.cardTitleGanancia}>Ganancia</Text>
             <Text style={styles.monedaBadgeGanancia}>USD</Text>
           </View>
           <Text style={styles.cardValueGanancia}>
@@ -384,7 +384,7 @@ export default function CajaScreen() {
 
         <View style={[styles.card, styles.cardGanancia]}>
           <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitleGanancia}>Ganancia Neta</Text>
+            <Text style={styles.cardTitleGanancia}>Ganancia</Text>
             <Text style={styles.monedaBadgeGanancia}>COP</Text>
           </View>
           <Text style={styles.cardValueGanancia}>

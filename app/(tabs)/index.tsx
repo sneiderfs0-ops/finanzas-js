@@ -145,8 +145,6 @@ export default function IndexScreen() {
   const cargarResumenPersonal = async (cedulaEmpleado: string) => {
     const hoy = new Date().toISOString().split("T")[0];
 
-    // Nota: Asegúrate de que tu tabla 'prestamos' y 'pagos' tengan una columna como 'cedula_empleado' o 'usuario_cedula'
-    // que relacione quién hizo el préstamo o cobro. Ajusta el nombre de la columna si es distinto (ej. 'empleado_cedula').
     const { data: prestamos } = await supabase
       .from("prestamos")
       .select("monto_total, fecha_prestamo")
@@ -183,8 +181,10 @@ export default function IndexScreen() {
       if (item.moneda === "USD") usd += saldo;
       if (item.moneda === "COP") cop += saldo;
     });
-    setTotalCajasUSD(usd);
-    setTotalCajasCOP(cop);
+
+    // Validar si el total es negativo y asignarle 0
+    setTotalCajasUSD(usd < 0 ? 0 : usd);
+    setTotalCajasCOP(cop < 0 ? 0 : cop);
   };
 
   const cargarClientesYEmpleados = async () => {
@@ -619,7 +619,6 @@ const styles = StyleSheet.create({
   menuDesc: {
     fontSize: 11,
     color: "#94a3b8",
-    lineLink: 15,
     marginTop: 4,
   },
   saldosContainer: {

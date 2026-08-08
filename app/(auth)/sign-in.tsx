@@ -232,13 +232,13 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </Link>
         </View>
-        {/*  <View style={styles.registerContainer}>
+        <View style={styles.registerContainer}>
           <Link href="/(auth)/forgot" asChild>
             <TouchableOpacity>
               <Text style={styles.registerLink}>¿Olvidaste tu contraseña?</Text>
             </TouchableOpacity>
           </Link>
-        </View>*/}
+        </View>
       </View>
 
       {/* --- PANTALLA EMERGENTE (MODAL) ELEGANTE --- */}

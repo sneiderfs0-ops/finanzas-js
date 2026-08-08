@@ -71,8 +71,7 @@ export default function ForgotPasswordScreen() {
       const { error } = await supabase.auth.resetPasswordForEmail(
         emailTrimmed,
         {
-          redirectTo:
-            "https://finanzas-sneider-giedkl3ft-finanzas-sneider.vercel.app/forgot", // Reemplaza con tu esquema o URL de redirección
+          redirectTo: "https://finanzas-sneider.vercel.app/forgot", // Reemplaza con tu esquema o URL de redirección
         },
       );
 

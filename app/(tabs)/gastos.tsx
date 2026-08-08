@@ -123,7 +123,6 @@ export default function GastosScreen() {
   };
 
   const cargarGastos = async (rol: string, cedula: string) => {
-    // Si es admin o secretaría, traemos todos los gastos. Si es empleado, se pueden ver los suyos o todos (aquí traemos todos para que admin/secretaría los vean sin problema).
     let query = supabase
       .from("gastos")
       .select("*")
@@ -200,7 +199,6 @@ export default function GastosScreen() {
     const cajaIdSeleccionada = obtenerCajaIdAutomatica();
     const esEmpleado = rolUsuario === "empleado" || rolUsuario === "empleados";
 
-    // Si es empleado, la categoría se asigna automáticamente como 'otro' (cumpliendo con el CHECK de la BD)
     const categoriaFinal = esEmpleado
       ? "otro"
       : categoria === "otro"
@@ -371,7 +369,10 @@ export default function GastosScreen() {
   const esEmpleado = rolUsuario === "empleado" || rolUsuario === "empleados";
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView
+      contentContainerStyle={styles.container}
+      showsVerticalScrollIndicator={true}
+    >
       <View style={styles.mainWrapper}>
         <Text style={styles.headerTitle}>Registro de Gastos y Pagos</Text>
         <Text style={styles.subtitle}>
@@ -382,7 +383,6 @@ export default function GastosScreen() {
 
         {/* Formulario */}
         <View style={styles.formCard}>
-          {/* Si es Admin o Secretaría ven las opciones completas de categoría */}
           {esAdminSecretaria && (
             <>
               <Text style={styles.label}>Categoría de Gasto:</Text>
@@ -425,7 +425,6 @@ export default function GastosScreen() {
             </>
           )}
 
-          {/* Si es empleado se le avisa que la categoría es automática */}
           {esEmpleado && (
             <View style={styles.badgeEmpleadoContainer}>
               <Text style={styles.badgeEmpleadoText}>
@@ -509,7 +508,6 @@ export default function GastosScreen() {
             placeholderTextColor={colors.textSecondary}
           />
 
-          {/* Botón dinámico según rol */}
           {esEmpleado ? (
             <TouchableOpacity
               style={styles.employeeButton}
@@ -539,7 +537,7 @@ export default function GastosScreen() {
           )}
         </View>
 
-        {/* Sección Tabla de Historial (Visible para todos o restringida según prefieras; aquí la ven Admin y Secretaría) */}
+        {/* Sección Tabla de Historial con Scroll Horizontal para Web / Pantallas Pequeñas */}
         {esAdminSecretaria ? (
           <>
             <Text style={styles.sectionTitle}>
@@ -570,53 +568,65 @@ export default function GastosScreen() {
               </View>
             </View>
 
-            <View style={styles.tableContainer}>
-              <View style={styles.tableHeader}>
-                <Text style={[styles.th, { flex: 1.2 }]}>Fecha</Text>
-                <Text style={[styles.th, { flex: 2.5 }]}>Descripción</Text>
-                <Text style={[styles.th, { flex: 2.5 }]}>Responsable</Text>
-                <Text style={[styles.th, { flex: 1.5 }]}>Categoría</Text>
-                <Text style={[styles.th, { flex: 1 }]}>Moneda</Text>
-                <Text style={[styles.th, { flex: 1.2, textAlign: "right" }]}>
-                  Monto
-                </Text>
-              </View>
-
-              {gastosFiltrados.map((item) => (
-                <View key={item.id} style={styles.tableRow}>
-                  <Text style={[styles.td, { flex: 1.2 }]}>{item.fecha}</Text>
-                  <Text style={[styles.td, { flex: 2.5 }]} numberOfLines={2}>
-                    {item.descripcion}
-                  </Text>
-                  <Text style={[styles.td, { flex: 2.5 }]} numberOfLines={1}>
-                    {item.nombreResponsable}
-                  </Text>
-                  <Text style={[styles.td, { flex: 1.5 }]} numberOfLines={1}>
-                    {item.categoria}
-                  </Text>
-                  <Text style={[styles.td, { flex: 1 }]}>{item.moneda}</Text>
-                  <Text
-                    style={[
-                      styles.td,
-                      {
-                        flex: 1.2,
-                        textAlign: "right",
-                        fontWeight: "bold",
-                        color: "#e74c3c",
-                      },
-                    ]}
-                  >
-                    ${Number(item.monto).toLocaleString()}
+            <ScrollView
+              horizontal={true}
+              showsHorizontalScrollIndicator={true}
+              style={styles.horizontalScrollWrapper}
+            >
+              <View style={styles.tableContainer}>
+                <View style={styles.tableHeader}>
+                  <Text style={[styles.th, { width: 110 }]}>Fecha</Text>
+                  <Text style={[styles.th, { width: 220 }]}>Descripción</Text>
+                  <Text style={[styles.th, { width: 220 }]}>Responsable</Text>
+                  <Text style={[styles.th, { width: 140 }]}>Categoría</Text>
+                  <Text style={[styles.th, { width: 90 }]}>Moneda</Text>
+                  <Text style={[styles.th, { width: 120, textAlign: "right" }]}>
+                    Monto
                   </Text>
                 </View>
-              ))}
 
-              {gastosFiltrados.length === 0 && (
-                <Text style={styles.emptyText}>
-                  No se encontraron registros de gastos.
-                </Text>
-              )}
-            </View>
+                {gastosFiltrados.map((item) => (
+                  <View key={item.id} style={styles.tableRow}>
+                    <Text style={[styles.td, { width: 110 }]}>
+                      {item.fecha}
+                    </Text>
+                    <Text style={[styles.td, { width: 220 }]} numberOfLines={2}>
+                      {item.descripcion}
+                    </Text>
+                    <Text style={[styles.td, { width: 220 }]} numberOfLines={1}>
+                      {item.nombreResponsable}
+                    </Text>
+                    <Text style={[styles.td, { width: 140 }]} numberOfLines={1}>
+                      {item.categoria}
+                    </Text>
+                    <Text style={[styles.td, { width: 90 }]}>
+                      {item.moneda}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.td,
+                        {
+                          width: 120,
+                          textAlign: "right",
+                          fontWeight: "bold",
+                          color: "#e74c3c",
+                        },
+                      ]}
+                    >
+                      ${Number(item.monto).toLocaleString()}
+                    </Text>
+                  </View>
+                ))}
+
+                {gastosFiltrados.length === 0 && (
+                  <View style={styles.emptyContainer}>
+                    <Text style={styles.emptyText}>
+                      No se encontraron registros de gastos.
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </ScrollView>
           </>
         ) : (
           <View style={styles.infoCardEmpleados}>
@@ -665,7 +675,8 @@ const styles = StyleSheet.create({
   },
   mainWrapper: {
     width: "100%",
-    maxWidth: "100%",
+    maxWidth: 1200,
+    alignSelf: "center",
   },
   headerTitle: { fontSize: 24, fontWeight: "bold", color: colors.textPrimary },
   subtitle: { fontSize: 14, color: colors.textSecondary, marginBottom: 16 },
@@ -787,9 +798,13 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   exportText: { color: "#fff", fontWeight: "bold", fontSize: 13 },
-  tableContainer: {
+  horizontalScrollWrapper: {
     width: "100%",
     marginBottom: 20,
+  },
+  tableContainer: {
+    width: 900,
+    marginBottom: 10,
   },
   tableHeader: {
     flexDirection: "row",
@@ -799,7 +814,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 8,
     borderWidth: 1,
     borderColor: colors.border,
-    width: "100%",
   },
   th: { fontWeight: "bold", color: colors.accentBlue, fontSize: 13 },
   tableRow: {
@@ -811,13 +825,22 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: colors.border,
     alignItems: "center",
-    width: "100%",
   },
   td: { fontSize: 13, color: colors.textPrimary },
+  emptyContainer: {
+    padding: 20,
+    backgroundColor: colors.cardBackground,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
+    alignItems: "center",
+  },
   emptyText: {
     textAlign: "center",
     color: colors.textSecondary,
-    marginTop: 20,
     fontSize: 14,
   },
   infoCardEmpleados: {
@@ -863,7 +886,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 15,
     fontWeight: "bold",
     color: colors.textPrimary,
     marginBottom: 10,

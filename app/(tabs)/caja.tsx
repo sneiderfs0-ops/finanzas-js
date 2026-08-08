@@ -8,6 +8,7 @@ import {
   Platform,
   TouchableOpacity,
   Alert,
+  useWindowDimensions,
 } from "react-native";
 import { supabase } from "../../supabase";
 import { globalStyles } from "@/constants/globalStyles";
@@ -22,6 +23,10 @@ interface Caja {
 }
 
 export default function CajaScreen() {
+  const { width } = useWindowDimensions();
+  // Si el ancho es menor a 768px (pantallas tipo tablet pequeña / móvil), se muestra a 1 columna
+  const isMobile = width < 768 || Platform.OS !== "web";
+
   const [cajas, setCajas] = useState<Caja[]>([]);
   const [dineroEnCalleUSD, setDineroEnCalleUSD] = useState(0);
   const [dineroEnCalleCOP, setDineroEnCalleCOP] = useState(0);
@@ -294,7 +299,9 @@ export default function CajaScreen() {
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={true}
     >
-      <View style={styles.topHeaderRow}>
+      <View
+        style={[styles.topHeaderRow, isMobile && styles.topHeaderRowMobile]}
+      >
         <View style={styles.headerContainer}>
           <Text style={styles.headerTitle}>Control de Caja y Bancos</Text>
           <Text style={styles.subtitle}>
@@ -304,7 +311,7 @@ export default function CajaScreen() {
         </View>
 
         <TouchableOpacity
-          style={styles.pdfButton}
+          style={[styles.pdfButton, isMobile && styles.pdfButtonMobile]}
           onPress={handleDownloadPDF}
           disabled={generatingPdf}
         >
@@ -320,7 +327,14 @@ export default function CajaScreen() {
         {cajas.map((caja) => {
           const saldoLimpio = Math.max(0, Number(caja.saldo_actual || 0));
           return (
-            <View key={caja.id} style={[styles.card, styles.cardCaja]}>
+            <View
+              key={caja.id}
+              style={[
+                styles.card,
+                styles.cardCaja,
+                { width: isMobile ? "100%" : "48.5%" },
+              ]}
+            >
               <View style={styles.cardHeaderRow}>
                 <Text style={styles.cardTitle}>{caja.nombre}</Text>
                 <Text style={styles.monedaBadge}>{caja.moneda}</Text>
@@ -335,7 +349,13 @@ export default function CajaScreen() {
           );
         })}
 
-        <View style={[styles.card, styles.cardCalle]}>
+        <View
+          style={[
+            styles.card,
+            styles.cardCalle,
+            { width: isMobile ? "100%" : "48.5%" },
+          ]}
+        >
           <View style={styles.cardHeaderRow}>
             <Text style={styles.cardTitleCalle}>Dinero en la Calle</Text>
             <Text style={styles.monedaBadgeCalle}>USD</Text>
@@ -348,7 +368,13 @@ export default function CajaScreen() {
           </Text>
         </View>
 
-        <View style={[styles.card, styles.cardCalle]}>
+        <View
+          style={[
+            styles.card,
+            styles.cardCalle,
+            { width: isMobile ? "100%" : "48.5%" },
+          ]}
+        >
           <View style={styles.cardHeaderRow}>
             <Text style={styles.cardTitleCalle}>Dinero en la Calle</Text>
             <Text style={styles.monedaBadgeCalle}>COP</Text>
@@ -361,7 +387,13 @@ export default function CajaScreen() {
           </Text>
         </View>
 
-        <View style={[styles.card, styles.cardGastos]}>
+        <View
+          style={[
+            styles.card,
+            styles.cardGastos,
+            { width: isMobile ? "100%" : "48.5%" },
+          ]}
+        >
           <View style={styles.cardHeaderRow}>
             <Text style={styles.cardTitleGastos}>Total Gastos</Text>
             <Text style={styles.monedaBadgeGastos}>USD</Text>
@@ -374,7 +406,13 @@ export default function CajaScreen() {
           </Text>
         </View>
 
-        <View style={[styles.card, styles.cardGastos]}>
+        <View
+          style={[
+            styles.card,
+            styles.cardGastos,
+            { width: isMobile ? "100%" : "48.5%" },
+          ]}
+        >
           <View style={styles.cardHeaderRow}>
             <Text style={styles.cardTitleGastos}>Total Gastos</Text>
             <Text style={styles.monedaBadgeGastos}>COP</Text>
@@ -388,7 +426,13 @@ export default function CajaScreen() {
         </View>
 
         {/* Tarjeta Ganancia Neta Acumulada USD */}
-        <View style={[styles.card, styles.cardGanancia]}>
+        <View
+          style={[
+            styles.card,
+            styles.cardGanancia,
+            { width: isMobile ? "100%" : "48.5%" },
+          ]}
+        >
           <View style={styles.cardHeaderRow}>
             <Text style={styles.cardTitleGanancia}>Ganancia Neta</Text>
             <Text style={styles.monedaBadgeGanancia}>USD</Text>
@@ -402,7 +446,13 @@ export default function CajaScreen() {
         </View>
 
         {/* Tarjeta Ganancia Neta Acumulada COP */}
-        <View style={[styles.card, styles.cardGanancia]}>
+        <View
+          style={[
+            styles.card,
+            styles.cardGanancia,
+            { width: isMobile ? "100%" : "48.5%" },
+          ]}
+        >
           <View style={styles.cardHeaderRow}>
             <Text style={styles.cardTitleGanancia}>Ganancia Neta</Text>
             <Text style={styles.monedaBadgeGanancia}>COP</Text>
@@ -434,12 +484,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   topHeaderRow: {
-    flexDirection: Platform.OS === "web" ? "row" : "column",
+    flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: Platform.OS === "web" ? "flex-start" : "stretch",
+    alignItems: "flex-start",
     marginBottom: 20,
     gap: 12,
   },
+  topHeaderRowMobile: {
+    flexDirection: "column",
+    alignometr: "stretch",
+  } as any,
   headerContainer: {
     flex: 1,
   },
@@ -466,7 +520,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 3,
-    alignSelf: Platform.OS === "web" ? "auto" : "flex-end",
+  },
+  pdfButtonMobile: {
+    alignSelf: "flex-end",
   },
   pdfButtonText: {
     color: "#ffffff",
@@ -483,7 +539,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20,
     marginBottom: 16,
-    width: Platform.OS === "web" ? "48.5%" : "100%",
     shadowColor: "#64748b",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,

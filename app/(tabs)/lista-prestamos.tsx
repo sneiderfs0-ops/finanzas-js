@@ -10,10 +10,14 @@ import {
   ActivityIndicator,
   ScrollView,
   Platform,
+  useWindowDimensions,
 } from "react-native";
 import { supabase } from "../../supabase";
 
 export default function ListaPrestamosScreen() {
+  const { width } = useWindowDimensions();
+  const esPantallaPequena = width < 768; // Detecta móviles y pantallas estrechas
+
   const [prestamos, setPrestamos] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [verificandoRol, setVerificandoRol] = useState(true);
@@ -429,19 +433,35 @@ export default function ListaPrestamosScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.headerTitleRow}>
+      <View
+        style={[
+          styles.headerTitleRow,
+          { flexDirection: esPantallaPequena ? "column" : "row" },
+        ]}
+      >
         <View>
           <Text style={styles.title}>Gestión y Detalles de Préstamos</Text>
         </View>
-        <View style={styles.globalExportRow}>
+        <View
+          style={[
+            styles.globalExportRow,
+            { flexDirection: esPantallaPequena ? "column" : "row" },
+          ]}
+        >
           <TouchableOpacity
-            style={styles.btnGlobalExcel}
+            style={[
+              styles.btnGlobalExcel,
+              { width: esPantallaPequena ? "100%" : "auto" },
+            ]}
             onPress={exportarExcelTablaGeneral}
           >
             <Text style={styles.btnExportText}>📥 Descargar Excel</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.btnGlobalPdf}
+            style={[
+              styles.btnGlobalPdf,
+              { width: esPantallaPequena ? "100%" : "auto" },
+            ]}
             onPress={exportarPDFTablaGeneral}
           >
             <Text style={styles.btnExportText}>📥 Descargar PDF</Text>
@@ -857,24 +877,23 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#f8fafc",
     padding: 16,
-    ...(Platform.OS === "web"
-      ? {
-          width: "100%",
-          minHeight: "100vh",
-          boxSizing: "border-box",
-        }
-      : {}),
+    width: "100%",
+  },
+  loaderContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
   },
   headerTitleRow: {
-    flexDirection: Platform.OS === "web" ? "row" : "column",
     justifyContent: "space-between",
-    alignItems: Platform.OS === "web" ? "center" : "flex-start",
+    alignItems: "center",
     marginBottom: 16,
     gap: 12,
   },
   title: {
     fontSize: 22,
-    fontWeight: "bold",
+    fontWeight: "700",
     color: "#0f172a",
   },
   subtitle: {
@@ -882,20 +901,21 @@ const styles = StyleSheet.create({
     color: "#64748b",
   },
   globalExportRow: {
-    flexDirection: "row",
     gap: 8,
   },
   btnGlobalExcel: {
     backgroundColor: "#16a34a",
-    paddingVertical: 8,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     borderRadius: 6,
+    alignItems: "center",
   },
   btnGlobalPdf: {
     backgroundColor: "#dc2626",
-    paddingVertical: 8,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     borderRadius: 6,
+    alignItems: "center",
   },
   btnExportText: {
     color: "#ffffff",
@@ -904,83 +924,75 @@ const styles = StyleSheet.create({
   },
   filtersWrapper: {
     backgroundColor: "#ffffff",
-    padding: 14,
+    padding: 12,
     borderRadius: 8,
     marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
   },
   searchContainer: {
-    marginBottom: 12,
+    marginBottom: 10,
   },
   searchInput: {
     borderWidth: 1,
     borderColor: "#cbd5e1",
     borderRadius: 6,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
+    paddingVertical: 8,
     backgroundColor: "#f8fafc",
     color: "#0f172a",
+    fontSize: 14,
+    width: "100%",
   },
   filtroContainer: {
-    gap: 8,
+    gap: 6,
   },
   filtroLabel: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "600",
-    color: "#334155",
+    color: "#475569",
   },
   inputsFechaRow: {
-    flexDirection: Platform.OS === "web" ? "row" : "column",
-    gap: 10,
+    flexDirection: "row",
+    gap: 8,
   },
   inputFecha: {
     flex: 1,
     borderWidth: 1,
     borderColor: "#cbd5e1",
     borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 13,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     backgroundColor: "#f8fafc",
     color: "#0f172a",
+    fontSize: 13,
   },
   botonesFiltroRow: {
     flexDirection: "row",
-    gap: 10,
+    gap: 8,
     marginTop: 4,
   },
   btnFiltrar: {
     backgroundColor: "#4f46e5",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
     borderRadius: 6,
   },
   btnFiltrarText: {
     color: "#ffffff",
+    fontSize: 12,
     fontWeight: "600",
-    fontSize: 13,
   },
   btnLimpiar: {
     backgroundColor: "#e2e8f0",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
     borderRadius: 6,
   },
   btnLimpiarText: {
     color: "#334155",
+    fontSize: 12,
     fontWeight: "600",
-    fontSize: 13,
-  },
-  loaderContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 40,
   },
   tableFullContainer: {
     flex: 1,
@@ -989,107 +1001,102 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#e2e8f0",
     overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
   },
   horizontalScrollContent: {
     flexGrow: 1,
-    ...(Platform.OS === "web" ? { minWidth: "100%" } : {}),
+    width: Platform.OS === "web" ? "100%" : undefined,
   },
   tableInnerWrapper: {
-    ...(Platform.OS === "web" ? { width: "100%" } : { width: 1350 }),
+    width: Platform.OS === "web" ? "100%" : 1200,
   },
   gridRow: {
     flexDirection: "row",
     borderBottomWidth: 1,
     borderBottomColor: "#f1f5f9",
     alignItems: "center",
-    minHeight: 52,
+    minHeight: 48,
   },
   gridHeader: {
     backgroundColor: "#0f172a",
     borderBottomWidth: 0,
+    minHeight: 42,
   },
   rowAlternate: {
     backgroundColor: "#f8fafc",
   },
   gridCell: {
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     justifyContent: "center",
   },
-  headerText: {
-    color: "#ffffff",
-    fontWeight: "600",
-    fontSize: 12,
-    textTransform: "uppercase",
-  },
-  cellText: {
-    fontSize: 13,
-    color: "#334155",
-  },
-  cellTextBold: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#0f172a",
-  },
-  subCedula: {
-    fontSize: 11,
-    color: "#64748b",
-  },
-  colFecha: { ...(Platform.OS === "web" ? { flex: 0.8 } : { width: 100 }) },
-  colCliente: { ...(Platform.OS === "web" ? { flex: 1.5 } : { width: 190 }) },
-  colMonto: { ...(Platform.OS === "web" ? { flex: 1 } : { width: 120 }) },
-  colMoneda: { ...(Platform.OS === "web" ? { flex: 0.7 } : { width: 90 }) },
-  colPorcentaje: {
-    ...(Platform.OS === "web" ? { flex: 0.8 } : { width: 100 }),
-  },
-  colTotal: { ...(Platform.OS === "web" ? { flex: 1 } : { width: 120 }) },
-  colEmpleado: { ...(Platform.OS === "web" ? { flex: 1.2 } : { width: 150 }) },
+  colFecha: { flex: 0.9, minWidth: 90 },
+  colCliente: { flex: 1.6, minWidth: 150 },
+  colMonto: { flex: 1.1, minWidth: 100 },
+  colMoneda: { flex: 0.7, minWidth: 70 },
+  colPorcentaje: { flex: 0.8, minWidth: 80 },
+  colTotal: { flex: 1.1, minWidth: 100 },
+  colEmpleado: { flex: 1.3, minWidth: 120 },
   colAccion: {
-    ...(Platform.OS === "web" ? { flex: 1.8 } : { width: 220 }),
+    flex: 1.5,
+    minWidth: 160,
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
   },
+  headerText: {
+    color: "#ffffff",
+    fontWeight: "600",
+    fontSize: 11,
+    textTransform: "uppercase",
+  },
+  cellText: {
+    fontSize: 12,
+    color: "#334155",
+  },
+  cellTextBold: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#0f172a",
+  },
+  subCedula: {
+    fontSize: 10,
+    color: "#64748b",
+  },
   badgeMoneda: {
     backgroundColor: "#e0e7ff",
-    paddingVertical: 2,
     paddingHorizontal: 6,
+    paddingVertical: 2,
     borderRadius: 4,
     alignSelf: "flex-start",
   },
   badgeMonedaText: {
-    color: "#3730a3",
-    fontSize: 11,
+    color: "#4f46e5",
+    fontSize: 10,
     fontWeight: "700",
   },
   badgeEstado: {
-    paddingVertical: 2,
     paddingHorizontal: 6,
+    paddingVertical: 2,
     borderRadius: 4,
   },
   badgeTextEstado: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: "700",
   },
   btnVerAccion: {
     backgroundColor: "#4f46e5",
-    paddingVertical: 4,
     paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 4,
   },
   btnVerAccionText: {
     color: "#ffffff",
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "600",
   },
   emptyText: {
     textAlign: "center",
-    padding: 30,
     color: "#64748b",
+    padding: 20,
     fontSize: 14,
   },
   modalOverlay: {
@@ -1105,34 +1112,31 @@ const styles = StyleSheet.create({
     padding: 20,
     width: "100%",
     maxWidth: 600,
-    maxHeight: "90%",
+    maxHeight: "85%",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
     elevation: 5,
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: "bold",
+    fontWeight: "700",
     color: "#0f172a",
-    marginBottom: 16,
+    marginBottom: 14,
     textAlign: "center",
   },
   modalDetailsBox: {
     backgroundColor: "#f8fafc",
     borderRadius: 8,
     padding: 12,
-    marginBottom: 16,
     borderWidth: 1,
     borderColor: "#e2e8f0",
+    gap: 8,
   },
   modalRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingVertical: 6,
-    borderBottomWidth: "1px",
-    borderBottomColor: "#f1f5f9",
   },
   modalLabel: {
     fontSize: 13,
@@ -1146,30 +1150,30 @@ const styles = StyleSheet.create({
   },
   subtituloPagos: {
     fontSize: 15,
-    fontWeight: "bold",
+    fontWeight: "700",
     color: "#0f172a",
-    marginBottom: 10,
-    marginTop: 4,
   },
   sinPagosText: {
-    fontSize: 13,
+    fontSize: 12,
     color: "#64748b",
-    fontStyle: "italic",
-    marginBottom: 16,
+    textAlign: "center",
+    marginVertical: 10,
   },
   tablaContainerModal: {
     borderWidth: 1,
     borderColor: "#e2e8f0",
     borderRadius: 6,
     overflow: "hidden",
-    marginBottom: 20,
+    marginVertical: 10,
   },
   tablaFilaModal: {
     flexDirection: "row",
-    padding: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
     borderBottomWidth: 1,
     borderBottomColor: "#f1f5f9",
     backgroundColor: "#ffffff",
+    alignItems: "center",
   },
   tablaHeaderModal: {
     backgroundColor: "#f1f5f9",
@@ -1179,18 +1183,19 @@ const styles = StyleSheet.create({
     color: "#334155",
   },
   tablaHeaderTextoModal: {
-    fontWeight: "bold",
-    color: "#0f172s",
+    fontWeight: "700",
+    color: "#0f172a",
   },
   btnCerrarModal: {
-    backgroundColor: "#334155",
-    paddingVertical: 10,
+    backgroundColor: "#64748b",
+    padding: 10,
     borderRadius: 6,
     alignItems: "center",
+    marginTop: 10,
   },
   btnCerrarText: {
     color: "#ffffff",
     fontWeight: "600",
-    fontSize: 14,
+    fontSize: 13,
   },
 });

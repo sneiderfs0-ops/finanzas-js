@@ -20,17 +20,17 @@ export default function RootLayout() {
     }
   };
 
-  // Función para reiniciar el contador de los 5 minutos
+  // Función para reiniciar el contador de los 10 minutos
   const resetInactivityTimer = () => {
     if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
 
-    // Si hay un usuario logueado, activamos el temporizador de 5 minutos (300,000 ms)
+    // Si hay un usuario logueado, activamos el temporizador de 10 minutos (600,000 ms)
     if (user) {
       inactivityTimer.current = setTimeout(
         () => {
           handleInactivityLogout();
         },
-        5 * 60 * 1000,
+        10 * 60 * 1000,
       );
     }
   };

@@ -8,21 +8,24 @@ import {
   ScrollView,
   Alert,
   Modal,
+  Platform,
 } from "react-native";
 import { supabase } from "../../supabase";
 import Colors from "@/constants/Colors";
 import { useColorScheme } from "@/components/useColorScheme";
 import { useRouter } from "expo-router";
 
+// Se definen las props como opcionales con el signo '?' para evitar errores de tipo
 export default function CrearClienteModal({
   onClose,
   onClienteCreado,
 }: {
-  onClose: () => void;
-  onClienteCreado: () => void;
+  onClose?: () => void;
+  onClienteCreado?: () => void;
 }) {
   const router = useRouter();
-  const colorScheme = useColorScheme();
+  const colorScheme = useColorScheme() ?? "light";
+
   const [cedula, setCedula] = useState("");
   const [nombres, setNombres] = useState("");
   const [apellidos, setApellidos] = useState("");
@@ -45,54 +48,30 @@ export default function CrearClienteModal({
     try {
       setLoading(true);
 
-      const { data: authData, error: authError } =
-        await supabase.auth.getUser();
-      if (authError || !authData.user) {
-        Alert.alert("Error", "No se encontró una sesión activa.");
-        setLoading(false);
-        return;
+      const { data: authData } = await supabase.auth.getUser();
+      if (!authData.user) {
+        throw new Error("No se encontró una sesión activa.");
       }
 
       const userId = authData.user.id;
       const emailLogueado = authData.user.email?.trim().toLowerCase();
       let cedulaUsuarioLogueado = null;
 
-      // 1. Buscar en administradores
-      let queryAdmin = supabase.from("administradores").select("cedula");
-      if (userId) queryAdmin = queryAdmin.eq("id", userId);
-      else if (emailLogueado)
-        queryAdmin = queryAdmin.eq("correo", emailLogueado);
+      // Buscar cédula del usuario en tablas de roles
+      const tablas = ["administradores", "empleados", "secretaria"];
+      for (const tabla of tablas) {
+        const { data } = await supabase
+          .from(tabla)
+          .select("cedula")
+          .or(`id.eq.${userId},correo.eq.${emailLogueado}`)
+          .maybeSingle();
 
-      const { data: adminData } = await queryAdmin.maybeSingle();
-
-      if (adminData) {
-        cedulaUsuarioLogueado = adminData.cedula;
-      } else {
-        // 2. Buscar en empleados
-        let queryEmp = supabase.from("empleados").select("cedula");
-        if (userId) queryEmp = queryEmp.eq("id", userId);
-        else if (emailLogueado) queryEmp = queryEmp.eq("correo", emailLogueado);
-
-        const { data: empData } = await queryEmp.maybeSingle();
-
-        if (empData) {
-          cedulaUsuarioLogueado = empData.cedula;
-        } else {
-          // 3. Buscar en secretaria
-          let querySec = supabase.from("secretaria").select("cedula");
-          if (userId) querySec = querySec.eq("id", userId);
-          else if (emailLogueado)
-            querySec = querySec.eq("correo", emailLogueado);
-
-          const { data: secData } = await querySec.maybeSingle();
-
-          if (secData) {
-            cedulaUsuarioLogueado = secData.cedula;
-          }
+        if (data?.cedula) {
+          cedulaUsuarioLogueado = data.cedula;
+          break;
         }
       }
 
-      // Inserción en la tabla de clientes utilizando la cédula encontrada
       const { error } = await supabase.from("clientes").insert([
         {
           cedula: cedula.trim(),
@@ -106,17 +85,15 @@ export default function CrearClienteModal({
 
       if (error) throw error;
 
-      // Limpiar campos
+      // Resetear campos
       setCedula("");
       setNombres("");
       setApellidos("");
       setTelefono("");
       setDireccion("");
 
-      // Notificamos que se creó el cliente
-      onClienteCreado();
-
-      // Mostramos el modal de éxito
+      // Ejecutar callback si existe
+      if (onClienteCreado) onClienteCreado();
       setSuccessModalVisible(true);
     } catch (error: any) {
       console.log("Error detallado al registrar cliente:", error);
@@ -128,9 +105,8 @@ export default function CrearClienteModal({
 
   const handleCerrarExito = () => {
     setSuccessModalVisible(false);
-    setTimeout(() => {
-      onClose();
-    }, 200);
+    if (onClose) onClose();
+    else router.replace("/");
   };
 
   return (
@@ -143,57 +119,36 @@ export default function CrearClienteModal({
       <TextInput
         style={styles.input}
         placeholder="Ej. 12345678"
-        placeholderTextColor="#94a3b8"
         value={cedula}
-        onChangeText={(text) => {
-          const numericText = text.replace(/[^0-9]/g, "");
-          if (numericText.length <= 10) setCedula(numericText);
-        }}
+        onChangeText={setCedula}
         keyboardType="numeric"
       />
 
       <Text style={styles.label}>Nombres *</Text>
       <TextInput
         style={styles.input}
-        placeholder="Ej. Juan Carlos"
-        placeholderTextColor="#94a3b8"
         value={nombres}
-        onChangeText={(text) => {
-          const lettersText = text.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, "");
-          if (lettersText.length <= 25) setNombres(lettersText);
-        }}
+        onChangeText={setNombres}
       />
 
       <Text style={styles.label}>Apellidos *</Text>
       <TextInput
         style={styles.input}
-        placeholder="Ej. Pérez Gómez"
-        placeholderTextColor="#94a3b8"
         value={apellidos}
-        onChangeText={(text) => {
-          const lettersText = text.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, "");
-          if (lettersText.length <= 25) setApellidos(lettersText);
-        }}
+        onChangeText={setApellidos}
       />
 
       <Text style={styles.label}>Teléfono *</Text>
       <TextInput
         style={styles.input}
-        placeholder="Ej. 0414123457"
-        placeholderTextColor="#94a3b8"
         value={telefono}
-        onChangeText={(text) => {
-          const numericText = text.replace(/[^0-9]/g, "");
-          if (numericText.length <= 15) setTelefono(numericText);
-        }}
+        onChangeText={setTelefono}
         keyboardType="phone-pad"
       />
 
       <Text style={styles.label}>Dirección</Text>
       <TextInput
         style={styles.input}
-        placeholder="Ej. Calle Principal, Casa #12"
-        placeholderTextColor="#94a3b8"
         value={direccion}
         onChangeText={setDireccion}
       />
@@ -210,7 +165,7 @@ export default function CrearClienteModal({
 
       <TouchableOpacity
         style={styles.btnClose}
-        onPress={() => router.replace("/")} // Redirige directamente al index
+        onPress={() => (onClose ? onClose() : router.replace("/"))}
       >
         <Text style={styles.btnCloseText}>Cancelar</Text>
       </TouchableOpacity>
@@ -220,7 +175,6 @@ export default function CrearClienteModal({
         animationType="fade"
         transparent={true}
         visible={successModalVisible}
-        onRequestClose={handleCerrarExito}
       >
         <View style={styles.modalOverlay}>
           <View
@@ -234,9 +188,6 @@ export default function CrearClienteModal({
               style={[styles.successTitle, { color: Colors[colorScheme].text }]}
             >
               ¡Cliente Registrado!
-            </Text>
-            <Text style={styles.successMessage}>
-              El cliente ha sido guardado exitosamente en el sistema.
             </Text>
             <TouchableOpacity
               style={styles.btnSuccessOk}
@@ -252,31 +203,20 @@ export default function CrearClienteModal({
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: 20,
-    flexGrow: 1,
-    justifyContent: "center",
-  },
+  container: { padding: 20, flexGrow: 1, justifyContent: "center" },
   title: {
     fontSize: 20,
     fontWeight: "bold",
     marginBottom: 20,
     textAlign: "center",
   },
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-    marginBottom: 6,
-    color: "#94a3b8",
-  },
+  label: { fontSize: 14, fontWeight: "600", marginBottom: 6, color: "#94a3b8" },
   input: {
     backgroundColor: "#ffffff",
-    color: "#000000",
     borderWidth: 1,
     borderColor: "#cbd5e1",
     borderRadius: 8,
     padding: 12,
-    fontSize: 15,
     marginBottom: 15,
   },
   btnGuardar: {
@@ -284,13 +224,8 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 8,
     alignItems: "center",
-    marginTop: 10,
   },
-  btnText: {
-    color: "#fff",
-    fontWeight: "bold",
-    fontSize: 16,
-  },
+  btnText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
   btnClose: {
     backgroundColor: "#334155",
     padding: 12,
@@ -298,47 +233,32 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 10,
   },
-  btnCloseText: {
-    color: "#fff",
-    fontWeight: "bold",
-  },
+  btnCloseText: { color: "#fff", fontWeight: "bold" },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    backgroundColor: "rgba(0,0,0,0.6)",
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
   },
   successModalContent: {
-    width: "100%",
+    width: "90%",
     maxWidth: 350,
     borderRadius: 20,
     padding: 24,
     alignItems: "center",
-    elevation: 5,
+    ...Platform.select({
+      web: { boxShadow: "0px 4px 12px rgba(0, 0, 0, 0.15)" },
+      default: { elevation: 5 },
+    }),
   },
-  successIcon: {
-    fontSize: 40,
-    marginBottom: 10,
-  },
-  successTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 10,
-    textAlign: "center",
-  },
-  successMessage: {
-    fontSize: 14,
-    color: "#94a3b8",
-    textAlign: "center",
-    marginBottom: 20,
-  },
+  successIcon: { fontSize: 40, marginBottom: 10 },
+  successTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 20 },
   btnSuccessOk: {
     backgroundColor: "#22c55e",
     paddingVertical: 12,
     paddingHorizontal: 30,
     borderRadius: 8,
-    alignItems: "center",
     width: "100%",
+    alignItems: "center",
   },
 });

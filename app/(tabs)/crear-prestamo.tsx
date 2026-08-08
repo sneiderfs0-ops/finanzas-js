@@ -213,7 +213,6 @@ export default function CrearPrestamoScreen({ route }: any) {
     }
   };
 
-  // Modificado para mostrar solo montos enteros con puntos de miles (sin decimales)
   const formatearSinDecimales = (valor: string | number) => {
     if (valor === "" || valor === null || valor === undefined) return "";
     const numeroStr =
@@ -267,7 +266,6 @@ export default function CrearPrestamoScreen({ route }: any) {
   const porcentajeNum = parseFloat(porcentaje) || 0;
   const cuotasNum = parseInt(cuotas, 10) || 1;
 
-  // Cálculos redondeados a números enteros
   const totalInteres = Math.round((montoNum * porcentajeNum) / 100);
   const montoTotal = montoNum + totalInteres;
   const valorCuota = cuotasNum > 0 ? Math.round(montoTotal / cuotasNum) : 0;
@@ -310,6 +308,26 @@ export default function CrearPrestamoScreen({ route }: any) {
     setLoading(true);
 
     try {
+      // Validación estricta en tiempo real del saldo disponible en la caja
+      const { data: cajaInfo, error: cajaError } = await supabase
+        .from("cajas_bancos")
+        .select("saldo_actual")
+        .eq("id", cajaSeleccionada.id)
+        .single();
+
+      if (cajaError) throw cajaError;
+
+      const saldoDisponible = Number(cajaInfo?.saldo_actual || 0);
+
+      if (montoNum > saldoDisponible) {
+        mostrarMensaje(
+          "error",
+          `⚠️ Saldo insuficiente en la caja seleccionada (${cajaSeleccionada.nombre}).\n\nDisponible: $ ${formatearSinDecimales(saldoDisponible)} ${moneda}\nIntento de préstamo: $ ${formatearSinDecimales(montoNum)} ${moneda}`,
+        );
+        setLoading(false);
+        return;
+      }
+
       const { error: errorPrestamo } = await supabase.from("prestamos").insert([
         {
           cedula: clienteSeleccionado,
@@ -342,14 +360,7 @@ export default function CrearPrestamoScreen({ route }: any) {
       let mensajeErrorFinal =
         err.message ||
         "Ocurrió un error inesperado al intentar guardar el préstamo.";
-      if (
-        mensajeErrorFinal.toLowerCase().includes("saldo insuficiente") ||
-        mensajeErrorFinal.toLowerCase().includes("fondos")
-      ) {
-        mensajeErrorFinal = `⚠️ Saldo insuficiente en la caja seleccionada (${cajaSeleccionada.nombre}). Verifique los fondos disponibles antes de realizar el desembolso de $ ${formatearSinDecimales(montoNum)} ${moneda}.`;
-      } else if (
-        mensajeErrorFinal.toLowerCase().includes("numeric field overflow")
-      ) {
+      if (mensajeErrorFinal.toLowerCase().includes("numeric field overflow")) {
         mensajeErrorFinal = `⚠️ El monto ingresado ($ ${formatearSinDecimales(montoNum)} ${moneda}) es demasiado grande y excede el límite permitido por la base de datos.`;
       }
 

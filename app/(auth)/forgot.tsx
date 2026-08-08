@@ -72,7 +72,7 @@ export default function ForgotPasswordScreen() {
         emailTrimmed,
         {
           redirectTo:
-            "https://finanzas-sneider-3xpmru8vs-finanzas-sneider.vercel.app/forgot", // Reemplaza con tu esquema o URL de redirección
+            "https://finanzas-sneider-giedkl3ft-finanzas-sneider.vercel.app/forgot", // Reemplaza con tu esquema o URL de redirección
         },
       );
 

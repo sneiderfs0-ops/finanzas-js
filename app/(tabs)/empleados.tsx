@@ -43,9 +43,13 @@ export default function GestionEmpleadosScreen() {
     useState(false);
   const [empleadoAccion, setEmpleadoAccion] = useState<Empleado | null>(null);
 
-  // Campos para editar (correo y teléfono)
+  // Campos para editar
+  const [nombresEdit, setNombresEdit] = useState("");
+  const [apellidosEdit, setApellidosEdit] = useState("");
+  const [cedulaEdit, setCedulaEdit] = useState("");
   const [correoEdit, setCorreoEdit] = useState("");
   const [telefonoEdit, setTelefonoEdit] = useState("");
+  const [passwordEdit, setPasswordEdit] = useState("");
 
   useEffect(() => {
     verificarRolYCargar();
@@ -159,29 +163,72 @@ export default function GestionEmpleadosScreen() {
 
   const abrirEditar = (emp: Empleado) => {
     setEmpleadoSeleccionado(emp);
+    setNombresEdit(emp.nombres || "");
+    setApellidosEdit(emp.apellidos || "");
+    setCedulaEdit(emp.cedula || "");
     setCorreoEdit(emp.correo || "");
     setTelefonoEdit(emp.telefono || "");
+    setPasswordEdit("");
     setModalEditarVisible(true);
   };
 
   const guardarEdicion = async () => {
     if (!empleadoSeleccionado) return;
 
+    const updateData: any = {
+      nombres: nombresEdit.trim(),
+      apellidos: apellidosEdit.trim(),
+      cedula: cedulaEdit.trim(),
+      correo: correoEdit.trim().toLowerCase(),
+      telefono: telefonoEdit.trim(),
+    };
+
     const { error } = await supabase
       .from("empleados")
-      .update({
-        correo: correoEdit.trim().toLowerCase(),
-        telefono: telefonoEdit.trim(),
-      })
+      .update(updateData)
       .eq("id", empleadoSeleccionado.id);
 
     if (error) {
       Alert.alert("Error", error.message);
-    } else {
-      Alert.alert("Éxito", "Datos de contacto actualizados.");
-      setModalEditarVisible(false);
-      cargarEmpleados();
+      return;
     }
+
+    if (passwordEdit.trim() !== "") {
+      try {
+        const response = await fetch(
+          "https://[TU-PROYECTO].supabase.co/functions/v1/update-user-password",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
+            },
+            body: JSON.stringify({
+              userId: empleadoSeleccionado.id,
+              newPassword: passwordEdit.trim(),
+            }),
+          },
+        );
+
+        const result = await response.json();
+        if (!response.ok) {
+          Alert.alert(
+            "Aviso",
+            "Datos actualizados, pero hubo un problema al actualizar la contraseña: " +
+              (result.error || "Error desconocido"),
+          );
+          setModalEditarVisible(false);
+          cargarEmpleados();
+          return;
+        }
+      } catch (err: any) {
+        console.log("Error actualizando contraseña en Auth:", err);
+      }
+    }
+
+    Alert.alert("Éxito", "Datos del empleado actualizados.");
+    setModalEditarVisible(false);
+    cargarEmpleados();
   };
 
   const empleadosFiltrados = empleados.filter((emp) =>
@@ -495,45 +542,40 @@ export default function GestionEmpleadosScreen() {
       <Modal visible={modalEditarVisible} transparent animationType="fade">
         <View style={globalStyles.modalOverlay}>
           <View style={globalStyles.modalContent}>
-            <Text style={globalStyles.modalTitle}>Editar Contacto</Text>
+            <Text style={globalStyles.modalTitle}>Editar Empleado</Text>
             <ScrollView style={{ width: "100%" }}>
               <Text style={localStyles.inputLabel}>Nombres</Text>
               <TextInput
-                style={[
-                  localStyles.inputModal,
-                  {
-                    backgroundColor: colors.border,
-                    color: colors.textSecondary,
-                  },
-                ]}
-                value={empleadoSeleccionado?.nombres || ""}
-                editable={false}
+                style={localStyles.inputModal}
+                value={nombresEdit}
+                onChangeText={(text) =>
+                  setNombresEdit(text.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, ""))
+                }
+                placeholder="Nombres"
+                placeholderTextColor={colors.textSecondary}
               />
 
               <Text style={localStyles.inputLabel}>Apellidos</Text>
               <TextInput
-                style={[
-                  localStyles.inputModal,
-                  {
-                    backgroundColor: colors.border,
-                    color: colors.textSecondary,
-                  },
-                ]}
-                value={empleadoSeleccionado?.apellidos || ""}
-                editable={false}
+                style={localStyles.inputModal}
+                value={apellidosEdit}
+                onChangeText={(text) =>
+                  setApellidosEdit(text.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, ""))
+                }
+                placeholder="Apellidos"
+                placeholderTextColor={colors.textSecondary}
               />
 
               <Text style={localStyles.inputLabel}>Cédula</Text>
               <TextInput
-                style={[
-                  localStyles.inputModal,
-                  {
-                    backgroundColor: colors.border,
-                    color: colors.textSecondary,
-                  },
-                ]}
-                value={empleadoSeleccionado?.cedula || ""}
-                editable={false}
+                style={localStyles.inputModal}
+                value={cedulaEdit}
+                onChangeText={(text) =>
+                  setCedulaEdit(text.replace(/[^0-9]/g, ""))
+                }
+                keyboardType="numeric"
+                placeholder="Cédula"
+                placeholderTextColor={colors.textSecondary}
               />
 
               <Text style={localStyles.inputLabel}>Correo Electrónico</Text>
@@ -556,6 +598,18 @@ export default function GestionEmpleadosScreen() {
                 }
                 keyboardType="phone-pad"
                 placeholder="Ej. 04141234567"
+                placeholderTextColor={colors.textSecondary}
+              />
+
+              <Text style={localStyles.inputLabel}>
+                Nueva Contraseña (Opcional)
+              </Text>
+              <TextInput
+                style={localStyles.inputModal}
+                value={passwordEdit}
+                onChangeText={setPasswordEdit}
+                secureTextEntry
+                placeholder="Dejar en blanco para no cambiar"
                 placeholderTextColor={colors.textSecondary}
               />
             </ScrollView>

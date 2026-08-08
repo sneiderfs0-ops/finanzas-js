@@ -40,7 +40,6 @@ interface Prestamo {
 export default function CrearPagoScreen({ route }: any) {
   const clienteCedulaParam = route?.params?.clienteCedula || null;
   const { width } = useWindowDimensions();
-
   const isWebOrTablet = width >= 768;
 
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -55,17 +54,21 @@ export default function CrearPagoScreen({ route }: any) {
 
   const [modalClienteVisible, setModalClienteVisible] = useState(false);
   const [modalPrestamoVisible, setModalPrestamoVisible] = useState(false);
+  const [modalTasaVisible, setModalTasaVisible] = useState(false);
   const [nombreBusqueda, setNombreBusqueda] = useState("");
 
-  // Estados para los modales personalizados de resultado
   const [modalResultadoVisible, setModalResultadoVisible] = useState(false);
   const [tipoResultado, setTipoResultado] = useState<"exito" | "error">(
     "exito",
   );
   const [mensajeResultado, setMensajeResultado] = useState("");
 
-  const [monto, setMonto] = useState("");
-  const [moneda, setMoneda] = useState<"USD" | "COP">("COP");
+  const [montoFisico, setMontoFisico] = useState("");
+  const [monedaPrestamo, setMonedaPrestamo] = useState<"USD" | "COP">("COP");
+  const [monedaPago, setMonedaPago] = useState<"USD" | "COP">("COP");
+  const [tasaCambioCopPorUsd, setTasaCambioCopPorUsd] = useState("4100"); // Tasa base estándar COP por 1 USD
+  const [tasaInputTemp, setTasaInputTemp] = useState("");
+
   const [tipoPago, setTipoPago] = useState<"efectivo" | "transferencia">(
     "efectivo",
   );
@@ -82,7 +85,6 @@ export default function CrearPagoScreen({ route }: any) {
     obtenerUsuarioLogueadoYCargarDatos();
   }, []);
 
-  // Si viene una cédula por parámetro, cargar sus préstamos activos al tener los clientes listos
   useEffect(() => {
     if (clienteCedulaParam && clientes.length > 0) {
       cargarPrestamosCliente(clienteCedulaParam);
@@ -102,14 +104,12 @@ export default function CrearPagoScreen({ route }: any) {
 
       let usuarioInfo: any = null;
 
-      // 1. Buscar en ADMINISTRADORES
       let queryAdmin = supabase
         .from("administradores")
         .select("id, cedula, nombres, apellidos");
       if (userId) queryAdmin = queryAdmin.eq("id", userId);
       else if (emailLogueado)
         queryAdmin = queryAdmin.eq("correo", emailLogueado);
-
       const { data: adminData } = await queryAdmin.maybeSingle();
 
       if (adminData) {
@@ -121,16 +121,13 @@ export default function CrearPagoScreen({ route }: any) {
         };
       }
 
-      // 2. Buscar en SECRETARIA
       if (!usuarioInfo) {
         let querySec = supabase
           .from("secretaria")
           .select("id, cedula, nombres, apellidos");
         if (userId) querySec = querySec.eq("id", userId);
         else if (emailLogueado) querySec = querySec.eq("correo", emailLogueado);
-
         const { data: secData } = await querySec.maybeSingle();
-
         if (secData) {
           usuarioInfo = {
             id: secData.id,
@@ -141,16 +138,13 @@ export default function CrearPagoScreen({ route }: any) {
         }
       }
 
-      // 3. Buscar en EMPLEADOS
       if (!usuarioInfo) {
         let queryEmp = supabase
           .from("empleados")
           .select("id, cedula, nombres, apellidos");
         if (userId) queryEmp = queryEmp.eq("id", userId);
         else if (emailLogueado) queryEmp = queryEmp.eq("correo", emailLogueado);
-
         const { data: empData } = await queryEmp.maybeSingle();
-
         if (empData) {
           usuarioInfo = {
             id: empData.id,
@@ -170,7 +164,6 @@ export default function CrearPagoScreen({ route }: any) {
       }
 
       setUsuarioActual(usuarioInfo);
-
       await cargarCajas();
       await cargarClientes(usuarioInfo);
     } catch (err) {
@@ -187,9 +180,7 @@ export default function CrearPagoScreen({ route }: any) {
     const { data } = await supabase
       .from("cajas_bancos")
       .select("id, nombre, moneda");
-    if (data) {
-      setCajas(data);
-    }
+    if (data) setCajas(data);
   };
 
   const cargarClientes = async (infoUsuario: {
@@ -200,18 +191,11 @@ export default function CrearPagoScreen({ route }: any) {
       .from("clientes")
       .select("cedula, nombres, apellidos, registrado_por_cedula")
       .order("nombres");
-
     if (infoUsuario.tipo === "Empleado") {
       query = query.eq("registrado_por_cedula", infoUsuario.cedula);
     }
-
     const { data, error } = await query;
-
-    if (error) {
-      console.log("Error cargando clientes:", error.message);
-    } else if (data) {
-      setClientes(data);
-    }
+    if (!error && data) setClientes(data);
   };
 
   const cargarPrestamosCliente = async (cedulaCliente: string) => {
@@ -222,18 +206,22 @@ export default function CrearPagoScreen({ route }: any) {
       .eq("estado", "activo");
 
     if (error) {
-      console.log("Error cargando préstamos:", error.message);
       setPrestamosCliente([]);
     } else if (data) {
       setPrestamosCliente(data);
       if (data.length > 0) {
-        // Seleccionar por defecto el primer préstamo activo y ajustar moneda
-        setPrestamoSeleccionado(data[0]);
-        setMoneda(data[0].moneda);
+        seleccionarPrestamo(data[0]);
       } else {
         setPrestamoSeleccionado(null);
       }
     }
+  };
+
+  const seleccionarPrestamo = (prestamo: Prestamo) => {
+    setPrestamoSeleccionado(prestamo);
+    setMonedaPrestamo(prestamo.moneda);
+    setMonedaPago(prestamo.moneda);
+    setMontoFisico("");
   };
 
   const handleSeleccionarCliente = (cedula: string) => {
@@ -244,33 +232,54 @@ export default function CrearPagoScreen({ route }: any) {
     cargarPrestamosCliente(cedula);
   };
 
+  const cambiarMonedaPago = (nuevaMoneda: "USD" | "COP") => {
+    setMonedaPago(nuevaMoneda);
+    // Si la moneda de pago seleccionada es diferente a la del préstamo, requerimos la tasa COP por 1 USD
+    if (nuevaMoneda !== monedaPrestamo) {
+      setTasaInputTemp(tasaCambioCopPorUsd);
+      setModalTasaVisible(true);
+    }
+  };
+
+  const formatearSinDecimales = (valor: string | number) => {
+    if (valor === "" || valor === null || valor === undefined) return "";
+    const numeroStr =
+      typeof valor === "number"
+        ? Math.round(valor).toString()
+        : valor.toString();
+    const limpio = numeroStr.replace(/[^\d]/g, "");
+    return limpio.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  };
+
   const handleMontoChange = (text: string) => {
-    const soloNumeros = text.replace(/\D/g, "").slice(0, 20);
-
-    if (soloNumeros === "") {
-      setMonto("");
-      return;
-    }
-
-    if (moneda === "COP") {
-      const numeroFormateado = Number(soloNumeros).toLocaleString("es-CO");
-      setMonto(numeroFormateado);
-    } else {
-      setMonto(soloNumeros);
-    }
-  };
-
-  const obtenerCajaIdAutomatica = () => {
-    const terminoBusqueda = tipoPago === "efectivo" ? "efectivo" : "banco";
-    const cajaEncontrada = cajas.find(
-      (c) =>
-        c.nombre.toLowerCase().includes(terminoBusqueda) &&
-        c.moneda.toLowerCase() === moneda.toLowerCase(),
+    const soloDigitos = text.replace(/\D/g, "").slice(0, 9);
+    setMontoFisico(
+      soloDigitos === ""
+        ? ""
+        : soloDigitos.replace(/\B(?=(\d{3})+(?!\d))/g, "."),
     );
-    return cajaEncontrada ? cajaEncontrada : null;
   };
 
-  const montoNum = parseFloat(monto.replace(/\./g, "")) || 0;
+  const limpiarMontoParaCalculo = (val: string) => {
+    if (!val) return 0;
+    return parseInt(val.replace(/\./g, ""), 10) || 0;
+  };
+
+  const montoFisicoNum = limpiarMontoParaCalculo(montoFisico);
+  const tasaNum = parseFloat(tasaCambioCopPorUsd) || 1;
+
+  // Cálculo matemático exacto de la conversión
+  let montoAplicadoPrestamo = 0;
+  if (monedaPrestamo === monedaPago) {
+    montoAplicadoPrestamo = montoFisicoNum;
+  } else if (monedaPrestamo === "USD" && monedaPago === "COP") {
+    // Préstamo en USD, pagan en COP -> Dividimos el monto en pesos entre la tasa (COP por 1 USD)
+    montoAplicadoPrestamo =
+      tasaNum > 0 ? Math.round(montoFisicoNum / tasaNum) : 0;
+  } else if (monedaPrestamo === "COP" && monedaPago === "USD") {
+    // Préstamo en COP, pagan en USD -> Multiplicamos el monto en dólares por la tasa (COP por 1 USD)
+    montoAplicadoPrestamo = Math.round(montoFisicoNum * tasaNum);
+  }
 
   const mostrarMensaje = (tipo: "exito" | "error", mensaje: string) => {
     setTipoResultado(tipo);
@@ -287,14 +296,14 @@ export default function CrearPagoScreen({ route }: any) {
       mostrarMensaje("error", "Por favor seleccione el préstamo a abonar.");
       return;
     }
-    if (montoNum <= 0) {
+    if (montoFisicoNum <= 0) {
       mostrarMensaje("error", "Ingrese un monto de pago válido mayor a 0.");
       return;
     }
-    if (montoNum > prestamoSeleccionado.saldo_pendiente) {
+    if (montoAplicadoPrestamo > prestamoSeleccionado.saldo_pendiente) {
       mostrarMensaje(
         "error",
-        `El monto a pagar no puede ser mayor al saldo pendiente ($ ${prestamoSeleccionado.saldo_pendiente.toFixed(2)} ${moneda}).`,
+        `El monto convertido ($ ${formatearSinDecimales(montoAplicadoPrestamo)} ${monedaPrestamo}) supera el saldo pendiente del préstamo.`,
       );
       return;
     }
@@ -303,88 +312,31 @@ export default function CrearPagoScreen({ route }: any) {
       return;
     }
 
-    const cajaSeleccionada = obtenerCajaIdAutomatica();
-    if (!cajaSeleccionada) {
-      mostrarMensaje(
-        "error",
-        `No se encontró una caja configurada para ${tipoPago} en moneda ${moneda}.`,
-      );
-      return;
-    }
-
     setLoading(true);
 
     try {
-      // 1. Insertar el pago
       const { error: errorPago } = await supabase.from("pagos").insert([
         {
           prestamo_id: prestamoSeleccionado.id,
-          moneda: moneda,
-          monto_pagado: montoNum,
+          moneda: monedaPrestamo,
+          monto_pagado: montoAplicadoPrestamo,
+          moneda_pago: monedaPago,
+          tasa_cambio: tasaNum,
           registrado_por_cedula: usuarioActual.cedula,
         },
       ]);
 
       if (errorPago) throw errorPago;
 
-      // 2. Calcular nuevo saldo pendiente y nuevo estado
-      const nuevoSaldo = prestamoSeleccionado.saldo_pendiente - montoNum;
-      const nuevoEstado = nuevoSaldo <= 0 ? "pagado" : "activo";
-
-      // 3. Actualizar el préstamo
-      const { error: errorUpdatePrestamo } = await supabase
-        .from("prestamos")
-        .update({
-          saldo_pendiente: nuevoSaldo,
-          estado: nuevoEstado,
-        })
-        .eq("id", prestamoSeleccionado.id);
-
-      if (errorUpdatePrestamo) throw errorUpdatePrestamo;
-
-      // 4. Registrar transacción de ingreso
-      const { error: errorTransaccion } = await supabase
-        .from("transacciones")
-        .insert([
-          {
-            caja_id: cajaSeleccionada.id,
-            tipo: "ingreso",
-            moneda: moneda,
-            monto: montoNum,
-            descripcion: `Cobro / Abono a préstamo de cliente Cédula: ${clienteSeleccionado}`,
-            registrado_por_cedula: usuarioActual.cedula,
-          },
-        ]);
-
-      if (errorTransaccion) throw errorTransaccion;
-
-      // 5. Actualizar saldo actual de caja/banco (Sumar por ser ingreso)
-      const { data: cajaActualData } = await supabase
-        .from("cajas_bancos")
-        .select("saldo_actual")
-        .eq("id", cajaSeleccionada.id)
-        .single();
-
-      if (cajaActualData) {
-        const nuevoSaldoCaja = Number(cajaActualData.saldo_actual) + montoNum;
-        const { error: errorUpdateCaja } = await supabase
-          .from("cajas_bancos")
-          .update({ saldo_actual: nuevoSaldoCaja })
-          .eq("id", cajaSeleccionada.id);
-
-        if (errorUpdateCaja) throw errorUpdateCaja;
-      }
-
-      setMonto("");
+      setMontoFisico("");
       setClienteSeleccionado(null);
       setPrestamoSeleccionado(null);
       setPrestamosCliente([]);
       mostrarMensaje(
         "exito",
-        "El pago se ha registrado satisfactoriamente y la caja ha sido actualizada.",
+        "El pago con cambio de divisa se ha registrado satisfactoriamente.",
       );
     } catch (err: any) {
-      console.log("Error al guardar pago:", err.message);
       mostrarMensaje(
         "error",
         err.message ||
@@ -400,7 +352,6 @@ export default function CrearPagoScreen({ route }: any) {
       .toLowerCase()
       .includes(nombreBusqueda.toLowerCase()),
   );
-
   const clienteObjetoSeleccionado = clientes.find(
     (c) => c.cedula === clienteSeleccionado,
   );
@@ -465,11 +416,11 @@ export default function CrearPagoScreen({ route }: any) {
             <View style={{ flex: 1 }}>
               <Text style={styles.dropdownTriggerTitle}>
                 Préstamo en {prestamoSeleccionado.moneda} - Saldo: ${" "}
-                {prestamoSeleccionado.saldo_pendiente.toFixed(2)}
+                {formatearSinDecimales(prestamoSeleccionado.saldo_pendiente)}
               </Text>
               <Text style={styles.dropdownTriggerSubtitle}>
-                Cuota sugerida: ${" "}
-                {prestamoSeleccionado.valor_cuota?.toFixed(2) || "0.00"} (
+                Cuota: ${" "}
+                {formatearSinDecimales(prestamoSeleccionado.valor_cuota || 0)} (
                 {prestamoSeleccionado.frecuencia})
               </Text>
             </View>
@@ -483,11 +434,51 @@ export default function CrearPagoScreen({ route }: any) {
           <Text style={styles.dropdownTriggerIcon}>▼</Text>
         </TouchableOpacity>
 
-        <Text style={styles.label}>3. Método de Cobro</Text>
+        <Text style={styles.label}>
+          3. ¿En qué moneda realiza el pago el cliente?
+        </Text>
+        <View style={styles.rowSelector}>
+          {(["COP", "USD"] as const).map((m) => (
+            <TouchableOpacity
+              key={m}
+              style={[
+                styles.selectChip,
+                monedaPago === m && styles.selectChipActive,
+              ]}
+              onPress={() => cambiarMonedaPago(m)}
+            >
+              <Text
+                style={[
+                  styles.selectChipTxt,
+                  monedaPago === m && styles.selectChipTxtActive,
+                ]}
+              >
+                {m === "COP" ? "Pesos (COP)" : "Dólares (USD)"}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {monedaPago !== monedaPrestamo && (
+          <TouchableOpacity
+            style={styles.tasaBanner}
+            onPress={() => setModalTasaVisible(true)}
+          >
+            <Text style={styles.tasaBannerText}>
+              💱 Tasa aplicada:{" "}
+              <Text style={styles.bold}>
+                1 USD = $ {tasaCambioCopPorUsd} COP
+              </Text>{" "}
+              (Click para editar)
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        <Text style={styles.label}>4. Método de Cobro</Text>
         <View style={styles.rowSelector}>
           {[
-            { id: "efectivo", label: `Efectivo (${moneda})` },
-            { id: "transferencia", label: `Transferencia (${moneda})` },
+            { id: "efectivo", label: `Efectivo (${monedaPago})` },
+            { id: "transferencia", label: `Transferencia (${monedaPago})` },
           ].map((t) => (
             <TouchableOpacity
               key={t.id}
@@ -509,45 +500,62 @@ export default function CrearPagoScreen({ route }: any) {
           ))}
         </View>
 
-        <Text style={styles.label}>4. Monto del Pago</Text>
+        <Text style={styles.label}>
+          5. Monto Entregado Físicamente ({monedaPago})
+        </Text>
         <TextInput
           style={styles.input}
-          placeholder={`Monto a abonar en ${moneda}`}
-          value={monto}
+          placeholder={`Monto en ${monedaPago}`}
+          value={montoFisico}
           onChangeText={handleMontoChange}
           keyboardType="numeric"
+          maxLength={15}
           placeholderTextColor="#a4b0be"
         />
 
         <View style={styles.calcBox}>
-          <Text style={styles.calcTitle}>Resumen del Cobro</Text>
+          <Text style={styles.calcTitle}>Resumen de Conversión y Cobro</Text>
           <View style={styles.calcRow}>
-            <Text style={styles.calcText}>Saldo Actual Pendiente:</Text>
+            <Text style={styles.calcText}>Saldo Actual del Préstamo:</Text>
             <Text style={styles.bold}>
               ${" "}
               {prestamoSeleccionado
-                ? prestamoSeleccionado.saldo_pendiente.toFixed(2)
-                : "0.00"}{" "}
-              {moneda}
+                ? formatearSinDecimales(prestamoSeleccionado.saldo_pendiente)
+                : "0"}{" "}
+              {monedaPrestamo}
             </Text>
           </View>
           <View style={styles.calcRow}>
-            <Text style={styles.calcText}>Monto a Abonar:</Text>
-            <Text style={styles.boldPrimary}>
-              $ {montoNum.toFixed(2)} {moneda}
+            <Text style={styles.calcText}>Monto Recibido ({monedaPago}):</Text>
+            <Text style={styles.bold}>
+              $ {formatearSinDecimales(montoFisicoNum)} {monedaPago}
             </Text>
           </View>
+          {monedaPago !== monedaPrestamo && (
+            <View style={styles.calcRow}>
+              <Text style={styles.calcText}>
+                Equivalente Abonado al Préstamo:
+              </Text>
+              <Text style={styles.boldPrimary}>
+                $ {formatearSinDecimales(montoAplicadoPrestamo)}{" "}
+                {monedaPrestamo}
+              </Text>
+            </View>
+          )}
           <View style={styles.calcRow}>
             <Text style={styles.calcText}>Nuevo Saldo Resultante:</Text>
             <Text style={styles.bold}>
               ${" "}
               {prestamoSeleccionado
-                ? Math.max(
-                    0,
-                    prestamoSeleccionado.saldo_pendiente - montoNum,
-                  ).toFixed(2)
-                : "0.00"}{" "}
-              {moneda}
+                ? formatearSinDecimales(
+                    Math.max(
+                      0,
+                      prestamoSeleccionado.saldo_pendiente -
+                        montoAplicadoPrestamo,
+                    ),
+                  )
+                : "0"}{" "}
+              {monedaPrestamo}
             </Text>
           </View>
         </View>
@@ -564,6 +572,53 @@ export default function CrearPagoScreen({ route }: any) {
           )}
         </TouchableOpacity>
       </View>
+
+      {/* MODAL TASA DE CAMBIO */}
+      <Modal
+        visible={modalTasaVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setModalTasaVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalExitoContainer, { maxWidth: 380 }]}>
+            <Text style={styles.modalExitoTitle}>Tasa de Cambio</Text>
+            <Text style={styles.modalExitoMessage}>
+              Ingrese la tasa de cambio actual (COP por 1 USD):
+            </Text>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  width: "100%",
+                  textAlign: "center",
+                  fontSize: 18,
+                  fontWeight: "bold",
+                },
+              ]}
+              placeholder="Ej: 4100"
+              keyboardType="numeric"
+              value={tasaInputTemp}
+              onChangeText={setTasaInputTemp}
+              autoFocus={true}
+              placeholderTextColor="#94a3b8"
+            />
+            <TouchableOpacity
+              style={styles.successButton}
+              onPress={() => {
+                if (tasaInputTemp && parseFloat(tasaInputTemp) > 0) {
+                  setTasaCambioCopPorUsd(tasaInputTemp);
+                  setModalTasaVisible(false);
+                } else {
+                  mostrarMensaje("error", "Ingrese una tasa válida.");
+                }
+              }}
+            >
+              <Text style={styles.successButtonText}>Guardar Tasa</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* MODAL DE SELECCIÓN DE CLIENTE */}
       <Modal
@@ -585,22 +640,19 @@ export default function CrearPagoScreen({ route }: any) {
                 <Text style={styles.closeBtnText}>✕</Text>
               </TouchableOpacity>
             </View>
-
             <View style={styles.searchBoxContainer}>
               <TextInput
                 style={styles.modalSearchInput}
-                placeholder="🔍 Escribe nombre, apellido o cédula..."
+                placeholder="🔍 Escribe nombre o cédula..."
                 value={nombreBusqueda}
                 onChangeText={setNombreBusqueda}
                 placeholderTextColor="#94a3b8"
                 autoFocus={true}
               />
             </View>
-
             <ScrollView
               style={styles.modalList}
               contentContainerStyle={styles.modalListContent}
-              showsVerticalScrollIndicator={true}
             >
               {clientesFiltrados.map((item) => {
                 const isSelected = clienteSeleccionado === item.cedula;
@@ -631,24 +683,9 @@ export default function CrearPagoScreen({ route }: any) {
                         Cédula: {item.cedula}
                       </Text>
                     </View>
-                    {isSelected && (
-                      <View style={styles.badgeSelected}>
-                        <Text style={styles.badgeSelectedText}>
-                          ✓ Seleccionado
-                        </Text>
-                      </View>
-                    )}
                   </TouchableOpacity>
                 );
               })}
-
-              {clientesFiltrados.length === 0 && (
-                <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyText}>
-                    No se encontraron clientes coincidentes.
-                  </Text>
-                </View>
-              )}
             </ScrollView>
           </View>
         </View>
@@ -672,11 +709,9 @@ export default function CrearPagoScreen({ route }: any) {
                 <Text style={styles.closeBtnText}>✕</Text>
               </TouchableOpacity>
             </View>
-
             <ScrollView
               style={styles.modalList}
               contentContainerStyle={styles.modalListContent}
-              showsVerticalScrollIndicator={true}
             >
               {prestamosCliente.map((item) => {
                 const isSelected = prestamoSeleccionado?.id === item.id;
@@ -688,8 +723,7 @@ export default function CrearPagoScreen({ route }: any) {
                       isSelected && styles.modalClientCardSelected,
                     ]}
                     onPress={() => {
-                      setPrestamoSeleccionado(item);
-                      setMoneda(item.moneda);
+                      seleccionarPrestamo(item);
                       setModalPrestamoVisible(false);
                     }}
                   >
@@ -700,7 +734,8 @@ export default function CrearPagoScreen({ route }: any) {
                           isSelected && styles.textWhite,
                         ]}
                       >
-                        Préstamo: $ {item.saldo_pendiente.toFixed(2)}{" "}
+                        Préstamo: ${" "}
+                        {formatearSinDecimales(item.saldo_pendiente)}{" "}
                         {item.moneda}
                       </Text>
                       <Text
@@ -709,34 +744,19 @@ export default function CrearPagoScreen({ route }: any) {
                           isSelected && styles.textWhiteSub,
                         ]}
                       >
-                        Cuota: $ {item.valor_cuota?.toFixed(2) || "0.00"} (
-                        {item.frecuencia})
+                        Cuota: $ {formatearSinDecimales(item.valor_cuota || 0)}{" "}
+                        ({item.frecuencia})
                       </Text>
                     </View>
-                    {isSelected && (
-                      <View style={styles.badgeSelected}>
-                        <Text style={styles.badgeSelectedText}>
-                          ✓ Seleccionado
-                        </Text>
-                      </View>
-                    )}
                   </TouchableOpacity>
                 );
               })}
-
-              {prestamosCliente.length === 0 && (
-                <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyText}>
-                    Este cliente no tiene préstamos activos registrados.
-                  </Text>
-                </View>
-              )}
             </ScrollView>
           </View>
         </View>
       </Modal>
 
-      {/* MODAL PERSONALIZADO DE RESULTADO (ÉXITO / ERROR) */}
+      {/* MODAL DE RESULTADO */}
       <Modal
         visible={modalResultadoVisible}
         animationType="fade"
@@ -776,18 +796,9 @@ export default function CrearPagoScreen({ route }: any) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f0f2f5",
-  },
-  contentContainer: {
-    padding: 12,
-    paddingBottom: 40,
-  },
-  contentContainerWeb: {
-    alignItems: "center",
-    padding: 24,
-  },
+  container: { flex: 1, backgroundColor: "#f0f2f5" },
+  contentContainer: { padding: 12, paddingBottom: 40 },
+  contentContainerWeb: { alignItems: "center", padding: 24 },
   mainCard: {
     width: "100%",
     backgroundColor: "#ffffff",
@@ -825,11 +836,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginBottom: 2,
   },
-  userCardText: {
-    fontSize: 15,
-    fontWeight: "bold",
-    color: "#0c4a6e",
-  },
+  userCardText: { fontSize: 15, fontWeight: "bold", color: "#0c4a6e" },
   label: {
     fontSize: 15,
     fontWeight: "bold",
@@ -837,11 +844,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     marginTop: 10,
   },
-  rowSelector: {
-    flexDirection: "row",
-    gap: 10,
-    marginBottom: 12,
-  },
+  rowSelector: { flexDirection: "row", gap: 10, marginBottom: 12 },
   selectChip: {
     flex: 1,
     backgroundColor: "#f8fafc",
@@ -852,19 +855,19 @@ const styles = StyleSheet.create({
     borderColor: "#cbd5e1",
     alignItems: "center",
   },
-  selectChipActive: {
-    backgroundColor: "#0284c7",
-    borderColor: "#0284c7",
+  selectChipActive: { backgroundColor: "#0284c7", borderColor: "#0284c7" },
+  selectChipTxt: { fontSize: 14, color: "#475569", fontWeight: "600" },
+  selectChipTxtActive: { color: "#fff", fontWeight: "bold" },
+  tasaBanner: {
+    backgroundColor: "#fef3c7",
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#fde68a",
+    marginBottom: 12,
+    alignItems: "center",
   },
-  selectChipTxt: {
-    fontSize: 14,
-    color: "#475569",
-    fontWeight: "600",
-  },
-  selectChipTxtActive: {
-    color: "#fff",
-    fontWeight: "bold",
-  },
+  tasaBannerText: { fontSize: 13, color: "#92400e" },
   dropdownTrigger: {
     backgroundColor: "#f8fafc",
     paddingHorizontal: 16,
@@ -877,25 +880,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 12,
   },
-  dropdownTriggerTitle: {
-    fontSize: 15,
-    fontWeight: "bold",
-    color: "#0f172a",
-  },
-  dropdownTriggerSubtitle: {
-    fontSize: 13,
-    color: "#64748b",
-    marginTop: 2,
-  },
-  dropdownTriggerPlaceholder: {
-    fontSize: 15,
-    color: "#94a3b8",
-  },
-  dropdownTriggerIcon: {
-    fontSize: 12,
-    color: "#0284c7",
-    marginLeft: 8,
-  },
+  dropdownTriggerTitle: { fontSize: 15, fontWeight: "bold", color: "#0f172a" },
+  dropdownTriggerSubtitle: { fontSize: 13, color: "#64748b", marginTop: 2 },
+  dropdownTriggerPlaceholder: { fontSize: 15, color: "#94a3b8" },
+  dropdownTriggerIcon: { fontSize: 12, color: "#0284c7", marginLeft: 8 },
   input: {
     backgroundColor: "#f8fafc",
     padding: 14,
@@ -936,10 +924,6 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     alignItems: "center",
-    shadowColor: "#10b981",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
     elevation: 3,
   },
   buttonText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
@@ -958,10 +942,6 @@ const styles = StyleSheet.create({
     height: "80%",
     maxHeight: 650,
     padding: 24,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
     elevation: 8,
     display: "flex",
     flexDirection: "column",
@@ -969,17 +949,14 @@ const styles = StyleSheet.create({
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignContent: "center",
     alignItems: "center",
     marginBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: "#f1f5f9",
     paddingBottom: 12,
   },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#0f172a",
-  },
+  modalTitle: { fontSize: 18, fontWeight: "bold", color: "#0f172a" },
   closeBtn: {
     padding: 6,
     backgroundColor: "#f1f5f9",
@@ -989,14 +966,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  closeBtnText: {
-    fontSize: 14,
-    fontWeight: "bold",
-    color: "#64748b",
-  },
-  searchBoxContainer: {
-    marginBottom: 16,
-  },
+  closeBtnText: { fontSize: 14, fontWeight: "bold", color: "#64748b" },
+  searchBoxContainer: { marginBottom: 16 },
   modalSearchInput: {
     backgroundColor: "#f8fafc",
     paddingVertical: 14,
@@ -1007,12 +978,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#0f172a",
   },
-  modalList: {
-    flex: 1,
-  },
-  modalListContent: {
-    paddingBottom: 16,
-  },
+  modalList: { flex: 1 },
+  modalListContent: { paddingBottom: 16 },
   modalClientCard: {
     backgroundColor: "#f8fafc",
     padding: 16,
@@ -1028,42 +995,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#0284c7",
     borderColor: "#0284c7",
   },
-  modalClientName: {
-    fontSize: 15,
-    fontWeight: "bold",
-    color: "#1e293b",
-  },
-  modalClientCedula: {
-    fontSize: 13,
-    color: "#64748b",
-    marginTop: 3,
-  },
-  textWhite: {
-    color: "#ffffff",
-  },
-  textWhiteSub: {
-    color: "#e2e8f0",
-  },
-  badgeSelected: {
-    backgroundColor: "rgba(255, 255, 255, 0.25)",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  badgeSelectedText: {
-    color: "#ffffff",
-    fontWeight: "bold",
-    fontSize: 12,
-  },
-  emptyContainer: {
-    paddingVertical: 40,
-    alignItems: "center",
-  },
-  emptyText: {
-    color: "#64748b",
-    fontStyle: "italic",
-    fontSize: 15,
-  },
+  modalClientName: { fontSize: 15, fontWeight: "bold", color: "#1e293b" },
+  modalClientCedula: { fontSize: 13, color: "#64748b", marginTop: 3 },
+  textWhite: { color: "#ffffff" },
+  textWhiteSub: { color: "#e2e8f0" },
   modalExitoContainer: {
     backgroundColor: "#ffffff",
     borderRadius: 20,
@@ -1071,10 +1006,6 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     padding: 28,
     alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
     elevation: 8,
   },
   successIconContainer: {
@@ -1086,14 +1017,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 16,
   },
-  errorIconContainer: {
-    backgroundColor: "#ef4444",
-  },
-  successIconText: {
-    color: "#ffffff",
-    fontSize: 32,
-    fontWeight: "bold",
-  },
+  errorIconContainer: { backgroundColor: "#ef4444" },
+  successIconText: { color: "#ffffff", fontSize: 32, fontWeight: "bold" },
   modalExitoTitle: {
     fontSize: 20,
     fontWeight: "bold",
@@ -1116,12 +1041,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     width: "100%",
   },
-  errorButton: {
-    backgroundColor: "#ef4444",
-  },
-  successButtonText: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
+  errorButton: { backgroundColor: "#ef4444" },
+  successButtonText: { color: "#ffffff", fontSize: 16, fontWeight: "bold" },
 });

@@ -8,7 +8,6 @@ import {
   Platform,
   TouchableOpacity,
   Alert,
-  Dimensions,
 } from "react-native";
 import { supabase } from "../../supabase";
 import { globalStyles } from "@/constants/globalStyles";
@@ -75,6 +74,7 @@ export default function CajaScreen() {
   };
 
   const cargarDatosCaja = async () => {
+    // 1. Cargar cajas y bancos
     const { data: cajasData, error: cajasError } = await supabase
       .from("cajas_bancos")
       .select("id, nombre, moneda, saldo_actual");
@@ -85,6 +85,7 @@ export default function CajaScreen() {
       setCajas(cajasData || []);
     }
 
+    // 2. Cargar dinero en la calle (préstamos activos)
     const { data: prestamosData, error: prestamosError } = await supabase
       .from("prestamos")
       .select("saldo_pendiente, estado, moneda")
@@ -102,46 +103,55 @@ export default function CajaScreen() {
           sumaCalleCOP += saldoPendiente;
         }
       });
-      setDineroEnCalleUSD(sumaCalleUSD);
-      setDineroEnCalleCOP(sumaCalleCOP);
+      setDineroEnCalleUSD(Math.max(0, sumaCalleUSD));
+      setDineroEnCalleCOP(Math.max(0, sumaCalleCOP));
     }
 
+    // 3. Cargar todos los pagos/intereses acumulados
     const { data: pagosData, error: pagosError } = await supabase
       .from("pagos")
-      .select("monto_interes, moneda");
+      .select("monto_pagado, moneda");
 
     let sumaInteresesUSD = 0;
     let sumaInteresesCOP = 0;
 
     if (!pagosError && pagosData) {
       pagosData.forEach((curr: any) => {
-        const montoInteres = Number(curr.monto_interes || 0);
+        const montoPagado = Number(curr.monto_pagado || 0);
+        const interesEstimado = montoPagado * 0.15;
+
         if (curr.moneda === "USD") {
-          sumaInteresesUSD += montoInteres;
+          sumaInteresesUSD += interesEstimado;
         } else {
-          sumaInteresesCOP += montoInteres;
+          sumaInteresesCOP += interesEstimado;
         }
       });
     }
 
+    // 4. Cargar todos los gastos acumulados
     const { data: gastosData, error: gastosError } = await supabase
       .from("gastos")
       .select("monto, moneda");
 
     let sumaGastosUSD = 0;
     let sumaGastosCOP = 0;
+
     if (!gastosError && gastosData) {
       gastosData.forEach((curr) => {
         const monto = Number(curr.monto || 0);
-        if (curr.moneda === "USD") sumaGastosUSD += monto;
-        else sumaGastosCOP += monto;
+        if (curr.moneda === "USD") {
+          sumaGastosUSD += monto;
+        } else {
+          sumaGastosCOP += monto;
+        }
       });
-      setTotalGastosUSD(sumaGastosUSD);
-      setTotalGastosCOP(sumaGastosCOP);
+      setTotalGastosUSD(Math.max(0, sumaGastosUSD));
+      setTotalGastosCOP(Math.max(0, sumaGastosCOP));
     }
 
-    setTotalGananciaUSD(sumaInteresesUSD - sumaGastosUSD);
-    setTotalGananciaCOP(sumaInteresesCOP - sumaGastosCOP);
+    // 5. Calcular Ganancia Neta Acumulada (Intereses - Gastos)
+    setTotalGananciaUSD(Math.max(0, sumaInteresesUSD - sumaGastosUSD));
+    setTotalGananciaCOP(Math.max(0, sumaInteresesCOP - sumaGastosCOP));
 
     setLoading(false);
   };
@@ -152,14 +162,22 @@ export default function CajaScreen() {
   let bancosCOP = 0;
 
   cajas.forEach((caja) => {
-    const saldo = Math.max(0, Number(caja.saldo_actual));
+    const saldo = Math.max(0, Number(caja.saldo_actual || 0));
     const nombre = caja.nombre.toLowerCase();
     if (caja.moneda === "USD") {
-      if (nombre.includes("banco") || nombre.includes("cuenta"))
+      if (
+        nombre.includes("banco") ||
+        nombre.includes("cuenta") ||
+        nombre.includes("transferencia")
+      )
         bancosUSD += saldo;
       else efectivoUSD += saldo;
     } else {
-      if (nombre.includes("banco") || nombre.includes("cuenta"))
+      if (
+        nombre.includes("banco") ||
+        nombre.includes("cuenta") ||
+        nombre.includes("transferencia")
+      )
         bancosCOP += saldo;
       else efectivoCOP += saldo;
     }
@@ -280,8 +298,8 @@ export default function CajaScreen() {
         <View style={styles.headerContainer}>
           <Text style={styles.headerTitle}>Control de Caja y Bancos</Text>
           <Text style={styles.subtitle}>
-            Saldos reales de efectivo y bancos por transacciones y pagos de
-            clientes (USD / COP)
+            Balance general, efectivo, bancos, gastos y ganancia neta en tiempo
+            real
           </Text>
         </View>
 
@@ -300,7 +318,7 @@ export default function CajaScreen() {
 
       <View style={styles.gridContainer}>
         {cajas.map((caja) => {
-          const saldoLimpio = Math.max(0, Number(caja.saldo_actual));
+          const saldoLimpio = Math.max(0, Number(caja.saldo_actual || 0));
           return (
             <View key={caja.id} style={[styles.card, styles.cardCaja]}>
               <View style={styles.cardHeaderRow}>
@@ -369,9 +387,10 @@ export default function CajaScreen() {
           </Text>
         </View>
 
+        {/* Tarjeta Ganancia Neta Acumulada USD */}
         <View style={[styles.card, styles.cardGanancia]}>
           <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitleGanancia}>Ganancia</Text>
+            <Text style={styles.cardTitleGanancia}>Ganancia Neta</Text>
             <Text style={styles.monedaBadgeGanancia}>USD</Text>
           </View>
           <Text style={styles.cardValueGanancia}>
@@ -382,9 +401,10 @@ export default function CajaScreen() {
           </Text>
         </View>
 
+        {/* Tarjeta Ganancia Neta Acumulada COP */}
         <View style={[styles.card, styles.cardGanancia]}>
           <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitleGanancia}>Ganancia</Text>
+            <Text style={styles.cardTitleGanancia}>Ganancia Neta</Text>
             <Text style={styles.monedaBadgeGanancia}>COP</Text>
           </View>
           <Text style={styles.cardValueGanancia}>
@@ -463,7 +483,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20,
     marginBottom: 16,
-    // En Web mantiene 2 por fila (48.5%). En teléfonos móviles (iOS / Android) ocupa el 100% (1 por fila)
     width: Platform.OS === "web" ? "48.5%" : "100%",
     shadowColor: "#64748b",
     shadowOffset: { width: 0, height: 4 },

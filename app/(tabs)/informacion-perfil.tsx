@@ -31,13 +31,13 @@ export default function PerfilScreen() {
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
 
-  // Datos fijos (no editables)
+  // Datos del perfil
   const [cedula, setCedula] = useState("");
   const [nombres, setNombres] = useState("");
   const [apellidos, setApellidos] = useState("");
   const [rolDetectado, setRolDetectado] = useState("");
 
-  // Datos editables
+  // Datos de contacto editables
   const [telefono, setTelefono] = useState("");
   const [correo, setCorreo] = useState("");
 
@@ -150,7 +150,6 @@ export default function PerfilScreen() {
           return;
         }
 
-        // Verificar credenciales actuales iniciando sesión con el correo actual y la contraseña actual
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email: currentEmail,
           password: passwordActual,
@@ -166,19 +165,22 @@ export default function PerfilScreen() {
         }
       }
 
-      // 1. Actualizar Teléfono y Correo en su respectiva tabla de roles
+      // Solo actualizamos teléfono y correo (Cédula, Nombres y Apellidos fijos)
       if (rolDetectado) {
-        const updatePayload: any = { telefono, correo };
+        const updatePayload: any = {
+          telefono,
+          correo,
+        };
 
         const { error: dbError } = await supabase
           .from(rolDetectado)
           .update(updatePayload)
-          .eq("cedula", cedula);
+          .eq("correo", currentEmail);
 
         if (dbError) throw dbError;
       }
 
-      // 2. Actualizar correo en Supabase Auth si cambió
+      // Actualizar correo en Supabase Auth si cambió
       if (correo !== currentEmail) {
         const { error: emailError } = await supabase.auth.updateUser({
           email: correo,
@@ -186,7 +188,7 @@ export default function PerfilScreen() {
         if (emailError) throw emailError;
       }
 
-      // 3. Actualizar contraseña si se ingresó una nueva y pasó la validación
+      // Actualizar contraseña si se ingresó una nueva
       if (nuevaPassword.trim() !== "") {
         const { error: passError } = await supabase.auth.updateUser({
           password: nuevaPassword,
@@ -232,35 +234,40 @@ export default function PerfilScreen() {
         <View style={styles.card}>
           <Text style={styles.title}>Mi Perfil</Text>
           <Text style={styles.subtitle}>
-            Consulta tus datos institucionales y modifica tu contacto o
-            contraseña
+            Actualiza tus datos de contacto o credenciales de acceso
           </Text>
 
-          {/* Cédula (No editable) */}
+          {/* Cédula (Bloqueada para todos) */}
           <Text style={styles.label}>Cédula (No editable)</Text>
           <TextInput
             style={[styles.input, styles.inputDisabled]}
             value={cedula}
             editable={false}
+            placeholder="Número de cédula"
+            placeholderTextColor={colors.textSecondary}
           />
 
-          {/* Nombres (No editable) */}
+          {/* Nombres (Bloqueado para todos) */}
           <Text style={styles.label}>Nombres (No editable)</Text>
           <TextInput
             style={[styles.input, styles.inputDisabled]}
             value={nombres}
             editable={false}
+            placeholder="Nombres"
+            placeholderTextColor={colors.textSecondary}
           />
 
-          {/* Apellidos (No editable) */}
+          {/* Apellidos (Bloqueado para todos) */}
           <Text style={styles.label}>Apellidos (No editable)</Text>
           <TextInput
             style={[styles.input, styles.inputDisabled]}
             value={apellidos}
             editable={false}
+            placeholder="Apellidos"
+            placeholderTextColor={colors.textSecondary}
           />
 
-          {/* Teléfono (Solo números enteros permitidos) */}
+          {/* Teléfono (Editable, solo números) */}
           <Text style={styles.label}>Teléfono</Text>
           <TextInput
             style={styles.input}
@@ -322,7 +329,7 @@ export default function PerfilScreen() {
         </View>
       </View>
 
-      {/* MODAL DE ERROR (Contraseña errónea u otros fallos) */}
+      {/* MODAL DE ERROR */}
       <Modal
         visible={modalErrorVisible}
         animationType="fade"
@@ -411,7 +418,6 @@ const styles = StyleSheet.create({
     padding: 30,
     borderWidth: 1,
     borderColor: colors.border,
-    boxShadow: "0px 2px 8px rgba(0, 0, 0, 0.06)",
     elevation: 3,
   },
   title: {
@@ -461,7 +467,6 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: "center",
     marginTop: 10,
-    boxShadow: "0px 2px 8px rgba(0, 0, 0, 0.06)",
     elevation: 3,
   },
   primaryButtonText: {
@@ -485,7 +490,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 1,
     borderColor: colors.border,
-    boxShadow: "0px 2px 8px rgba(0, 0, 0, 0.06)",
     elevation: 3,
   },
   modalIconContainer: {

@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   ScrollView,
   Platform,
+  Modal,
 } from "react-native";
 import { supabase } from "../../supabase";
 import { colors } from "@/constants/globalStyles";
@@ -47,6 +48,10 @@ export default function GastosScreen() {
   // Estados para la tabla y buscador
   const [gastos, setGastos] = useState<GastoItem[]>([]);
   const [busquedaFecha, setBusquedaFecha] = useState("");
+
+  // Estado para el modal de éxito personalizado
+  const [modalExitoVisible, setModalExitoVisible] = useState(false);
+  const [mensajeExitoModal, setMensajeExitoModal] = useState("");
 
   useEffect(() => {
     verificarRolYCargarDatos();
@@ -118,14 +123,11 @@ export default function GastosScreen() {
   };
 
   const cargarGastos = async (rol: string, cedula: string) => {
+    // Si es admin o secretaría, traemos todos los gastos. Si es empleado, se pueden ver los suyos o todos (aquí traemos todos para que admin/secretaría los vean sin problema).
     let query = supabase
       .from("gastos")
       .select("*")
       .order("created_at", { ascending: false });
-
-    if (rol === "empleado" && cedula) {
-      query = query.eq("registrado_por_cedula", cedula);
-    }
 
     const { data } = await query;
 
@@ -183,21 +185,45 @@ export default function GastosScreen() {
     return cajaEncontrada ? cajaEncontrada.id : null;
   };
 
+  const formatearMontoInput = (text: string) => {
+    const numeroLimpidio = text.replace(/[^0-9]/g, "");
+    if (!numeroLimpidio) {
+      setMonto("");
+      return;
+    }
+    const numeroLimitado = numeroLimpidio.slice(0, 9);
+    const numeroFormateado = Number(numeroLimitado).toLocaleString("es-CO");
+    setMonto(numeroFormateado);
+  };
+
   const registrarGasto = async () => {
     const cajaIdSeleccionada = obtenerCajaIdAutomatica();
-    const categoriaFinal =
-      categoria === "otro" ? otraCategoria.trim() : categoria;
+    const esEmpleado = rolUsuario === "empleado" || rolUsuario === "empleados";
+
+    // Si es empleado, la categoría se asigna automáticamente como 'otro' (cumpliendo con el CHECK de la BD)
+    const categoriaFinal = esEmpleado
+      ? "otro"
+      : categoria === "otro"
+        ? otraCategoria.trim()
+        : categoria;
+
+    const montoNumerico = Number(monto.replace(/\./g, ""));
+
+    const faltaEspecificarOtro =
+      !esEmpleado && categoria === "otro" && !otraCategoria.trim();
 
     if (
       !monto ||
-      !descripcion ||
+      isNaN(montoNumerico) ||
+      montoNumerico <= 0 ||
+      !descripcion.trim() ||
       !cedulaUsuario ||
       !cajaIdSeleccionada ||
-      (categoria === "otro" && !otraCategoria.trim())
+      faltaEspecificarOtro
     ) {
       Alert.alert(
         "Atención",
-        "Por favor completa todos los campos requeridos, especifica la nueva categoría y verifica que exista una caja configurada.",
+        "Por favor completa todos los campos requeridos y verifica que exista una caja configurada con la moneda seleccionada.",
       );
       return;
     }
@@ -209,7 +235,7 @@ export default function GastosScreen() {
           caja_id: cajaIdSeleccionada,
           categoria: categoriaFinal,
           moneda: moneda,
-          monto: Number(monto),
+          monto: montoNumerico,
           descripcion: descripcion.trim(),
           registrado_por_cedula: cedulaUsuario,
         },
@@ -224,18 +250,22 @@ export default function GastosScreen() {
         .single();
 
       if (cajaActual) {
-        const nuevoSaldo = Number(cajaActual.saldo_actual) - Number(monto);
+        const nuevoSaldo = Number(cajaActual.saldo_actual) - montoNumerico;
         await supabase
           .from("cajas_bancos")
           .update({ saldo_actual: nuevoSaldo })
           .eq("id", cajaIdSeleccionada);
       }
 
-      Alert.alert("Éxito", "Egreso registrado correctamente.");
+      setMensajeExitoModal("Gasto registrado correctamente.");
+      setModalExitoVisible(true);
+
       setMonto("");
       setDescripcion("");
-      setOtraCategoria("");
-      cargarGastos(rolUsuario, cedulaUsuario);
+      if (!esEmpleado) {
+        setOtraCategoria("");
+      }
+      await cargarGastos(rolUsuario, cedulaUsuario);
     } catch (err: any) {
       Alert.alert("Error", err.message || "No se pudo registrar el gasto.");
     } finally {
@@ -264,10 +294,7 @@ export default function GastosScreen() {
       link.click();
       document.body.removeChild(link);
     } else {
-      Alert.alert(
-        "Exportar Excel",
-        "La descarga de archivos está optimizada para entorno Web.",
-      );
+      Alert.alert("Exportar Excel", "Optimizado para entorno Web.");
     }
   };
 
@@ -331,10 +358,7 @@ export default function GastosScreen() {
         }, 500);
       }
     } else {
-      Alert.alert(
-        "Exportar PDF",
-        "Para exportar en PDF en dispositivos móviles, utiliza la opción de imprimir.",
-      );
+      Alert.alert("Exportar PDF", "Utiliza la opción de imprimir.");
     }
   };
 
@@ -344,53 +368,73 @@ export default function GastosScreen() {
 
   const esAdminSecretaria =
     rolUsuario === "administrador" || rolUsuario === "secretaria";
+  const esEmpleado = rolUsuario === "empleado" || rolUsuario === "empleados";
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <View style={styles.mainWrapper}>
         <Text style={styles.headerTitle}>Registro de Gastos y Pagos</Text>
         <Text style={styles.subtitle}>
-          Nómina, servicios, alquiler y otros egresos
+          {esEmpleado
+            ? "Módulo de Registro de Gastos (Empleado)"
+            : "Nómina, servicios, alquiler y otros egresos"}
         </Text>
 
         {/* Formulario */}
         <View style={styles.formCard}>
-          <Text style={styles.label}>Categoría de Gasto:</Text>
-          <View style={styles.row}>
-            {[
-              { id: "nomina_empleado", label: "Nómina" },
-              { id: "servicios", label: "Servicios" },
-              { id: "alquiler", label: "Alquiler" },
-              { id: "otro", label: "Otro" },
-            ].map((cat) => (
-              <TouchableOpacity
-                key={cat.id}
-                style={[
-                  styles.catButton,
-                  categoria === cat.id && styles.catButtonSelected,
-                ]}
-                onPress={() => setCategoria(cat.id)}
-              >
-                <Text
-                  style={[
-                    styles.catButtonText,
-                    categoria === cat.id && styles.catButtonTextSelected,
-                  ]}
-                >
-                  {cat.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          {/* Si es Admin o Secretaría ven las opciones completas de categoría */}
+          {esAdminSecretaria && (
+            <>
+              <Text style={styles.label}>Categoría de Gasto:</Text>
+              <View style={styles.row}>
+                {[
+                  { id: "nomina_empleado", label: "Nómina" },
+                  { id: "servicios", label: "Servicios" },
+                  { id: "alquiler", label: "Alquiler" },
+                  { id: "otro", label: "Otro" },
+                ].map((cat) => (
+                  <TouchableOpacity
+                    key={cat.id}
+                    style={[
+                      styles.catButton,
+                      categoria === cat.id && styles.catButtonSelected,
+                    ]}
+                    onPress={() => setCategoria(cat.id)}
+                  >
+                    <Text
+                      style={[
+                        styles.catButtonText,
+                        categoria === cat.id && styles.catButtonTextSelected,
+                      ]}
+                    >
+                      {cat.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
-          {categoria === "otro" && (
-            <TextInput
-              style={styles.input}
-              placeholder="Especifica la categoría..."
-              value={otraCategoria}
-              onChangeText={setOtraCategoria}
-              placeholderTextColor={colors.textSecondary}
-            />
+              {categoria === "otro" && (
+                <TextInput
+                  style={styles.input}
+                  placeholder="Especifica la categoría..."
+                  value={otraCategoria}
+                  onChangeText={setOtraCategoria}
+                  placeholderTextColor={colors.textSecondary}
+                />
+              )}
+            </>
+          )}
+
+          {/* Si es empleado se le avisa que la categoría es automática */}
+          {esEmpleado && (
+            <View style={styles.badgeEmpleadoContainer}>
+              <Text style={styles.badgeEmpleadoText}>
+                📌 Categoría automática:{" "}
+                <Text style={{ fontWeight: "bold" }}>
+                  Otro (Gasto de Empleado)
+                </Text>
+              </Text>
+            </View>
           )}
 
           <Text style={styles.label}>Moneda:</Text>
@@ -446,34 +490,56 @@ export default function GastosScreen() {
             style={styles.input}
             placeholder="Monto a pagar"
             value={monto}
-            onChangeText={(text) => setMonto(text.replace(/[^0-9.]/g, ""))}
+            onChangeText={formatearMontoInput}
             keyboardType="numeric"
+            maxLength={13}
             placeholderTextColor={colors.textSecondary}
           />
 
           <TextInput
             style={[styles.input, { height: 70, textAlignVertical: "top" }]}
-            placeholder="Descripción (Ej: Compra de papelería)"
+            placeholder={
+              esEmpleado
+                ? "Describe el gasto que realizaste (Ej: Compra de materiales)"
+                : "Descripción del egreso"
+            }
             value={descripcion}
             onChangeText={setDescripcion}
             multiline
             placeholderTextColor={colors.textSecondary}
           />
 
-          <TouchableOpacity
-            style={styles.button}
-            onPress={registrarGasto}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Registrar Egreso</Text>
-            )}
-          </TouchableOpacity>
+          {/* Botón dinámico según rol */}
+          {esEmpleado ? (
+            <TouchableOpacity
+              style={styles.employeeButton}
+              onPress={registrarGasto}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.buttonText}>
+                  Registrar Gasto de Empleado
+                </Text>
+              )}
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.button}
+              onPress={registrarGasto}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.buttonText}>Registrar Gasto</Text>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
 
-        {/* Sección Tabla CRUD e Historial */}
+        {/* Sección Tabla de Historial (Visible para todos o restringida según prefieras; aquí la ven Admin y Secretaría) */}
         {esAdminSecretaria ? (
           <>
             <Text style={styles.sectionTitle}>
@@ -504,9 +570,7 @@ export default function GastosScreen() {
               </View>
             </View>
 
-            {/* Tabla configurada al 100% de ancho sin ScrollView horizontal forzado */}
             <View style={styles.tableContainer}>
-              {/* Cabecera de Tabla */}
               <View style={styles.tableHeader}>
                 <Text style={[styles.th, { flex: 1.2 }]}>Fecha</Text>
                 <Text style={[styles.th, { flex: 2.5 }]}>Descripción</Text>
@@ -557,13 +621,37 @@ export default function GastosScreen() {
         ) : (
           <View style={styles.infoCardEmpleados}>
             <Text style={styles.infoTextEmpleados}>
-              ℹ️ Tu rol de empleado permite registrar los gastos de forma
-              exitosa. El listado general y reportes están reservados para la
-              administración y secretaría.
+              ℹ️ Los gastos que registres quedarán guardados y podrán ser
+              revisados en el historial general por la administración y
+              secretaría.
             </Text>
           </View>
         )}
       </View>
+
+      {/* MODAL DE ÉXITO */}
+      <Modal
+        visible={modalExitoVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setModalExitoVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalIconContainer}>
+              <Text style={{ fontSize: 22 }}>✅</Text>
+            </View>
+            <Text style={styles.modalTitle}>¡Éxito!</Text>
+            <Text style={styles.modalMessage}>{mensajeExitoModal}</Text>
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={() => setModalExitoVisible(false)}
+            >
+              <Text style={styles.modalButtonText}>Aceptar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -618,6 +706,18 @@ const styles = StyleSheet.create({
   },
   catButtonText: { fontSize: 13, color: colors.textSecondary },
   catButtonTextSelected: { color: "#fff", fontWeight: "bold" },
+  badgeEmpleadoContainer: {
+    backgroundColor: colors.accentBlue + "15",
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: colors.accentBlue + "40",
+  },
+  badgeEmpleadoText: {
+    color: colors.textPrimary,
+    fontSize: 13,
+  },
   input: {
     backgroundColor: colors.background,
     padding: 12,
@@ -631,6 +731,13 @@ const styles = StyleSheet.create({
   },
   button: {
     backgroundColor: "#e74c3c",
+    padding: 14,
+    borderRadius: 8,
+    alignItems: "center",
+    marginTop: 4,
+  },
+  employeeButton: {
+    backgroundColor: "#2980b9",
     padding: 14,
     borderRadius: 8,
     alignItems: "center",
@@ -681,7 +788,7 @@ const styles = StyleSheet.create({
   },
   exportText: { color: "#fff", fontWeight: "bold", fontSize: 13 },
   tableContainer: {
-    width: "100%", // Ocupa el 100% del ancho disponible en pantalla
+    width: "100%",
     marginBottom: 20,
   },
   tableHeader: {
@@ -727,5 +834,58 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
     lineHeight: 20,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.75)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalContent: {
+    width: "100%",
+    maxWidth: 360,
+    backgroundColor: colors.cardBackground,
+    borderRadius: 20,
+    padding: 24,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+    elevation: 3,
+  },
+  modalIconContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "#f0fdf4",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: colors.textPrimary,
+    marginBottom: 10,
+    textAlign: "center",
+  },
+  modalMessage: {
+    fontSize: 15,
+    color: colors.textSecondary,
+    textAlign: "center",
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  modalButton: {
+    width: "100%",
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: "#4ade80",
+    alignItems: "center",
+  },
+  modalButtonText: {
+    color: "#0f172a",
+    fontSize: 15,
+    fontWeight: "bold",
   },
 });

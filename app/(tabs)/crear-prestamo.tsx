@@ -40,7 +40,6 @@ export default function CrearPrestamoScreen({ route }: any) {
   const [modalVisible, setModalVisible] = useState(false);
   const [nombreBusqueda, setNombreBusqueda] = useState("");
 
-  // Estados para los modales personalizados de resultado
   const [modalResultadoVisible, setModalResultadoVisible] = useState(false);
   const [tipoResultado, setTipoResultado] = useState<"exito" | "error">(
     "exito",
@@ -85,7 +84,6 @@ export default function CrearPrestamoScreen({ route }: any) {
 
       let usuarioInfo: any = null;
 
-      // 1. Buscar en la tabla de ADMINISTRADORES
       let queryAdmin = supabase
         .from("administradores")
         .select("id, cedula, nombres, apellidos");
@@ -104,7 +102,6 @@ export default function CrearPrestamoScreen({ route }: any) {
         };
       }
 
-      // 2. Si no es admin, buscar en la tabla de SECRETARIA
       if (!usuarioInfo) {
         let querySec = supabase
           .from("secretaria")
@@ -124,7 +121,6 @@ export default function CrearPrestamoScreen({ route }: any) {
         }
       }
 
-      // 3. Si no es ninguno de los anteriores, buscar en la tabla de EMPLEADOS
       if (!usuarioInfo) {
         let queryEmp = supabase
           .from("empleados")
@@ -184,11 +180,9 @@ export default function CrearPrestamoScreen({ route }: any) {
       .select("cedula, nombres, apellidos, registrado_por_cedula")
       .order("nombres");
 
-    // Si es empleado, se restringe estrictamente a los clientes registrados por él
     if (infoUsuario.tipo === "Empleado") {
       query = query.eq("registrado_por_cedula", infoUsuario.cedula);
     }
-    // Administrador y Secretaria ven todos los clientes sin restricción
 
     const { data, error } = await query;
 
@@ -219,32 +213,38 @@ export default function CrearPrestamoScreen({ route }: any) {
     }
   };
 
-  const handleMontoChange = (text: string) => {
-    const soloNumeros = text.replace(/\D/g, "").slice(0, 20);
+  // Modificado para mostrar solo montos enteros con puntos de miles (sin decimales)
+  const formatearSinDecimales = (valor: string | number) => {
+    if (valor === "" || valor === null || valor === undefined) return "";
+    const numeroStr =
+      typeof valor === "number"
+        ? Math.round(valor).toString()
+        : valor.toString();
 
-    if (soloNumeros === "") {
+    const limpio = numeroStr.replace(/[^\d]/g, "");
+    return limpio.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  };
+
+  const handleMontoChange = (text: string) => {
+    if (text === "") {
       setMonto("");
       return;
     }
 
-    if (moneda === "COP") {
-      const numeroFormateado = Number(soloNumeros).toLocaleString("es-CO");
-      setMonto(numeroFormateado);
-    } else {
-      setMonto(soloNumeros);
+    const soloDigitos = text.replace(/\D/g, "");
+
+    if (soloDigitos === "") {
+      setMonto("");
+      return;
     }
+
+    const digitosLimitados = soloDigitos.slice(0, 9);
+    const formateado = digitosLimitados.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    setMonto(formateado);
   };
 
   const handleCambiarMoneda = (nuevaMoneda: "USD" | "COP") => {
     setMoneda(nuevaMoneda);
-    if (monto) {
-      const soloNumeros = monto.replace(/\D/g, "");
-      if (nuevaMoneda === "COP") {
-        setMonto(Number(soloNumeros).toLocaleString("es-CO"));
-      } else {
-        setMonto(soloNumeros);
-      }
-    }
   };
 
   const obtenerCajaIdAutomatica = () => {
@@ -257,13 +257,20 @@ export default function CrearPrestamoScreen({ route }: any) {
     return cajaEncontrada ? cajaEncontrada : null;
   };
 
-  const montoNum = parseFloat(monto.replace(/\./g, "")) || 0;
-  const porcentajeNum = parseFloat(porcentaje) || 0;
-  const cuotasNum = parseInt(cuotas) || 1;
+  const limpiarMontoParaCalculo = (val: string) => {
+    if (!val) return 0;
+    let numStr = val.replace(/\./g, "");
+    return parseInt(numStr, 10) || 0;
+  };
 
-  const totalInteres = (montoNum * porcentajeNum) / 100;
+  const montoNum = limpiarMontoParaCalculo(monto);
+  const porcentajeNum = parseFloat(porcentaje) || 0;
+  const cuotasNum = parseInt(cuotas, 10) || 1;
+
+  // Cálculos redondeados a números enteros
+  const totalInteres = Math.round((montoNum * porcentajeNum) / 100);
   const montoTotal = montoNum + totalInteres;
-  const valorCuota = cuotasNum > 0 ? montoTotal / cuotasNum : 0;
+  const valorCuota = cuotasNum > 0 ? Math.round(montoTotal / cuotasNum) : 0;
 
   const mostrarMensaje = (tipo: "exito" | "error", mensaje: string) => {
     setTipoResultado(tipo);
@@ -303,7 +310,6 @@ export default function CrearPrestamoScreen({ route }: any) {
     setLoading(true);
 
     try {
-      // 1. Insertar el préstamo
       const { error: errorPrestamo } = await supabase.from("prestamos").insert([
         {
           cedula: clienteSeleccionado,
@@ -316,44 +322,12 @@ export default function CrearPrestamoScreen({ route }: any) {
           frecuencia: frecuencia,
           cuotas: cuotasNum,
           valor_cuota: valorCuota,
+          caja_id: cajaSeleccionada.id,
           registrado_por_cedula: usuarioActual.cedula,
         },
       ]);
 
       if (errorPrestamo) throw errorPrestamo;
-
-      // 2. Registrar la transacción de egreso
-      const { error: errorTransaccion } = await supabase
-        .from("transacciones")
-        .insert([
-          {
-            caja_id: cajaSeleccionada.id,
-            tipo: "egreso",
-            moneda: moneda,
-            monto: montoNum,
-            descripcion: `Desembolso de préstamo a cliente Cédula: ${clienteSeleccionado}`,
-            registrado_por_cedula: usuarioActual.cedula,
-          },
-        ]);
-
-      if (errorTransaccion) throw errorTransaccion;
-
-      // 3. Actualizar saldo actual de caja/banco
-      const { data: cajaActualData } = await supabase
-        .from("cajas_bancos")
-        .select("saldo_actual")
-        .eq("id", cajaSeleccionada.id)
-        .single();
-
-      if (cajaActualData) {
-        const nuevoSaldo = Number(cajaActualData.saldo_actual) - montoNum;
-        const { error: errorUpdateCaja } = await supabase
-          .from("cajas_bancos")
-          .update({ saldo_actual: nuevoSaldo })
-          .eq("id", cajaSeleccionada.id);
-
-        if (errorUpdateCaja) throw errorUpdateCaja;
-      }
 
       setMonto("");
       setClienteSeleccionado(null);
@@ -364,11 +338,22 @@ export default function CrearPrestamoScreen({ route }: any) {
       );
     } catch (err: any) {
       console.log("Error al guardar préstamo:", err.message);
-      mostrarMensaje(
-        "error",
+
+      let mensajeErrorFinal =
         err.message ||
-          "Ocurrió un error inesperado al intentar guardar el préstamo.",
-      );
+        "Ocurrió un error inesperado al intentar guardar el préstamo.";
+      if (
+        mensajeErrorFinal.toLowerCase().includes("saldo insuficiente") ||
+        mensajeErrorFinal.toLowerCase().includes("fondos")
+      ) {
+        mensajeErrorFinal = `⚠️ Saldo insuficiente en la caja seleccionada (${cajaSeleccionada.nombre}). Verifique los fondos disponibles antes de realizar el desembolso de $ ${formatearSinDecimales(montoNum)} ${moneda}.`;
+      } else if (
+        mensajeErrorFinal.toLowerCase().includes("numeric field overflow")
+      ) {
+        mensajeErrorFinal = `⚠️ El monto ingresado ($ ${formatearSinDecimales(montoNum)} ${moneda}) es demasiado grande y excede el límite permitido por la base de datos.`;
+      }
+
+      mostrarMensaje("error", mensajeErrorFinal);
     } finally {
       setLoading(false);
     }
@@ -458,8 +443,8 @@ export default function CrearPrestamoScreen({ route }: any) {
         <Text style={styles.label}>3. Cliente</Text>
         <TouchableOpacity
           style={styles.dropdownTrigger}
-          activeOpacity={0.7}
           onPress={() => setModalVisible(true)}
+          activeOpacity={0.7}
         >
           {clienteObjetoSeleccionado ? (
             <View style={{ flex: 1 }}>
@@ -518,11 +503,12 @@ export default function CrearPrestamoScreen({ route }: any) {
         <Text style={styles.label}>5. Monto del Préstamo</Text>
         <TextInput
           style={styles.input}
-          placeholder={`Monto a prestar en ${moneda}`}
+          placeholder="Ingresa monto del prestamos"
+          placeholderTextColor="#a4b0be"
+          keyboardType="numeric"
           value={monto}
           onChangeText={handleMontoChange}
-          keyboardType="numeric"
-          placeholderTextColor="#a4b0be"
+          maxLength={15}
         />
 
         <View style={styles.calcBox}>
@@ -534,7 +520,7 @@ export default function CrearPrestamoScreen({ route }: any) {
           <View style={styles.calcRow}>
             <Text style={styles.calcText}>Total con Interés:</Text>
             <Text style={styles.bold}>
-              $ {montoTotal.toFixed(2)} {moneda}
+              $ {formatearSinDecimales(montoTotal)} {moneda}
             </Text>
           </View>
           <View style={styles.calcRow}>
@@ -542,7 +528,7 @@ export default function CrearPrestamoScreen({ route }: any) {
               Valor por Cuota ({cuotas} cuotas):
             </Text>
             <Text style={styles.boldPrimary}>
-              $ {valorCuota.toFixed(2)} {moneda}
+              $ {formatearSinDecimales(valorCuota)} {moneda}
             </Text>
           </View>
         </View>
@@ -551,6 +537,7 @@ export default function CrearPrestamoScreen({ route }: any) {
           style={[styles.button, loading && { opacity: 0.7 }]}
           onPress={guardarPrestamo}
           disabled={loading}
+          activeOpacity={0.7}
         >
           {loading ? (
             <ActivityIndicator color="#fff" />
@@ -562,9 +549,9 @@ export default function CrearPrestamoScreen({ route }: any) {
 
       {/* MODAL DE SELECCIÓN DE CLIENTE */}
       <Modal
-        visible={modalVisible}
         animationType="fade"
         transparent={true}
+        visible={modalVisible}
         onRequestClose={() => setModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
@@ -585,9 +572,9 @@ export default function CrearPrestamoScreen({ route }: any) {
               <TextInput
                 style={styles.modalSearchInput}
                 placeholder="🔍 Escribe nombre, apellido o cédula..."
+                placeholderTextColor="#94a3b8"
                 value={nombreBusqueda}
                 onChangeText={setNombreBusqueda}
-                placeholderTextColor="#94a3b8"
                 autoFocus={true}
               />
             </View>
@@ -652,11 +639,11 @@ export default function CrearPrestamoScreen({ route }: any) {
         </View>
       </Modal>
 
-      {/* MODAL PERSONALIZADO DE RESULTADO (ÉXITO / ERROR) */}
+      {/* MODAL PERSONALIZADO DE RESULTADO */}
       <Modal
-        visible={modalResultadoVisible}
         animationType="fade"
         transparent={true}
+        visible={modalResultadoVisible}
         onRequestClose={() => setModalResultadoVisible(false)}
       >
         <View style={styles.modalOverlay}>

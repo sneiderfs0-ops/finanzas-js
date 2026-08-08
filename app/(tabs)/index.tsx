@@ -13,11 +13,14 @@ import { supabase } from "../../supabase";
 export default function IndexScreen() {
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<string | null>(null);
-  const [userData, setUserData] = useState<any>(null); // Guardará los datos del empleado/secretaria/admin logueado
+  const [userData, setUserData] = useState<any>(null);
 
   const [resumen, setResumen] = useState({
-    prestadoHoy: 0,
-    recaudadoHoy: 0,
+    prestadoHoy: { USD: 0, COP: 0 },
+    recaudadoHoy: { USD: 0, COP: 0 },
+    gastosHoy: { USD: 0, COP: 0 },
+    totalEntregar: { USD: 0, COP: 0 },
+    excedenteCaja: { USD: 0, COP: 0 },
     activos: 0,
   });
 
@@ -40,134 +43,346 @@ export default function IndexScreen() {
     try {
       const {
         data: { session },
+        error: sessionError,
       } = await supabase.auth.getSession();
 
-      if (!session || !session.user?.email) {
+      if (sessionError || !session || !session.user?.email) {
         router.replace("/(auth)/sign-in");
         return;
       }
 
       const emailUser = session.user.email.trim().toLowerCase();
 
-      // 1. Verificar en la tabla de ADMINISTRADORES
-      let { data: adminData } = await supabase
-        .from("administradores")
-        .select("*")
-        .eq("correo", emailUser)
-        .maybeSingle();
+      // 1. Verificar en ADMINISTRADORES
+      try {
+        const { data: adminData } = await supabase
+          .from("administradores")
+          .select("*")
+          .eq("correo", emailUser)
+          .maybeSingle();
 
-      if (adminData) {
-        setUserRole("administrador");
-        setUserData(adminData);
-        // El administrador carga todo
-        await Promise.all([
-          cargarResumen(),
-          cargarCajasYBancos(),
-          cargarClientesYEmpleados(),
-          cargarGastosYNomina(),
-          cargarCobrosYGanancias(),
-        ]);
-        setLoading(false);
-        return;
+        if (adminData) {
+          setUserRole("administrador");
+          setUserData(adminData);
+          await Promise.all([
+            cargarResumenGeneral(),
+            cargarCajasYBancos(),
+            cargarClientesYEmpleados(),
+            cargarGastosYNomina(),
+            cargarCobrosYGanancias(),
+          ]);
+
+          const channelAdmin = supabase.channel("rt-admin-global");
+
+          channelAdmin
+            .on(
+              "postgres_changes",
+              { event: "*", schema: "public", table: "prestamos" },
+              () => {
+                cargarResumenGeneral();
+                cargarCajasYBancos();
+              },
+            )
+            .on(
+              "postgres_changes",
+              { event: "*", schema: "public", table: "gastos" },
+              () => {
+                cargarResumenGeneral();
+                cargarGastosYNomina();
+                cargarCajasYBancos();
+              },
+            )
+            .on(
+              "postgres_changes",
+              { event: "*", schema: "public", table: "pagos" },
+              () => {
+                cargarResumenGeneral();
+                cargarCobrosYGanancias();
+                cargarCajasYBancos();
+              },
+            )
+            .on(
+              "postgres_changes",
+              { event: "*", schema: "public", table: "empleados" },
+              () => {
+                cargarClientesYEmpleados();
+              },
+            )
+            .on(
+              "postgres_changes",
+              { event: "*", schema: "public", table: "secretaria" },
+              () => {
+                cargarClientesYEmpleados();
+              },
+            )
+            .subscribe();
+
+          setLoading(false);
+          return () => {
+            supabase.removeChannel(channelAdmin);
+          };
+        }
+      } catch (e) {
+        console.log("No es administrador o falló la consulta:", e);
       }
 
-      // 2. Verificar en la tabla de SECRETARIA
-      let { data: secretariaData } = await supabase
-        .from("secretaria")
-        .select("*")
-        .eq("correo", emailUser)
-        .maybeSingle();
+      // 2. Verificar en SECRETARIA
+      try {
+        const { data: secretariaData } = await supabase
+          .from("secretaria")
+          .select("*")
+          .eq("correo", emailUser)
+          .maybeSingle();
 
-      if (secretariaData) {
-        setUserRole("secretaria");
-        setUserData(secretariaData);
-        // La secretaria solo ve el resumen general del día (gráfico y totales del día)
-        await cargarResumen();
-        setLoading(false);
-        return;
+        if (secretariaData) {
+          setUserRole("secretaria");
+          setUserData(secretariaData);
+          await Promise.all([cargarResumenGeneral(), cargarCajasYBancos()]);
+
+          const channelSecretaria = supabase.channel("rt-secretaria-global");
+
+          channelSecretaria
+            .on(
+              "postgres_changes",
+              { event: "*", schema: "public", table: "prestamos" },
+              () => {
+                cargarResumenGeneral();
+                cargarCajasYBancos();
+              },
+            )
+            .on(
+              "postgres_changes",
+              { event: "*", schema: "public", table: "pagos" },
+              () => {
+                cargarResumenGeneral();
+                cargarCajasYBancos();
+              },
+            )
+            .on(
+              "postgres_changes",
+              { event: "*", schema: "public", table: "gastos" },
+              () => {
+                cargarResumenGeneral();
+                cargarCajasYBancos();
+              },
+            )
+            .subscribe();
+
+          setLoading(false);
+          return () => {
+            supabase.removeChannel(channelSecretaria);
+          };
+        }
+      } catch (e) {
+        console.log("No es secretaria o falló la consulta:", e);
       }
 
-      // 3. Verificar en la tabla de EMPLEADOS
-      let { data: empleadoData } = await supabase
-        .from("empleados")
-        .select("*")
-        .eq("correo", emailUser)
-        .maybeSingle();
+      // 3. Verificar en EMPLEADOS
+      try {
+        const { data: empleadoData } = await supabase
+          .from("empleados")
+          .select("*")
+          .eq("correo", emailUser)
+          .maybeSingle();
 
-      if (empleadoData) {
-        setUserRole("empleado");
-        setUserData(empleadoData);
-        // El empleado solo ve su propio resumen del día basado en su cédula o ID
-        await cargarResumenPersonal(empleadoData.cedula);
-        setLoading(false);
-        return;
+        if (empleadoData && empleadoData.cedula) {
+          setUserRole("empleado");
+          setUserData(empleadoData);
+          await cargarResumenPersonal(empleadoData.cedula);
+
+          const channelEmpleado = supabase.channel(
+            `rt-empleado-${empleadoData.cedula}`,
+          );
+
+          channelEmpleado
+            .on(
+              "postgres_changes",
+              { event: "*", schema: "public", table: "prestamos" },
+              () => cargarResumenPersonal(empleadoData.cedula),
+            )
+            .on(
+              "postgres_changes",
+              { event: "*", schema: "public", table: "pagos" },
+              () => cargarResumenPersonal(empleadoData.cedula),
+            )
+            .on(
+              "postgres_changes",
+              { event: "*", schema: "public", table: "gastos" },
+              () => cargarResumenPersonal(empleadoData.cedula),
+            )
+            .on(
+              "postgres_changes",
+              { event: "UPDATE", schema: "public", table: "empleados" },
+              (payload) => {
+                if (payload.new.cedula === empleadoData.cedula) {
+                  setUserData(payload.new);
+                }
+              },
+            )
+            .subscribe();
+
+          setLoading(false);
+          return () => {
+            supabase.removeChannel(channelEmpleado);
+          };
+        }
+      } catch (e) {
+        console.log("No es empleado o falló la consulta:", e);
       }
 
-      // Si no encaja en ninguna tabla, cerrar sesión por seguridad
       await supabase.auth.signOut();
       router.replace("/(auth)/sign-in");
     } catch (err) {
-      console.error("Error al verificar rol y sesión:", err);
+      console.error("Error crítico general al verificar sesión:", err);
       router.replace("/(auth)/sign-in");
     } finally {
       setLoading(false);
     }
   };
 
-  // Carga general para Administradores
-  const cargarResumen = async () => {
-    const hoy = new Date().toISOString().split("T")[0];
+  const cargarResumenGeneral = async () => {
+    try {
+      const hoy = new Date().toISOString().split("T")[0];
+      const mañana = new Date(Date.now() + 86400000)
+        .toISOString()
+        .split("T")[0];
 
-    const { data: prestamos } = await supabase
-      .from("prestamos")
-      .select("monto_total, fecha_prestamo")
-      .gte("fecha_prestamo", `${hoy}T00:00:00`);
+      const { data: prestamos } = await supabase
+        .from("prestamos")
+        .select("monto_total, moneda, fecha_prestamo")
+        .gte("fecha_prestamo", `${hoy} 00:00:00`)
+        .lt("fecha_prestamo", `${mañana} 00:00:00`);
 
-    const totalPrestado =
-      prestamos?.reduce((acc, curr) => acc + Number(curr.monto_total), 0) || 0;
+      let prestadoUSD = 0;
+      let prestadoCOP = 0;
+      prestamos?.forEach((item) => {
+        const monto = Number(item.monto_total || 0);
+        if (item.moneda === "USD") prestadoUSD += monto;
+        if (item.moneda === "COP") prestadoCOP += monto;
+      });
 
-    const { data: pagos } = await supabase
-      .from("pagos")
-      .select("monto_pagado")
-      .gte("fecha_pago", `${hoy}T00:00:00`);
+      const { data: pagos } = await supabase
+        .from("pagos")
+        .select("monto_pagado, moneda, fecha_pago")
+        .gte("fecha_pago", `${hoy} 00:00:00`)
+        .lt("fecha_pago", `${mañana} 00:00:00`);
 
-    const totalRecaudado =
-      pagos?.reduce((acc, curr) => acc + Number(curr.monto_pagado), 0) || 0;
+      let recaudadoUSD = 0;
+      let recaudadoCOP = 0;
+      pagos?.forEach((item) => {
+        const monto = Number(item.monto_pagado || 0);
+        if (item.moneda === "USD") recaudadoUSD += monto;
+        if (item.moneda === "COP") recaudadoCOP += monto;
+      });
 
-    setResumen({
-      prestadoHoy: totalPrestado,
-      recaudadoHoy: totalRecaudado,
-      activos: prestamos?.length || 0,
-    });
+      const { data: gastos } = await supabase
+        .from("gastos")
+        .select("monto, moneda, fecha_gasto")
+        .gte("fecha_gasto", `${hoy} 00:00:00`)
+        .lt("fecha_gasto", `${mañana} 00:00:00`);
+
+      let gastosUSD = 0;
+      let gastosCOP = 0;
+      gastos?.forEach((item) => {
+        const monto = Number(item.monto || 0);
+        if (item.moneda === "USD") gastosUSD += monto;
+        if (item.moneda === "COP") gastosCOP += monto;
+      });
+
+      const netoUSD = recaudadoUSD - gastosUSD - prestadoUSD;
+      const netoCOP = recaudadoCOP - gastosCOP - prestadoCOP;
+
+      setResumen({
+        prestadoHoy: { USD: prestadoUSD, COP: prestadoCOP },
+        recaudadoHoy: { USD: recaudadoUSD, COP: recaudadoCOP },
+        gastosHoy: { USD: gastosUSD, COP: gastosCOP },
+        totalEntregar: {
+          USD: Math.max(0, netoUSD),
+          COP: Math.max(0, netoCOP),
+        },
+        excedenteCaja: {
+          USD: netoUSD < 0 ? Math.abs(netoUSD) : 0,
+          COP: netoCOP < 0 ? Math.abs(netoCOP) : 0,
+        },
+        activos: prestamos?.length || 0,
+      });
+    } catch (e) {
+      console.log("Error en cargarResumenGeneral:", e);
+    }
   };
 
-  // Carga exclusiva y personal para Empleados (filtrado por su cédula)
   const cargarResumenPersonal = async (cedulaEmpleado: string) => {
-    const hoy = new Date().toISOString().split("T")[0];
+    try {
+      const hoy = new Date().toISOString().split("T")[0];
+      const mañana = new Date(Date.now() + 86400000)
+        .toISOString()
+        .split("T")[0];
 
-    const { data: prestamos } = await supabase
-      .from("prestamos")
-      .select("monto_total, fecha_prestamo")
-      .eq("empleado_cedula", cedulaEmpleado)
-      .gte("fecha_prestamo", `${hoy}T00:00:00`);
+      const { data: prestamos } = await supabase
+        .from("prestamos")
+        .select("monto_total, moneda, fecha_prestamo")
+        .eq("registrado_por_cedula", cedulaEmpleado)
+        .gte("fecha_prestamo", `${hoy} 00:00:00`)
+        .lt("fecha_prestamo", `${mañana} 00:00:00`);
 
-    const totalPrestado =
-      prestamos?.reduce((acc, curr) => acc + Number(curr.monto_total), 0) || 0;
+      let prestadoUSD = 0;
+      let prestadoCOP = 0;
+      prestamos?.forEach((item) => {
+        const monto = Number(item.monto_total || 0);
+        if (item.moneda === "USD") prestadoUSD += monto;
+        if (item.moneda === "COP") prestadoCOP += monto;
+      });
 
-    const { data: pagos } = await supabase
-      .from("pagos")
-      .select("monto_pagado")
-      .eq("empleado_cedula", cedulaEmpleado)
-      .gte("fecha_pago", `${hoy}T00:00:00`);
+      const { data: pagos } = await supabase
+        .from("pagos")
+        .select("monto_pagado, moneda, fecha_pago")
+        .eq("registrado_por_cedula", cedulaEmpleado)
+        .gte("fecha_pago", `${hoy} 00:00:00`)
+        .lt("fecha_pago", `${mañana} 00:00:00`);
 
-    const totalRecaudado =
-      pagos?.reduce((acc, curr) => acc + Number(curr.monto_pagado), 0) || 0;
+      let recaudadoUSD = 0;
+      let recaudadoCOP = 0;
+      pagos?.forEach((item) => {
+        const monto = Number(item.monto_pagado || 0);
+        if (item.moneda === "USD") recaudadoUSD += monto;
+        if (item.moneda === "COP") recaudadoCOP += monto;
+      });
 
-    setResumen({
-      prestadoHoy: totalPrestado,
-      recaudadoHoy: totalRecaudado,
-      activos: prestamos?.length || 0,
-    });
+      const { data: gastos } = await supabase
+        .from("gastos")
+        .select("monto, moneda, fecha_gasto")
+        .eq("registrado_por_cedula", cedulaEmpleado)
+        .gte("fecha_gasto", `${hoy} 00:00:00`)
+        .lt("fecha_gasto", `${mañana} 00:00:00`);
+
+      let gastosUSD = 0;
+      let gastosCOP = 0;
+      gastos?.forEach((item) => {
+        const monto = Number(item.monto || 0);
+        if (item.moneda === "USD") gastosUSD += monto;
+        if (item.moneda === "COP") gastosCOP += monto;
+      });
+
+      const netoUSD = recaudadoUSD - gastosUSD - prestadoUSD;
+      const netoCOP = recaudadoCOP - gastosCOP - prestadoCOP;
+
+      setResumen({
+        prestadoHoy: { USD: prestadoUSD, COP: prestadoCOP },
+        recaudadoHoy: { USD: recaudadoUSD, COP: recaudadoCOP },
+        gastosHoy: { USD: gastosUSD, COP: gastosCOP },
+        totalEntregar: {
+          USD: Math.max(0, netoUSD),
+          COP: Math.max(0, netoCOP),
+        },
+        excedenteCaja: {
+          USD: netoUSD < 0 ? Math.abs(netoUSD) : 0,
+          COP: netoCOP < 0 ? Math.abs(netoCOP) : 0,
+        },
+        activos: prestamos?.length || 0,
+      });
+    } catch (e) {
+      console.log("Error en cargarResumenPersonal:", e);
+    }
   };
 
   const cargarCajasYBancos = async () => {
@@ -182,7 +397,6 @@ export default function IndexScreen() {
       if (item.moneda === "COP") cop += saldo;
     });
 
-    // Validar si el total es negativo y asignarle 0
     setTotalCajasUSD(usd < 0 ? 0 : usd);
     setTotalCajasCOP(cop < 0 ? 0 : cop);
   };
@@ -206,8 +420,8 @@ export default function IndexScreen() {
     let usd = 0;
     let cop = 0;
     gastos?.forEach((item) => {
-      if (item.moneda === "USD") usd += Number(item.monto);
-      if (item.moneda === "COP") cop += Number(item.monto);
+      if (item.moneda === "USD") usd += Number(item.monto || 0);
+      if (item.moneda === "COP") cop += Number(item.monto || 0);
     });
     setTotalGastosNomina({ USD: usd, COP: cop });
   };
@@ -219,8 +433,8 @@ export default function IndexScreen() {
     let cobrosUSD = 0;
     let cobrosCOP = 0;
     pagos?.forEach((p) => {
-      if (p.moneda === "USD") cobrosUSD += Number(p.monto_pagado);
-      if (p.moneda === "COP") cobrosCOP += Number(p.monto_pagado);
+      if (p.moneda === "USD") cobrosUSD += Number(p.monto_pagado || 0);
+      if (p.moneda === "COP") cobrosCOP += Number(p.monto_pagado || 0);
     });
     setTotalCobros({ USD: cobrosUSD, COP: cobrosCOP });
 
@@ -230,8 +444,8 @@ export default function IndexScreen() {
     let gananciaUSD = 0;
     let gananciaCOP = 0;
     cierres?.forEach((c) => {
-      if (c.moneda === "USD") gananciaUSD += Number(c.ganancia_neta);
-      if (c.moneda === "COP") gananciaCOP += Number(c.ganancia_neta);
+      if (c.moneda === "USD") gananciaUSD += Number(c.ganancia_neta || 0);
+      if (c.moneda === "COP") gananciaCOP += Number(c.ganancia_neta || 0);
     });
     setGananciasNeta({ USD: gananciaUSD, COP: gananciaCOP });
   };
@@ -247,11 +461,17 @@ export default function IndexScreen() {
     );
   }
 
-  const totalGeneral = resumen.prestadoHoy + resumen.recaudadoHoy;
+  const totalGeneralCOP = resumen.prestadoHoy.COP + resumen.recaudadoHoy.COP;
+  const totalGeneralUSD = resumen.prestadoHoy.USD + resumen.recaudadoHoy.USD;
+
   const porcentajePrestado =
-    totalGeneral > 0 ? (resumen.prestadoHoy / totalGeneral) * 100 : 50;
+    totalGeneralCOP > 0
+      ? (resumen.prestadoHoy.COP / totalGeneralCOP) * 100
+      : 50;
   const porcentajeRecaudado =
-    totalGeneral > 0 ? (resumen.recaudadoHoy / totalGeneral) * 100 : 50;
+    totalGeneralCOP > 0
+      ? (resumen.recaudadoHoy.COP / totalGeneralCOP) * 100
+      : 50;
 
   return (
     <ScrollView
@@ -266,36 +486,95 @@ export default function IndexScreen() {
           {userRole === "empleado"
             ? `Tus estadísticas personales de hoy - ${userData?.nombres || ""}`
             : userRole === "secretaria"
-              ? "Resumen operativo general de caja y cobros del día"
+              ? "Resumen operativo general de caja, cobros y operaciones del día"
               : "Resumen financiero y accesos rápidos globales"}
         </Text>
 
-        {/* Tarjetas de Resumen Rápido (Visible para Admin, Secretaria y Empleado con sus respectivos datos) */}
         <View style={styles.cardGrid}>
-          <View style={[styles.statCard, styles.cardPrestado]}>
+          <View style={[styles.statCard]}>
             <Text style={styles.cardTitle}>
               {userRole === "empleado"
                 ? "Tus Préstamos Hoy"
                 : "Total Prestado Hoy"}
             </Text>
             <Text style={[styles.cardValue, { color: "#38bdf8" }]}>
-              ${resumen.prestadoHoy.toLocaleString()}
+              COP: ${resumen.prestadoHoy.COP.toLocaleString()}
+            </Text>
+            <Text style={[styles.cardSubValue, { color: "#38bdf8" }]}>
+              USD: ${resumen.prestadoHoy.USD.toLocaleString()}
             </Text>
           </View>
 
-          <View style={[styles.statCard, styles.cardRecaudado]}>
+          <View style={[styles.statCard]}>
             <Text style={styles.cardTitle}>
               {userRole === "empleado"
                 ? "Tus Cobros Hoy"
                 : "Total Recaudado Hoy"}
             </Text>
             <Text style={[styles.cardValue, { color: "#4ade80" }]}>
-              ${resumen.recaudadoHoy.toLocaleString()}
+              COP: ${resumen.recaudadoHoy.COP.toLocaleString()}
+            </Text>
+            <Text style={[styles.cardSubValue, { color: "#4ade80" }]}>
+              USD: ${resumen.recaudadoHoy.USD.toLocaleString()}
             </Text>
           </View>
         </View>
 
-        {/* Gráfico / Flujo del Día (Visible para Administrador, Secretaria y Empleado) */}
+        <View style={styles.cardGrid}>
+          <View style={[styles.statCard]}>
+            <Text style={styles.cardTitle}>
+              {userRole === "empleado"
+                ? "Tus Gastos Hoy"
+                : "Gastos de Empleados Hoy"}
+            </Text>
+            <Text style={[styles.cardValue, { color: "#fbbf24" }]}>
+              COP: ${resumen.gastosHoy.COP.toLocaleString()}
+            </Text>
+            <Text style={[styles.cardSubValue, { color: "#fbbf24" }]}>
+              USD: ${resumen.gastosHoy.USD.toLocaleString()}
+            </Text>
+          </View>
+
+          <View
+            style={[
+              styles.statCard,
+              {
+                borderColor:
+                  resumen.totalEntregar.COP > 0 ? "#10b981" : "#334155",
+              },
+            ]}
+          >
+            <Text style={styles.cardTitle}>Total a Entregar</Text>
+            <Text style={[styles.cardValue, { color: "#10b981" }]}>
+              COP: ${resumen.totalEntregar.COP.toLocaleString()}
+            </Text>
+            <Text style={[styles.cardSubValue, { color: "#10b981" }]}>
+              USD: ${resumen.totalEntregar.USD.toLocaleString()}
+            </Text>
+          </View>
+        </View>
+
+        {(resumen.excedenteCaja.COP > 0 || resumen.excedenteCaja.USD > 0) && (
+          <View style={[styles.cardGrid, { marginTop: -10 }]}>
+            <View
+              style={[
+                styles.statCard,
+                { borderColor: "#f43f5e", backgroundColor: "#4c0519" },
+              ]}
+            >
+              <Text style={[styles.cardTitle, { color: "#fda4af" }]}>
+                ⚠️ Excedente de Caja
+              </Text>
+              <Text style={[styles.cardValue, { color: "#fb7185" }]}>
+                COP: ${resumen.excedenteCaja.COP.toLocaleString()}
+              </Text>
+              <Text style={[styles.cardSubValue, { color: "#fb7185" }]}>
+                USD: ${resumen.excedenteCaja.USD.toLocaleString()}
+              </Text>
+            </View>
+          </View>
+        )}
+
         <View style={styles.chartCard}>
           <Text style={styles.chartTitle}>
             📈{" "}
@@ -308,7 +587,10 @@ export default function IndexScreen() {
             <View style={styles.donutCircle}>
               <Text style={styles.donutCenterText}>Total</Text>
               <Text style={styles.donutCenterValue}>
-                ${totalGeneral.toLocaleString()}
+                COP: ${totalGeneralCOP.toLocaleString()}
+              </Text>
+              <Text style={styles.donutCenterSubValue}>
+                USD: ${totalGeneralUSD.toLocaleString()}
               </Text>
             </View>
           </View>
@@ -333,7 +615,7 @@ export default function IndexScreen() {
           </View>
         </View>
 
-        {/* Módulos y Saldos - EXCLUSIVO PARA ADMINISTRADORES */}
+        {/* MÓDULOS RESTRINGIDOS: Únicamente visibles para el Administrador */}
         {userRole === "administrador" && (
           <>
             <Text style={styles.sectionTitle}>Módulos y Saldos</Text>
@@ -496,7 +778,7 @@ const styles = StyleSheet.create({
   cardGrid: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 20,
+    marginBottom: 16,
   },
   statCard: {
     flex: 1,
@@ -508,8 +790,6 @@ const styles = StyleSheet.create({
     borderColor: "#334155",
     elevation: 5,
   },
-  cardPrestado: {},
-  cardRecaudado: {},
   cardTitle: {
     fontSize: 13,
     color: "#94a3b8",
@@ -517,8 +797,13 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   cardValue: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: "bold",
+  },
+  cardSubValue: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginTop: 2,
   },
   chartCard: {
     backgroundColor: "#1e293b",
@@ -537,9 +822,9 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   donutContainer: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
+    width: 150,
+    height: 150,
+    borderRadius: 75,
     borderWidth: 14,
     borderColor: "#38bdf8",
     borderLeftColor: "#4ade80",
@@ -551,16 +836,24 @@ const styles = StyleSheet.create({
   donutCircle: {
     justifyContent: "center",
     alignItems: "center",
+    paddingHorizontal: 4,
   },
   donutCenterText: {
-    fontSize: 12,
+    fontSize: 11,
     color: "#94a3b8",
     fontWeight: "600",
   },
   donutCenterValue: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: "bold",
     color: "#f8fafc",
+    marginTop: 2,
+  },
+  donutCenterSubValue: {
+    fontSize: 13,
+    fontWeight: "bold",
+    color: "#38bdf8",
+    marginTop: 2,
   },
   legendContainer: {
     flexDirection: "row",

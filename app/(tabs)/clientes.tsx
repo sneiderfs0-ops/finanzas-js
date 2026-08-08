@@ -129,10 +129,6 @@ export default function ClientesScreen() {
                 {item.telefono || "No registrado"}
               </Text>
               <Text style={styles.itemDetail}>
-                ✉️ <Text style={styles.detailLabel}>Correo:</Text>{" "}
-                {item.correo || "No registrado"}
-              </Text>
-              <Text style={styles.itemDetail}>
                 📍 <Text style={styles.detailLabel}>Dirección:</Text>{" "}
                 {item.direccion || "No registrada"}
               </Text>

@@ -46,11 +46,8 @@
       "typedRoutes": true
     },
     "extra": {
-      "router": {},
-      "eas": {
-        "projectId": "92cff651-276d-4348-8c15-ead8c8caf7fc"
-      }
+      "router": {}
     },
-    "owner": "sneiders-team"
+    "owner": "finanzas"
   }
 }

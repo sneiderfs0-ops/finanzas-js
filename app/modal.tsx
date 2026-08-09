@@ -91,22 +91,19 @@ export default function ModalScreen() {
           <Text style={localStyles.paragraph}>
             Detrás de esta experiencia fluida existe una arquitectura
             tecnológica de vanguardia. El frontend de la aplicación está
-            construido con{" "}
-            <Text style={localStyles.boldText}>React Native y Expo</Text>, una
-            combinación líder en la industria que permite un despliegue ágil en
-            múltiples sistemas operativos bajo un único código base,
-            garantizando una interfaz móvil nativa, rápida y altamente
-            intuitiva.
+            construido con una combinación líder en la industria que permite un
+            despliegue ágil en múltiples sistemas operativos bajo un único
+            código base, garantizando una interfaz móvil nativa, rápida y
+            altamente intuitiva.
           </Text>
           <Text style={localStyles.paragraph}>
-            Para el motor de la aplicación se integró{" "}
-            <Text style={localStyles.boldText}>Supabase</Text> como
-            infraestructura de backend, lo que asegura una base de datos
-            relacional robusta, sistemas de autenticación cifrados para proteger
-            la información confidencial de los usuarios y sincronización en
-            tiempo real para un control de cobros y pagos sin desfases. El
-            resultado es un ecosistema Fintech de alto rendimiento, seguro y
-            perfectamente escalable para el mercado financiero moderno.
+            Para el motor de la aplicación se integró como infraestructura de
+            backend, lo que asegura una base de datos relacional robusta,
+            sistemas de autenticación cifrados para proteger la información
+            confidencial de los usuarios y sincronización en tiempo real para un
+            control de cobros y pagos sin desfases. El resultado es un
+            ecosistema Fintech de alto rendimiento, seguro y perfectamente
+            escalable para el mercado financiero moderno.
           </Text>
         </View>
 

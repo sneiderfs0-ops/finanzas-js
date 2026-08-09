@@ -1,7 +1,9 @@
+import "react-native-gesture-handler";
 import { useEffect, useState, useRef } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { supabase } from "../supabase";
 import { View, ActivityIndicator, AppState } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
 export default function RootLayout() {
   const [initializing, setInitializing] = useState(true);
@@ -104,18 +106,20 @@ export default function RootLayout() {
   }
 
   return (
-    <View
-      style={{ flex: 1 }}
-      onStartShouldSetResponderCapture={() => {
-        resetInactivityTimer();
-        return false;
-      }}
-    >
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="index" />
-      </Stack>
-    </View>
+    <SafeAreaProvider>
+      <View
+        style={{ flex: 1 }}
+        onStartShouldSetResponderCapture={() => {
+          resetInactivityTimer();
+          return false;
+        }}
+      >
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(auth)" />
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="index" />
+        </Stack>
+      </View>
+    </SafeAreaProvider>
   );
 }

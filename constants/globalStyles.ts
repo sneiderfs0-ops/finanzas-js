@@ -113,7 +113,8 @@ export const globalStyles = StyleSheet.create({
     backgroundColor: "rgba(15, 23, 42, 0.75)",
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
+    padding: 28,
+    margin: 0,
   },
   modalContent: {
     width: "100%",

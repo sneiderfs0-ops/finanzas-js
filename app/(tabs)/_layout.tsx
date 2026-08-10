@@ -356,11 +356,13 @@ function NotificacionesEmpleadosHeader() {
                     key={item.id || item.correo || index}
                     style={localStyles.cardItem}
                   >
-                    <View style={{ flex: 1, marginRight: 8 }}>
+                    <View style={{ flex: 1 }}>
                       <Text style={localStyles.cardName}>
                         {item.nombres} {item.apellidos}
                       </Text>
-                      <Text style={localStyles.cardEmail}>{item.correo}</Text>
+                      <Text style={localStyles.cardEmail} numberOfLines={2}>
+                        {item.correo}
+                      </Text>
                       <Text style={localStyles.cardRole}>
                         Rol: {item.rol ? item.rol.toUpperCase() : "EMPLEADO"}
                       </Text>
@@ -638,9 +640,10 @@ const localStyles = StyleSheet.create({
     gap: 8,
   },
   modalResponsiveContainer: {
-    width: "90%",
-    maxWidth: 450,
-    maxHeight: "80%",
+    width: "92%",
+    maxWidth: 480,
+    maxHeight: "85%",
+    paddingHorizontal: 14,
   },
   modalScrollArea: {
     flexShrink: 1,
@@ -652,62 +655,66 @@ const localStyles = StyleSheet.create({
   },
   cardItem: {
     backgroundColor: colors.cardBackground,
-    padding: 14,
-    borderRadius: 14,
-    marginBottom: 12,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    padding: 20, // Incrementado para dar más presencia y tamaño a la tarjeta
+    borderRadius: 16,
+    marginBottom: 10,
+    flexDirection: "column",
+    gap: 12,
     borderWidth: 1,
     borderColor: colors.border,
   },
   cardName: {
     fontWeight: "bold",
-    fontSize: 14,
+    fontSize: 16, // Texto más grande y claro
     color: colors.textPrimary,
   },
   cardEmail: {
-    fontSize: 12,
+    fontSize: 15, // Ligeramente mayor para mejor lectura
     color: colors.textSecondary,
-    marginTop: 2,
+    marginTop: 3,
   },
   cardRole: {
-    fontSize: 11,
+    fontSize: 15, // Mayor visibilidad del rol
     color: colors.accentBlue,
-    marginTop: 4,
+    marginTop: 8,
     fontWeight: "600",
   },
   actionButtons: {
     flexDirection: "row",
-    gap: 6,
+    justifyContent: "space-between", // Se expanden de lado a lado de la tarjeta de forma proporcional
+    gap: 10,
+    marginTop: 4,
   },
   btnAprobar: {
     backgroundColor: colors.accentGreen,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingVertical: 10,
+    borderRadius: 10,
+    flex: 1, // Ocupan espacio proporcional equitativo dentro de la tarjeta amplia
+    alignItems: "center",
   },
   btnRechazar: {
     backgroundColor: colors.accentRed,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingVertical: 10,
+    borderRadius: 10,
+    flex: 1, // Ocupan espacio proporcional equitativo dentro de la tarjeta amplia
+    alignItems: "center",
   },
   btnText: {
     color: colors.textPrimary,
-    fontSize: 11,
+    fontSize: 13, // Texto de botones más grande y fácil de pulsar
     fontWeight: "bold",
     textAlign: "center",
   },
   closeButton: {
     backgroundColor: colors.border,
-    padding: 12,
+    padding: 15,
     borderRadius: 12,
     alignItems: "center",
-    marginTop: 15,
+    marginTop: 1,
   },
   closeButtonText: {
     color: colors.textPrimary,
     fontWeight: "bold",
+    fontSize: 15,
   },
 });

@@ -45,7 +45,8 @@
     "reset-project": "node ./scripts-reset-project.js",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "build": "expo export -p web"
+    "build": "expo export -p web",
+    "vercel-build": "expo export"
   },
   "private": true
 }

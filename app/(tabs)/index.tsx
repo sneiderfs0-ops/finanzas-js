@@ -115,6 +115,27 @@ export default function IndexScreen() {
                 cargarClientesYEmpleados();
               },
             )
+            .on(
+              "postgres_changes",
+              { event: "*", schema: "public", table: "clientes" },
+              () => {
+                cargarClientesYEmpleados();
+              },
+            )
+            .on(
+              "postgres_changes",
+              { event: "*", schema: "public", table: "cajas_bancos" },
+              () => {
+                cargarCajasYBancos();
+              },
+            )
+            .on(
+              "postgres_changes",
+              { event: "*", schema: "public", table: "cierres_caja" },
+              () => {
+                cargarCobrosYGanancias();
+              },
+            )
             .subscribe();
 
           setLoading(false);
@@ -544,7 +565,9 @@ export default function IndexScreen() {
               },
             ]}
           >
-            <Text style={styles.cardTitle}>Total a Entregar</Text>
+            <Text style={styles.cardTitle}>
+              {userRole === "empleado" ? "Total a Entregar" : "Total a Recibir"}
+            </Text>
             <Text style={[styles.cardValue, { color: "#10b981" }]}>
               COP: ${resumen.totalEntregar.COP.toLocaleString()}
             </Text>
@@ -788,7 +811,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#1e293b",
     borderWidth: 1,
     borderColor: "#334155",
-    elevation: 5,
+    boxShadow: "0px 4px 10px rgba(0, 0, 0, 0.3)",
   },
   cardTitle: {
     fontSize: 13,
@@ -813,7 +836,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     borderWidth: 1,
     borderColor: "#334155",
-    elevation: 5,
+    boxShadow: "0px 4px 10px rgba(0, 0, 0, 0.3)",
   },
   chartTitle: {
     fontSize: 16,
@@ -897,7 +920,7 @@ const styles = StyleSheet.create({
     borderLeftWidth: 5,
     borderWidth: 1,
     borderColor: "#334155",
-    elevation: 4,
+    boxShadow: "0px 4px 8px rgba(0, 0, 0, 0.25)",
   },
   menuEmoji: {
     fontSize: 28,

@@ -537,7 +537,7 @@ export default function GastosScreen() {
           )}
         </View>
 
-        {/* Sección Tabla de Historial con Scroll Horizontal para Web / Pantallas Pequeñas */}
+        {/* Sección Tabla de Historial full width */}
         {esAdminSecretaria ? (
           <>
             <Text style={styles.sectionTitle}>
@@ -575,38 +575,34 @@ export default function GastosScreen() {
             >
               <View style={styles.tableContainer}>
                 <View style={styles.tableHeader}>
-                  <Text style={[styles.th, { width: 110 }]}>Fecha</Text>
-                  <Text style={[styles.th, { width: 220 }]}>Descripción</Text>
-                  <Text style={[styles.th, { width: 220 }]}>Responsable</Text>
-                  <Text style={[styles.th, { width: 140 }]}>Categoría</Text>
-                  <Text style={[styles.th, { width: 90 }]}>Moneda</Text>
-                  <Text style={[styles.th, { width: 120, textAlign: "right" }]}>
+                  <Text style={[styles.th, { flex: 1.2 }]}>Fecha</Text>
+                  <Text style={[styles.th, { flex: 2.5 }]}>Descripción</Text>
+                  <Text style={[styles.th, { flex: 2.5 }]}>Responsable</Text>
+                  <Text style={[styles.th, { flex: 1.5 }]}>Categoría</Text>
+                  <Text style={[styles.th, { flex: 1 }]}>Moneda</Text>
+                  <Text style={[styles.th, { flex: 1.5, textAlign: "right" }]}>
                     Monto
                   </Text>
                 </View>
 
                 {gastosFiltrados.map((item) => (
                   <View key={item.id} style={styles.tableRow}>
-                    <Text style={[styles.td, { width: 110 }]}>
-                      {item.fecha}
-                    </Text>
-                    <Text style={[styles.td, { width: 220 }]} numberOfLines={2}>
+                    <Text style={[styles.td, { flex: 1.2 }]}>{item.fecha}</Text>
+                    <Text style={[styles.td, { flex: 2.5 }]} numberOfLines={2}>
                       {item.descripcion}
                     </Text>
-                    <Text style={[styles.td, { width: 220 }]} numberOfLines={1}>
+                    <Text style={[styles.td, { flex: 2.5 }]} numberOfLines={1}>
                       {item.nombreResponsable}
                     </Text>
-                    <Text style={[styles.td, { width: 140 }]} numberOfLines={1}>
+                    <Text style={[styles.td, { flex: 1.5 }]} numberOfLines={1}>
                       {item.categoria}
                     </Text>
-                    <Text style={[styles.td, { width: 90 }]}>
-                      {item.moneda}
-                    </Text>
+                    <Text style={[styles.td, { flex: 1 }]}>{item.moneda}</Text>
                     <Text
                       style={[
                         styles.td,
                         {
-                          width: 120,
+                          flex: 1.5,
                           textAlign: "right",
                           fontWeight: "bold",
                           color: "#e74c3c",
@@ -674,9 +670,8 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   mainWrapper: {
+    flex: 1,
     width: "100%",
-    maxWidth: 1200,
-    alignSelf: "center",
   },
   headerTitle: { fontSize: 24, fontWeight: "bold", color: colors.textPrimary },
   subtitle: { fontSize: 14, color: colors.textSecondary, marginBottom: 16 },
@@ -803,7 +798,8 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   tableContainer: {
-    width: 900,
+    width: "100%",
+    minWidth: 1480,
     marginBottom: 10,
   },
   tableHeader: {

@@ -23,7 +23,7 @@ export default function ModalScreen() {
           <Text style={globalStyles.sectionTitle}>Información del Sistema</Text>
           <TouchableOpacity
             style={localStyles.closeButton}
-            onPress={() => router.replace("/")} // Redirige directamente al index
+            onPress={() => router.replace("../")} // Redirige directamente al index
             activeOpacity={0.7}
           >
             <Text style={localStyles.closeButtonText}>✕</Text>
@@ -110,7 +110,7 @@ export default function ModalScreen() {
         {/* Botón Inferior para Entendido / Redirigir a Index */}
         <TouchableOpacity
           style={globalStyles.primaryButton}
-          onPress={() => router.replace("/")} // Redirige directamente al index
+          onPress={() => router.replace("../")} // Redirige directamente al index
           activeOpacity={0.8}
         >
           <Text style={globalStyles.primaryButtonText}>Entendido</Text>

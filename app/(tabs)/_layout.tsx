@@ -109,6 +109,7 @@ function CustomDrawerContent(props: any) {
           </Pressable>
         )}
 
+        {/* Solo se muestra a administradores, oculto para empleados y secretarias */}
         {isAdmin && (
           <Pressable
             style={localStyles.navItem}
@@ -268,7 +269,6 @@ function NotificacionesEmpleadosHeader() {
   ) => {
     try {
       if (accion === "eliminar") {
-        // Borra directamente el registro de la base de datos para no acumular basura
         const { error } = await supabase
           .from(tablaDestino)
           .delete()
@@ -280,7 +280,6 @@ function NotificacionesEmpleadosHeader() {
           "La solicitud fue denegada y el registro se eliminó correctamente.",
         );
       } else {
-        // Actualiza el estado a aprobado
         const { error } = await supabase
           .from(tablaDestino)
           .update({ aprobado: "aprobado" })
@@ -325,7 +324,12 @@ function NotificacionesEmpleadosHeader() {
         onRequestClose={() => setModalVisible(false)}
       >
         <View style={globalStyles.modalOverlay}>
-          <View style={[globalStyles.modalContent, { maxWidth: 450 }]}>
+          <View
+            style={[
+              globalStyles.modalContent,
+              localStyles.modalResponsiveContainer,
+            ]}
+          >
             <View style={localStyles.modalHeaderTitleContainer}>
               <SymbolView
                 name={Platform.OS === "ios" ? "bell.fill" : "notifications"}
@@ -337,7 +341,11 @@ function NotificacionesEmpleadosHeader() {
               </Text>
             </View>
 
-            <ScrollView contentContainerStyle={{ paddingVertical: 10 }}>
+            <ScrollView
+              contentContainerStyle={{ paddingVertical: 10 }}
+              style={localStyles.modalScrollArea}
+              showsVerticalScrollIndicator={true}
+            >
               {pendientes.length === 0 ? (
                 <Text style={localStyles.emptyText}>
                   No hay solicitudes pendientes en este momento.
@@ -628,6 +636,14 @@ const localStyles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 15,
     gap: 8,
+  },
+  modalResponsiveContainer: {
+    width: "90%",
+    maxWidth: 450,
+    maxHeight: "80%",
+  },
+  modalScrollArea: {
+    flexShrink: 1,
   },
   emptyText: {
     textAlign: "center",

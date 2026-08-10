@@ -11,13 +11,16 @@ export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
 
-  // Referencia para controlar el temporizador de inactividad
+  // Referencias para controlar el temporizador y el tiempo en segundo plano
   const inactivityTimer = useRef<NodeJS.Timeout | null>(null);
+  const backgroundTimeRef = useRef<number | null>(null);
 
   // Función para cerrar sesión por inactividad
   const handleInactivityLogout = async () => {
     if (user) {
-      await supabase.auth.signOut();
+      if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+      await supabase.auth.signOut({ scope: "local" });
+      setUser(null);
       router.replace("/(auth)/sign-in");
     }
   };
@@ -57,13 +60,30 @@ export default function RootLayout() {
     };
   }, []);
 
-  // Manejar el temporizador cada vez que cambia el estado del usuario o app en segundo plano
+  // Manejar el temporizador y el comportamiento en segundo plano de manera precisa
   useEffect(() => {
     resetInactivityTimer();
 
     const subscription = AppState.addEventListener("change", (nextAppState) => {
-      if (nextAppState === "active") {
+      if (nextAppState === "background" || nextAppState === "inactive") {
+        // Guardamos el momento exacto en que la app entra en segundo plano
+        backgroundTimeRef.current = Date.now();
+        if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+      } else if (nextAppState === "active") {
+        // Al volver, verificamos si pasó más de 10 minutos en segundo plano
+        if (backgroundTimeRef.current && user) {
+          const elapsedMilliseconds = Date.now() - backgroundTimeRef.current;
+          const tenMinutesInMs = 10 * 60 * 1000;
+
+          if (elapsedMilliseconds >= tenMinutesInMs) {
+            // Si pasaron los 10 minutos, cerramos sesión
+            handleInactivityLogout();
+            return;
+          }
+        }
+        // Si no pasaron 10 minutos, reanudamos el temporizador con el tiempo restante o lo reiniciamos
         resetInactivityTimer();
+        backgroundTimeRef.current = null;
       }
     });
 
@@ -78,7 +98,6 @@ export default function RootLayout() {
 
     const inAuthGroup = segments[0] === "(auth)";
 
-    // Usar setTimeout evita errores de navegación si el componente aún no termina de renderizar
     const timeout = setTimeout(() => {
       if (!user && !inAuthGroup) {
         router.replace("/(auth)/sign-in");

@@ -122,6 +122,11 @@ export default function SignUpScreen() {
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: cleanEmail,
         password: password,
+        options: {
+          data: {
+            rol: rol, // Aquí enviamos si es 'empleado' o 'secretaria'
+          },
+        },
       });
 
       if (authError) {

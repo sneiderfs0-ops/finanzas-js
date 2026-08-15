@@ -99,6 +99,20 @@ function CustomDrawerContent(props: any) {
             <Text style={localStyles.navText}>📊 Balance General</Text>
           </Pressable>
         )}
+        <Pressable
+          style={localStyles.navItem}
+          onPress={() => router.push("/(tabs)/rutas")}
+        >
+          <Text style={localStyles.navText}>🗺️ Rutas de Cobro</Text>
+        </Pressable>
+
+        {/* 👇 NUEVO ENLACE: Lista y Reporte de Rutas */}
+        <Pressable
+          style={localStyles.navItem}
+          onPress={() => router.push("/(tabs)/listas-rutas")}
+        >
+          <Text style={localStyles.navText}>📋 Lista de Rutas</Text>
+        </Pressable>
 
         {canAccessPrivileged && (
           <Pressable
@@ -488,6 +502,15 @@ export default function TabLayout() {
         }}
       />
       <Drawer.Screen
+        name="rutas"
+        options={{ title: "Gestión de Rutas", headerRight: renderHeaderRight }}
+      />
+      {/* 👇 NUEVA PANTALLA REGISTRADA EN EL DRAWER */}
+      <Drawer.Screen
+        name="listas-rutas"
+        options={{ title: "Lista de Rutas", headerRight: renderHeaderRight }}
+      />
+      <Drawer.Screen
         name="clientes"
         options={{ title: "Clientes", headerRight: renderHeaderRight }}
       />
@@ -655,7 +678,7 @@ const localStyles = StyleSheet.create({
   },
   cardItem: {
     backgroundColor: colors.cardBackground,
-    padding: 20, // Incrementado para dar más presencia y tamaño a la tarjeta
+    padding: 20,
     borderRadius: 16,
     marginBottom: 10,
     flexDirection: "column",
@@ -665,23 +688,23 @@ const localStyles = StyleSheet.create({
   },
   cardName: {
     fontWeight: "bold",
-    fontSize: 16, // Texto más grande y claro
+    fontSize: 16,
     color: colors.textPrimary,
   },
   cardEmail: {
-    fontSize: 15, // Ligeramente mayor para mejor lectura
+    fontSize: 15,
     color: colors.textSecondary,
     marginTop: 3,
   },
   cardRole: {
-    fontSize: 15, // Mayor visibilidad del rol
+    fontSize: 15,
     color: colors.accentBlue,
     marginTop: 8,
     fontWeight: "600",
   },
   actionButtons: {
     flexDirection: "row",
-    justifyContent: "space-between", // Se expanden de lado a lado de la tarjeta de forma proporcional
+    justifyContent: "space-between",
     gap: 10,
     marginTop: 4,
   },
@@ -689,19 +712,19 @@ const localStyles = StyleSheet.create({
     backgroundColor: colors.accentGreen,
     paddingVertical: 10,
     borderRadius: 10,
-    flex: 1, // Ocupan espacio proporcional equitativo dentro de la tarjeta amplia
+    flex: 1,
     alignItems: "center",
   },
   btnRechazar: {
     backgroundColor: colors.accentRed,
     paddingVertical: 10,
     borderRadius: 10,
-    flex: 1, // Ocupan espacio proporcional equitativo dentro de la tarjeta amplia
+    flex: 1,
     alignItems: "center",
   },
   btnText: {
     color: colors.textPrimary,
-    fontSize: 13, // Texto de botones más grande y fácil de pulsar
+    fontSize: 13,
     fontWeight: "bold",
     textAlign: "center",
   },

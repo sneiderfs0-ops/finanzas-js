@@ -39,21 +39,6 @@ export default function ModalScreen() {
           />
         </View>
 
-        {/* Badges / Etiquetas Tecnológicas */}
-        <View style={localStyles.tagsContainer}>
-          <View style={localStyles.tag}>
-            <Text style={localStyles.tagText}>Ecosistema Fintech</Text>
-          </View>
-          <View style={localStyles.tagSecondary}>
-            <Text style={localStyles.tagSecondaryText}>
-              React Native + Expo
-            </Text>
-          </View>
-          <View style={localStyles.tagSecondary}>
-            <Text style={localStyles.tagSecondaryText}>Supabase Backend</Text>
-          </View>
-        </View>
-
         {/* Sección 1: Presentación del Sistema */}
         <View style={localStyles.section}>
           <Text style={localStyles.subHeaderTitle}>

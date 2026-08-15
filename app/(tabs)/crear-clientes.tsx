@@ -15,7 +15,6 @@ import Colors from "@/constants/Colors";
 import { useColorScheme } from "@/components/useColorScheme";
 import { useRouter } from "expo-router";
 
-// Se definen las props como opcionales con el signo '?' para evitar errores de tipo
 export default function CrearClienteModal({
   onClose,
   onClienteCreado,
@@ -26,7 +25,6 @@ export default function CrearClienteModal({
   const router = useRouter();
   const colorScheme = useColorScheme() ?? "light";
 
-  const [cedula, setCedula] = useState("");
   const [nombres, setNombres] = useState("");
   const [apellidos, setApellidos] = useState("");
   const [telefono, setTelefono] = useState("");
@@ -34,13 +32,25 @@ export default function CrearClienteModal({
   const [loading, setLoading] = useState(false);
   const [successModalVisible, setSuccessModalVisible] = useState(false);
 
+  // Validaciones
+  const handleSoloLetras = (
+    text: string,
+    setter: React.Dispatch<React.SetStateAction<string>>,
+  ) => {
+    const soloLetras = text.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, "");
+    setter(soloLetras);
+  };
+
+  const handleSoloNumeros = (
+    text: string,
+    setter: React.Dispatch<React.SetStateAction<string>>,
+  ) => {
+    const soloNumeros = text.replace(/[^0-9]/g, "");
+    setter(soloNumeros);
+  };
+
   const handleCrearCliente = async () => {
-    if (
-      !cedula.trim() ||
-      !nombres.trim() ||
-      !apellidos.trim() ||
-      !telefono.trim()
-    ) {
+    if (!nombres.trim() || !apellidos.trim() || !telefono.trim()) {
       Alert.alert("Error", "Por favor completa los campos obligatorios.");
       return;
     }
@@ -57,7 +67,6 @@ export default function CrearClienteModal({
       const emailLogueado = authData.user.email?.trim().toLowerCase();
       let cedulaUsuarioLogueado = null;
 
-      // Buscar cédula del usuario en tablas de roles
       const tablas = ["administradores", "empleados", "secretaria"];
       for (const tabla of tablas) {
         const { data } = await supabase
@@ -74,7 +83,6 @@ export default function CrearClienteModal({
 
       const { error } = await supabase.from("clientes").insert([
         {
-          cedula: cedula.trim(),
           nombres: nombres.trim(),
           apellidos: apellidos.trim(),
           telefono: telefono.trim(),
@@ -85,14 +93,11 @@ export default function CrearClienteModal({
 
       if (error) throw error;
 
-      // Resetear campos
-      setCedula("");
       setNombres("");
       setApellidos("");
       setTelefono("");
       setDireccion("");
 
-      // Ejecutar callback si existe
       if (onClienteCreado) onClienteCreado();
       setSuccessModalVisible(true);
     } catch (error: any) {
@@ -115,35 +120,26 @@ export default function CrearClienteModal({
         📝 Registrar Nuevo Cliente
       </Text>
 
-      <Text style={styles.label}>Cédula *</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Ej. 12345678"
-        value={cedula}
-        onChangeText={setCedula}
-        keyboardType="numeric"
-      />
-
-      <Text style={styles.label}>Nombres *</Text>
+      <Text style={styles.label}>Nombres</Text>
       <TextInput
         style={styles.input}
         value={nombres}
-        onChangeText={setNombres}
+        onChangeText={(text) => handleSoloLetras(text, setNombres)}
       />
 
-      <Text style={styles.label}>Apellidos *</Text>
+      <Text style={styles.label}>Apellidos</Text>
       <TextInput
         style={styles.input}
         value={apellidos}
-        onChangeText={setApellidos}
+        onChangeText={(text) => handleSoloLetras(text, setApellidos)}
       />
 
-      <Text style={styles.label}>Teléfono *</Text>
+      <Text style={styles.label}>Teléfono</Text>
       <TextInput
         style={styles.input}
         value={telefono}
-        onChangeText={setTelefono}
-        keyboardType="phone-pad"
+        onChangeText={(text) => handleSoloNumeros(text, setTelefono)}
+        keyboardType="numeric"
       />
 
       <Text style={styles.label}>Dirección</Text>
@@ -170,7 +166,6 @@ export default function CrearClienteModal({
         <Text style={styles.btnCloseText}>Cancelar</Text>
       </TouchableOpacity>
 
-      {/* Modal de Éxito */}
       <Modal
         animationType="fade"
         transparent={true}

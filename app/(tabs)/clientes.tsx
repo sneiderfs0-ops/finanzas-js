@@ -99,7 +99,7 @@ export default function ClientesScreen() {
       {/* Buscador */}
       <TextInput
         style={styles.search}
-        placeholder="🔍 Buscar por nombre, apellido o cédula..."
+        placeholder="🔍 Buscar por nombre o apellido..."
         value={busqueda}
         onChangeText={setBusqueda}
         placeholderTextColor={colors.textSecondary}
@@ -117,7 +117,6 @@ export default function ClientesScreen() {
                 <Text style={styles.itemName}>
                   {item.nombres} {item.apellidos}
                 </Text>
-                <Text style={styles.itemCedula}>C.I. {item.cedula}</Text>
               </View>
             </View>
 
@@ -192,11 +191,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
     color: colors.textPrimary,
-  },
-  itemCedula: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.textSecondary,
   },
   divider: {
     height: 1,

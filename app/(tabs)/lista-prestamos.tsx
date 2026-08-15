@@ -329,7 +329,7 @@ export default function ListaPrestamosScreen() {
           </head>
           <body>
             <h2>Gestión de Préstamos</h2>
-            <p class="subtitle">Control de creditos</p>
+            <p class="subtitle">Control de créditos</p>
             <table>
               <thead>
                 <tr>
@@ -473,7 +473,7 @@ export default function ListaPrestamosScreen() {
         <View style={styles.searchContainer}>
           <TextInput
             style={styles.searchInput}
-            placeholder="Buscar por cédula, nombres o apellidos del cliente..."
+            placeholder="Buscar por nombres o apellidos del cliente..."
             value={busqueda}
             onChangeText={setBusqueda}
             placeholderTextColor="#94a3b8"
@@ -542,7 +542,7 @@ export default function ListaPrestamosScreen() {
                     <Text style={styles.headerText}>Fecha</Text>
                   </View>
                   <View style={[styles.gridCell, styles.colCliente]}>
-                    <Text style={styles.headerText}>Cliente / Cédula</Text>
+                    <Text style={styles.headerText}>Cliente</Text>
                   </View>
                   <View style={[styles.gridCell, styles.colMonto]}>
                     <Text style={styles.headerText}>Monto Prestado</Text>
@@ -614,7 +614,6 @@ export default function ListaPrestamosScreen() {
                           <Text style={styles.cellTextBold} numberOfLines={1}>
                             {nombreCliente}
                           </Text>
-                          <Text style={styles.subCedula}>{item.cedula}</Text>
                         </View>
                         <View style={[styles.gridCell, styles.colMonto]}>
                           <Text style={styles.cellText}>
@@ -707,15 +706,10 @@ export default function ListaPrestamosScreen() {
                     <Text style={styles.modalValue}>
                       {prestamoSeleccionado.clientes
                         ? `${prestamoSeleccionado.clientes.nombres} ${prestamoSeleccionado.clientes.apellidos}`
-                        : prestamoSeleccionado.cedula}
+                        : "Desconocido"}
                     </Text>
                   </View>
-                  <View style={styles.modalRow}>
-                    <Text style={styles.modalLabel}>Cédula:</Text>
-                    <Text style={styles.modalValue}>
-                      {prestamoSeleccionado.cedula}
-                    </Text>
-                  </View>
+                  {/* Se ha eliminado la fila de Cédula aquí */}
                   <View style={styles.modalRow}>
                     <Text style={styles.modalLabel}>Moneda:</Text>
                     <Text style={[styles.modalValue, { color: "#4f46e5" }]}>
@@ -850,7 +844,7 @@ export default function ListaPrestamosScreen() {
                             : "N/A"}
                         </Text>
                         <Text style={[styles.tablaCeldaModal, { flex: 1.2 }]}>
-                          {pago.registrado_por_cedula || "N/A"}
+                          {/* Aquí puedes continuar o cerrar el renderizado de pagos */}
                         </Text>
                       </View>
                     );
@@ -859,10 +853,10 @@ export default function ListaPrestamosScreen() {
               )}
 
               <TouchableOpacity
-                style={styles.modalCloseButton}
+                style={styles.btnCerrarModal}
                 onPress={() => setModalVisible(false)}
               >
-                <Text style={styles.modalCloseButtonText}>Cerrar</Text>
+                <Text style={styles.btnCerrarModalText}>Cerrar</Text>
               </TouchableOpacity>
             </ScrollView>
           </View>
@@ -871,26 +865,24 @@ export default function ListaPrestamosScreen() {
     </View>
   );
 }
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
     backgroundColor: "#f8fafc",
+    padding: 20,
   },
   loaderContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
   },
   headerTitleRow: {
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 20,
   },
   title: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "bold",
     color: "#0f172a",
   },
@@ -900,33 +892,33 @@ const styles = StyleSheet.create({
   },
   globalExportRow: {
     flexDirection: "row",
-    gap: 8,
-    marginTop: Platform.OS === "web" ? 0 : 8,
+    gap: 10,
+    marginTop: 10,
   },
   btnGlobalExcel: {
     backgroundColor: "#16a34a",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 8,
     alignItems: "center",
   },
   btnGlobalPdf: {
     backgroundColor: "#dc2626",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 8,
     alignItems: "center",
   },
   btnExportText: {
     color: "#ffffff",
     fontWeight: "600",
-    fontSize: 13,
+    fontSize: 14,
   },
   filtersWrapper: {
     backgroundColor: "#ffffff",
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 20,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
@@ -934,104 +926,114 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   searchContainer: {
-    marginBottom: 10,
+    marginBottom: 15,
   },
   searchInput: {
+    backgroundColor: "#f1f5f9",
     borderWidth: 1,
     borderColor: "#cbd5e1",
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     fontSize: 14,
-    backgroundColor: "#f8fafc",
     color: "#0f172a",
   },
   filtroContainer: {
     borderTopWidth: 1,
     borderTopColor: "#e2e8f0",
-    paddingTop: 10,
+    paddingTop: 15,
   },
   filtroLabel: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "600",
     color: "#475569",
-    marginBottom: 6,
+    marginBottom: 8,
   },
   inputsFechaRow: {
     flexDirection: "row",
-    gap: 8,
-    marginBottom: 8,
+    gap: 10,
+    marginBottom: 10,
   },
   inputFecha: {
     flex: 1,
+    backgroundColor: "#f1f5f9",
     borderWidth: 1,
     borderColor: "#cbd5e1",
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     fontSize: 13,
-    backgroundColor: "#f8fafc",
     color: "#0f172a",
   },
   botonesFiltroRow: {
     flexDirection: "row",
-    gap: 8,
+    gap: 10,
   },
   btnFiltrar: {
     backgroundColor: "#4f46e5",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 15,
     borderRadius: 6,
   },
   btnFiltrarText: {
     color: "#ffffff",
-    fontSize: 12,
     fontWeight: "600",
+    fontSize: 13,
   },
   btnLimpiar: {
     backgroundColor: "#e2e8f0",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 15,
     borderRadius: 6,
   },
   btnLimpiarText: {
     color: "#334155",
-    fontSize: 12,
     fontWeight: "600",
+    fontSize: 13,
   },
   tableFullContainer: {
     flex: 1,
     backgroundColor: "#ffffff",
-    borderRadius: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
     overflow: "hidden",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
     elevation: 2,
+    ...(Platform.OS === "web"
+      ? { width: "100%", display: "flex", flex: 1 }
+      : {}),
   },
   horizontalScrollContent: {
+    minWidth: 1250,
     flexGrow: 1,
   },
   tableInnerWrapper: {
-    minWidth: 1150,
+    flexDirection: "column",
+    width: "100%",
   },
   gridRow: {
     flexDirection: "row",
     borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
+    borderBottomColor: "#e2e8f0",
     alignItems: "center",
+    minHeight: 50,
   },
   gridHeader: {
     backgroundColor: "#0f172a",
-    borderBottomWidth: 0,
+    borderBottomWidth: 2,
+    borderBottomColor: "#0f172a",
+    minHeight: 48,
   },
   rowAlternate: {
     backgroundColor: "#f8fafc",
   },
   gridCell: {
     paddingVertical: 12,
-    paddingHorizontal: 10,
+    paddingHorizontal: 14,
     justifyContent: "center",
   },
   headerText: {
@@ -1041,31 +1043,27 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   cellText: {
-    fontSize: 13,
     color: "#334155",
+    fontSize: 13,
   },
   cellTextBold: {
-    fontSize: 13,
-    fontWeight: "bold",
     color: "#0f172a",
+    fontWeight: "600",
+    fontSize: 13,
   },
-  subCedula: {
-    fontSize: 11,
-    color: "#64748b",
-  },
-  colFecha: { width: 100 },
-  colCliente: { width: 180 },
-  colMonto: { width: 120 },
+  colFecha: { width: 110 },
+  colCliente: { flex: 1, minWidth: 180 },
+  colMonto: { width: 140 },
   colMoneda: { width: 90 },
-  colPorcentaje: { width: 90 },
-  colTotal: { width: 120 },
+  colPorcentaje: { width: 130 },
+  colTotal: { width: 130 },
   colEmpleado: { width: 140 },
-  colAccion: { width: 190, flexDirection: "row", alignItems: "center", gap: 6 },
+  colAccion: { width: 180, flexDirection: "row", alignItems: "center", gap: 8 },
   badgeMoneda: {
-    backgroundColor: "#e0e7ff",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    backgroundColor: "#e0f2fe",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
     alignSelf: "flex-start",
   },
   badgeMonedaText: {
@@ -1075,7 +1073,7 @@ const styles = StyleSheet.create({
   },
   badgeEstado: {
     paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingVertical: 3,
     borderRadius: 4,
   },
   badgeTextEstado: {
@@ -1085,7 +1083,7 @@ const styles = StyleSheet.create({
   btnVerAccion: {
     backgroundColor: "#4f46e5",
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: 4,
   },
   btnVerAccionText: {
@@ -1095,8 +1093,8 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     textAlign: "center",
-    padding: 24,
     color: "#64748b",
+    marginTop: 40,
     fontSize: 14,
   },
   modalOverlay: {
@@ -1104,7 +1102,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "center",
     alignItems: "center",
-    padding: 16,
+    padding: 20,
   },
   modalContent: {
     backgroundColor: "#ffffff",
@@ -1123,14 +1121,14 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
     color: "#0f172a",
-    marginBottom: 16,
+    marginBottom: 15,
     textAlign: "center",
   },
   modalDetailsBox: {
     backgroundColor: "#f8fafc",
     borderRadius: 8,
     padding: 12,
-    marginBottom: 16,
+    marginBottom: 15,
   },
   modalRow: {
     flexDirection: "row",
@@ -1141,45 +1139,44 @@ const styles = StyleSheet.create({
   },
   modalLabel: {
     fontSize: 13,
+    color: "#64748b",
     fontWeight: "600",
-    color: "#475569",
   },
   modalValue: {
     fontSize: 13,
     color: "#0f172a",
-    textAlign: "right",
+    fontWeight: "500",
   },
   subtituloPagos: {
     fontSize: 15,
     fontWeight: "bold",
     color: "#0f172a",
     marginBottom: 10,
+    marginTop: 10,
   },
   sinPagosText: {
     fontSize: 13,
     color: "#64748b",
+    fontStyle: "italic",
     textAlign: "center",
     marginVertical: 10,
   },
   tablaContainerModal: {
     borderWidth: 1,
     borderColor: "#e2e8f0",
-    borderRadius: 6,
+    borderRadius: 8,
     overflow: "hidden",
-    marginBottom: 16,
+    marginBottom: 15,
   },
   tablaFilaModal: {
     flexDirection: "row",
+    padding: 8,
     borderBottomWidth: 1,
     borderBottomColor: "#e2e8f0",
-    paddingVertical: 8,
-    paddingHorizontal: 8,
     alignItems: "center",
   },
   tablaHeaderModal: {
     backgroundColor: "#f1f5f9",
-    borderBottomWidth: 2,
-    borderBottomColor: "#cbd5e1",
   },
   tablaCeldaModal: {
     fontSize: 12,
@@ -1189,16 +1186,16 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#0f172a",
   },
-  modalCloseButton: {
-    backgroundColor: "#0f172a",
+  btnCloseModal: {
+    backgroundColor: "#334155",
     paddingVertical: 10,
-    borderRadius: 6,
+    borderRadius: 8,
     alignItems: "center",
     marginTop: 10,
   },
-  modalCloseButtonText: {
+  btnCloseModalText: {
     color: "#ffffff",
-    fontWeight: "600",
+    fontWeight: "bold",
     fontSize: 14,
   },
 });

@@ -391,7 +391,7 @@ export default function RutasScreen() {
         </View>
       </Modal>
 
-      {/* MODAL PARA ASIGNAR EMPLEADOS A LA RUTA */}
+      {/* MODAL PARA ASIGNAR EMPLEADOS A LA RUTA l*/}
       <Modal
         animationType="fade"
         transparent={true}

@@ -106,13 +106,15 @@ function CustomDrawerContent(props: any) {
           <Text style={localStyles.navText}>🗺️ Rutas de Cobro</Text>
         </Pressable>
 
-        {/* 👇 NUEVO ENLACE: Lista y Reporte de Rutas */}
-        <Pressable
-          style={localStyles.navItem}
-          onPress={() => router.push("/(tabs)/listas-rutas")}
-        >
-          <Text style={localStyles.navText}>📋 Lista de Rutas</Text>
-        </Pressable>
+        {/* 👇 Restringido: visible solo para Administrador y Secretaria */}
+        {canAccessPrivileged && (
+          <Pressable
+            style={localStyles.navItem}
+            onPress={() => router.push("/(tabs)/listas-rutas")}
+          >
+            <Text style={localStyles.navText}>📋 Lista de Rutas</Text>
+          </Pressable>
+        )}
 
         {canAccessPrivileged && (
           <Pressable
@@ -505,7 +507,6 @@ export default function TabLayout() {
         name="rutas"
         options={{ title: "Gestión de Rutas", headerRight: renderHeaderRight }}
       />
-      {/* 👇 NUEVA PANTALLA REGISTRADA EN EL DRAWER */}
       <Drawer.Screen
         name="listas-rutas"
         options={{ title: "Lista de Rutas", headerRight: renderHeaderRight }}

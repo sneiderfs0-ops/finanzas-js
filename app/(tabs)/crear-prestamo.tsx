@@ -23,6 +23,7 @@ interface Cliente {
   nombres: string;
   apellidos: string;
   registrado_por_cedula?: string;
+  ruta_id?: string;
 }
 
 export default function CrearPrestamoScreen({ route }: any) {
@@ -172,24 +173,46 @@ export default function CrearPrestamoScreen({ route }: any) {
   };
 
   const cargarClientes = async (infoUsuario: {
+    id: string;
     cedula: string;
     tipo: string;
   }) => {
-    let query = supabase
-      .from("clientes")
-      .select("cedula, nombres, apellidos, registrado_por_cedula")
-      .order("nombres");
+    try {
+      if (infoUsuario.tipo === "Empleado") {
+        // 1. Buscar la ruta asignada en la tabla intermedia 'empleado_rutas'
+        const { data: rutaRelacion, error: rutaError } = await supabase
+          .from("empleado_rutas")
+          .select("ruta_id")
+          .eq("empleado_id", infoUsuario.id)
+          .maybeSingle();
 
-    if (infoUsuario.tipo === "Empleado") {
-      query = query.eq("registrado_por_cedula", infoUsuario.cedula);
-    }
+        if (rutaError || !rutaRelacion?.ruta_id) {
+          console.log("El empleado no tiene una ruta asignada.");
+          setClientes([]);
+          return;
+        }
 
-    const { data, error } = await query;
+        // 2. Obtener los clientes que pertenecen a esa ruta_id
+        const { data, error } = await supabase
+          .from("clientes")
+          .select("cedula, nombres, apellidos, registrado_por_cedula, ruta_id")
+          .eq("ruta_id", rutaRelacion.ruta_id)
+          .order("nombres", { ascending: true });
 
-    if (error) {
+        if (error) throw error;
+        if (data) setClientes(data);
+      } else {
+        // Administradores y Secretarias ven todos los clientes
+        const { data, error } = await supabase
+          .from("clientes")
+          .select("cedula, nombres, apellidos, registrado_por_cedula, ruta_id")
+          .order("nombres", { ascending: true });
+
+        if (error) throw error;
+        if (data) setClientes(data);
+      }
+    } catch (error: any) {
       console.log("Error cargando clientes:", error.message);
-    } else if (data) {
-      setClientes(data);
     }
   };
 
@@ -308,7 +331,6 @@ export default function CrearPrestamoScreen({ route }: any) {
     setLoading(true);
 
     try {
-      // Validación estricta en tiempo real del saldo disponible en la caja
       const { data: cajaInfo, error: cajaError } = await supabase
         .from("cajas_bancos")
         .select("saldo_actual")
@@ -641,7 +663,7 @@ export default function CrearPrestamoScreen({ route }: any) {
               {clientesFiltrados.length === 0 && (
                 <View style={styles.emptyContainer}>
                   <Text style={styles.emptyText}>
-                    No se encontraron clientes coincidentes.
+                    No se encontraron clientes coincidentes en esta ruta.
                   </Text>
                 </View>
               )}

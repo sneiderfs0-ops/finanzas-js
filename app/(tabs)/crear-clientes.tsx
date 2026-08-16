@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Modal,
   Platform,
 } from "react-native";
+import { Picker } from "@react-native-picker/picker";
 import { supabase } from "../../supabase";
 import Colors from "@/constants/Colors";
 import { useColorScheme } from "@/components/useColorScheme";
@@ -32,6 +33,79 @@ export default function CrearClienteModal({
   const [loading, setLoading] = useState(false);
   const [successModalVisible, setSuccessModalVisible] = useState(false);
 
+  // Estados para manejo de rutas y roles
+  const [rutasDisponibles, setRutasDisponibles] = useState<any[]>([]);
+  const [rutaSeleccionada, setRutaSeleccionada] = useState<string>("");
+  const [esAdminOSecretaria, setEsAdminOSecretaria] = useState(false);
+
+  useEffect(() => {
+    verificarRolYObtenerRutas();
+  }, []);
+
+  const verificarRolYObtenerRutas = async () => {
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      if (!authData.user) return;
+
+      const userId = authData.user.id;
+      const emailLogueado = authData.user.email?.trim().toLowerCase();
+
+      // 1. Verificar si es administrador o secretaria
+      const { data: adminData } = await supabase
+        .from("administradores")
+        .select("cedula")
+        .or(`id.eq.${userId},correo.eq.${emailLogueado}`)
+        .maybeSingle();
+
+      const { data: secData } = await supabase
+        .from("secretaria")
+        .select("cedula")
+        .or(`id.eq.${userId},correo.eq.${emailLogueado}`)
+        .maybeSingle();
+
+      if (adminData || secData) {
+        setEsAdminOSecretaria(true);
+        // Admin o Secretaría ven TODAS las rutas y pueden elegir
+        const { data: rutasData, error: rutasError } = await supabase
+          .from("rutas")
+          .select("*");
+
+        if (!rutasError && rutasData && rutasData.length > 0) {
+          setRutasDisponibles(rutasData);
+          setRutaSeleccionada(rutasData[0].id);
+        }
+      } else {
+        // 2. Si es Empleado, buscamos su ruta asignada automáticamente sin mostrar selector
+        setEsAdminOSecretaria(false);
+        const { data: empData } = await supabase
+          .from("empleados")
+          .select("id")
+          .or(`id.eq.${userId},correo.eq.${emailLogueado}`)
+          .maybeSingle();
+
+        if (empData) {
+          const { data: rutasEmpData, error: rutasEmpError } = await supabase
+            .from("empleado_rutas")
+            .select("rutas (id, nombre_ruta)")
+            .eq("empleado_id", empData.id);
+
+          if (!rutasEmpError && rutasEmpData && rutasEmpData.length > 0) {
+            const listadoRutas = rutasEmpData
+              .map((item: any) => item.rutas)
+              .filter(Boolean);
+            setRutasDisponibles(listadoRutas);
+            if (listadoRutas.length > 0) {
+              // Asignación automática de su ruta
+              setRutaSeleccionada(listadoRutas[0].id);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error al verificar rol o cargar rutas:", error);
+    }
+  };
+
   // Validaciones
   const handleSoloLetras = (
     text: string,
@@ -52,6 +126,14 @@ export default function CrearClienteModal({
   const handleCrearCliente = async () => {
     if (!nombres.trim() || !apellidos.trim() || !telefono.trim()) {
       Alert.alert("Error", "Por favor completa los campos obligatorios.");
+      return;
+    }
+
+    if (!rutaSeleccionada) {
+      Alert.alert(
+        "Error",
+        "No se encontró una ruta asociada para registrar el cliente.",
+      );
       return;
     }
 
@@ -81,15 +163,18 @@ export default function CrearClienteModal({
         }
       }
 
-      const { error } = await supabase.from("clientes").insert([
-        {
-          nombres: nombres.trim(),
-          apellidos: apellidos.trim(),
-          telefono: telefono.trim(),
-          direccion: direccion.trim(),
-          registrado_por_cedula: cedulaUsuarioLogueado,
-        },
-      ]);
+      const objetoInsertar: any = {
+        nombres: nombres.trim(),
+        apellidos: apellidos.trim(),
+        telefono: telefono.trim(),
+        direccion: direccion.trim(),
+        registrado_por_cedula: cedulaUsuarioLogueado,
+        ruta_id: rutaSeleccionada, // Se asigna automáticamente (sea elegida o la del empleado)
+      };
+
+      const { error } = await supabase
+        .from("clientes")
+        .insert([objetoInsertar]);
 
       if (error) throw error;
 
@@ -97,6 +182,9 @@ export default function CrearClienteModal({
       setApellidos("");
       setTelefono("");
       setDireccion("");
+      if (rutasDisponibles.length > 0 && esAdminOSecretaria) {
+        setRutaSeleccionada(rutasDisponibles[0].id);
+      }
 
       if (onClienteCreado) onClienteCreado();
       setSuccessModalVisible(true);
@@ -115,10 +203,55 @@ export default function CrearClienteModal({
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView
+      style={[
+        styles.baseContainer,
+        Platform.OS === "android" && styles.androidContainer,
+      ]}
+      contentContainerStyle={styles.container}
+      nestedScrollEnabled={true}
+    >
       <Text style={[styles.title, { color: Colors[colorScheme].text }]}>
         📝 Registrar Nuevo Cliente
       </Text>
+
+      {/* Selector de Rutas SOLO visible para Administradores y Secretarias */}
+      {esAdminOSecretaria && (
+        <View style={styles.pickerContainer}>
+          <Text style={styles.label}>Asignar a Ruta:</Text>
+          <View style={styles.pickerWrapper}>
+            <Picker
+              selectedValue={rutaSeleccionada}
+              onValueChange={(itemValue) => setRutaSeleccionada(itemValue)}
+              style={styles.picker}
+            >
+              {rutasDisponibles.length > 0 ? (
+                rutasDisponibles.map((ruta) => (
+                  <Picker.Item
+                    key={ruta.id}
+                    label={ruta.nombre_ruta}
+                    value={ruta.id}
+                  />
+                ))
+              ) : (
+                <Picker.Item label="No hay rutas disponibles" value="" />
+              )}
+            </Picker>
+          </View>
+        </View>
+      )}
+
+      {/* Si es empleado, podemos mostrar un texto informativo sutil de la ruta asignada */}
+      {!esAdminOSecretaria && rutasDisponibles.length > 0 && (
+        <View style={styles.infoRutaContainer}>
+          <Text style={styles.infoRutaText}>
+            📍 Ruta asignada:{" "}
+            <Text style={styles.boldText}>
+              {rutasDisponibles[0].nombre_ruta}
+            </Text>
+          </Text>
+        </View>
+      )}
 
       <Text style={styles.label}>Nombres</Text>
       <TextInput
@@ -198,14 +331,29 @@ export default function CrearClienteModal({
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, flexGrow: 1, justifyContent: "center" },
+  baseContainer: {
+    flex: 1,
+  },
+  androidContainer: {
+    flexGrow: 1,
+  },
+  container: {
+    padding: 20,
+    flexGrow: 1,
+    justifyContent: "center",
+  },
   title: {
     fontSize: 20,
     fontWeight: "bold",
     marginBottom: 20,
     textAlign: "center",
   },
-  label: { fontSize: 14, fontWeight: "600", marginBottom: 6, color: "#94a3b8" },
+  label: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 6,
+    color: "#94a3b8",
+  },
   input: {
     backgroundColor: "#ffffff",
     borderWidth: 1,
@@ -214,13 +362,46 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 15,
   },
+  pickerContainer: {
+    marginBottom: 15,
+  },
+  pickerWrapper: {
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    borderRadius: 8,
+    backgroundColor: "#ffffff",
+  },
+  picker: {
+    height: 50,
+    width: "100%",
+  },
+  infoRutaContainer: {
+    backgroundColor: "#f1f5f9",
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  infoRutaText: {
+    fontSize: 14,
+    color: "#475569",
+  },
+  boldText: {
+    fontWeight: "bold",
+    color: "#0f172a",
+  },
   btnGuardar: {
     backgroundColor: "#22c55e",
     padding: 14,
     borderRadius: 8,
     alignItems: "center",
   },
-  btnText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
+  btnText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
   btnClose: {
     backgroundColor: "#334155",
     padding: 12,
@@ -228,7 +409,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 10,
   },
-  btnCloseText: { color: "#fff", fontWeight: "bold" },
+  btnCloseText: {
+    color: "#fff",
+    fontWeight: "bold",
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
@@ -246,8 +430,15 @@ const styles = StyleSheet.create({
       default: { elevation: 5 },
     }),
   },
-  successIcon: { fontSize: 40, marginBottom: 10 },
-  successTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 20 },
+  successIcon: {
+    fontSize: 40,
+    marginBottom: 10,
+  },
+  successTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 20,
+  },
   btnSuccessOk: {
     backgroundColor: "#22c55e",
     paddingVertical: 12,

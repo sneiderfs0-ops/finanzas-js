@@ -1,4 +1,7 @@
-import { StyleSheet } from "react-native";
+import { StyleSheet, Dimensions } from "react-native";
+
+const { width } = Dimensions.get("window");
+const isMobile = width < 768;
 
 export const colors = {
   background: "#0f172a", // Fondo oscuro principal
@@ -17,89 +20,91 @@ export const colors = {
 };
 
 export const globalStyles = StyleSheet.create({
-  // Contenedores Principales
+  // Contenedores Principales (Adaptados para no bloquear el scroll en móvil)
   container: {
     flex: 1,
     backgroundColor: colors.background,
-    padding: 20,
-    justifyContent: "center",
+    padding: isMobile ? 16 : 20,
+    justifyContent: isMobile ? "flex-start" : "center",
     alignItems: "center",
   },
   scrollContainer: {
     flexGrow: 1,
     backgroundColor: colors.background,
-    padding: 20,
+    padding: isMobile ? 16 : 20,
+    paddingBottom: 40, // Espacio extra abajo para que el teclado no tape el último input
     alignItems: "center",
+    justifyContent: isMobile ? "flex-start" : "center",
   },
   mainWrapper: {
     width: "100%",
     maxWidth: 800,
   },
 
-  // Tarjetas / Cards
+  // Tarjetas / Cards (Ancho completo en móvil para aprovechar espacio)
   card: {
     width: "100%",
-    maxWidth: 420,
+    maxWidth: isMobile ? "100%" : 420,
     backgroundColor: colors.cardBackground,
-    borderRadius: 24,
-    padding: 30,
+    borderRadius: isMobile ? 18 : 24,
+    padding: isMobile ? 20 : 30,
     borderWidth: 1,
     borderColor: colors.border,
     boxShadow: "0px 2px 8px rgba(0, 0, 0, 0.06)",
-    elevation: 3, // Se mantiene para compatibilidad con Android
+    elevation: 3,
   },
   dashboardCard: {
     backgroundColor: colors.cardBackground,
     borderRadius: 20,
-    padding: 20,
+    padding: isMobile ? 16 : 20,
     borderWidth: 1,
     borderColor: colors.border,
     boxShadow: "0px 2px 8px rgba(0, 0, 0, 0.06)",
-    elevation: 3, // Se mantiene para compatibilidad con Android
+    elevation: 3,
   },
 
   // Tipografía
   title: {
-    fontSize: 26,
+    fontSize: isMobile ? 22 : 26,
     fontWeight: "800",
     textAlign: "center",
     color: colors.textPrimary,
     marginBottom: 8,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: isMobile ? 13 : 14,
     textAlign: "center",
     color: colors.textSecondary,
-    marginBottom: 25,
+    marginBottom: 20,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: isMobile ? 18 : 20,
     fontWeight: "bold",
     color: colors.textPrimary,
     marginBottom: 16,
   },
 
-  // Entradas (Inputs)
+  // Entradas (Inputs más cómodos al tacto en móvil)
   input: {
     backgroundColor: colors.background,
-    padding: 16,
+    padding: isMobile ? 14 : 16,
     borderRadius: 14,
-    marginBottom: 16,
+    marginBottom: 14,
     borderWidth: 1.5,
     borderColor: colors.border,
-    fontSize: 16,
+    fontSize: 16, // Evita zoom automático en iOS y es cómodo en Android
     color: colors.textPrimary,
   },
 
   // Botones
   primaryButton: {
     backgroundColor: colors.primary,
-    padding: 16,
+    padding: isMobile ? 14 : 16,
     borderRadius: 14,
     alignItems: "center",
     marginTop: 10,
     boxShadow: "0px 2px 8px rgba(0, 0, 0, 0.06)",
-    elevation: 3, // Se mantiene para compatibilidad con Android
+    elevation: 3,
   },
   primaryButtonText: {
     color: "#ffffff",
@@ -113,33 +118,32 @@ export const globalStyles = StyleSheet.create({
     backgroundColor: "rgba(15, 23, 42, 0.75)",
     justifyContent: "center",
     alignItems: "center",
-    padding: 28,
-    margin: 0,
+    padding: isMobile ? 16 : 28,
   },
   modalContent: {
     width: "100%",
     maxWidth: 360,
     backgroundColor: colors.cardBackground,
     borderRadius: 20,
-    padding: 24,
+    padding: isMobile ? 20 : 24,
     alignItems: "center",
     borderWidth: 1,
     borderColor: colors.border,
     boxShadow: "0px 2px 8px rgba(0, 0, 0, 0.06)",
-    elevation: 3, // Se mantiene para compatibilidad con Android
+    elevation: 3,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "bold",
     color: colors.textPrimary,
-    marginBottom: 12,
+    marginBottom: 10,
     textAlign: "center",
   },
   modalMessage: {
-    fontSize: 15,
+    fontSize: 14,
     color: colors.textSecondary,
     textAlign: "center",
-    marginBottom: 24,
-    lineHeight: 22,
+    marginBottom: 20,
+    lineHeight: 20,
   },
 });

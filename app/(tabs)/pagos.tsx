@@ -23,6 +23,7 @@ interface Cliente {
   nombres: string;
   apellidos: string;
   registrado_por_cedula?: string;
+  ruta_id?: string;
 }
 
 interface Prestamo {
@@ -66,7 +67,7 @@ export default function CrearPagoScreen({ route }: any) {
   const [montoFisico, setMontoFisico] = useState("");
   const [monedaPrestamo, setMonedaPrestamo] = useState<"USD" | "COP">("COP");
   const [monedaPago, setMonedaPago] = useState<"USD" | "COP">("COP");
-  const [tasaCambioCopPorUsd, setTasaCambioCopPorUsd] = useState("4100"); // Tasa base estándar COP por 1 USD
+  const [tasaCambioCopPorUsd, setTasaCambioCopPorUsd] = useState("4100");
   const [tasaInputTemp, setTasaInputTemp] = useState("");
 
   const [tipoPago, setTipoPago] = useState<"efectivo" | "transferencia">(
@@ -183,19 +184,38 @@ export default function CrearPagoScreen({ route }: any) {
     if (data) setCajas(data);
   };
 
+  // Función actualizada de clientes con soporte para empleado_rutas
   const cargarClientes = async (infoUsuario: {
+    id: string;
     cedula: string;
     tipo: string;
   }) => {
     let query = supabase
       .from("clientes")
-      .select("cedula, nombres, apellidos, registrado_por_cedula")
+      .select("cedula, nombres, apellidos, registrado_por_cedula, ruta_id")
       .order("nombres");
+
     if (infoUsuario.tipo === "Empleado") {
-      query = query.eq("registrado_por_cedula", infoUsuario.cedula);
+      const { data: rutasAsignadas, error: errorRutas } = await supabase
+        .from("empleado_rutas")
+        .select("ruta_id")
+        .eq("empleado_id", infoUsuario.id);
+
+      if (errorRutas || !rutasAsignadas || rutasAsignadas.length === 0) {
+        setClientes([]);
+        return;
+      }
+
+      const idsRutas = rutasAsignadas.map((r) => r.ruta_id);
+      query = query.in("ruta_id", idsRutas);
     }
+
     const { data, error } = await query;
-    if (!error && data) setClientes(data);
+    if (!error && data) {
+      setClientes(data);
+    } else {
+      setClientes([]);
+    }
   };
 
   const cargarPrestamosCliente = async (cedulaCliente: string) => {
@@ -234,7 +254,6 @@ export default function CrearPagoScreen({ route }: any) {
 
   const cambiarMonedaPago = (nuevaMoneda: "USD" | "COP") => {
     setMonedaPago(nuevaMoneda);
-    // Si la moneda de pago seleccionada es diferente a la del préstamo, requerimos la tasa COP por 1 USD
     if (nuevaMoneda !== monedaPrestamo) {
       setTasaInputTemp(tasaCambioCopPorUsd);
       setModalTasaVisible(true);
@@ -268,16 +287,13 @@ export default function CrearPagoScreen({ route }: any) {
   const montoFisicoNum = limpiarMontoParaCalculo(montoFisico);
   const tasaNum = parseFloat(tasaCambioCopPorUsd) || 1;
 
-  // Cálculo matemático exacto de la conversión
   let montoAplicadoPrestamo = 0;
   if (monedaPrestamo === monedaPago) {
     montoAplicadoPrestamo = montoFisicoNum;
   } else if (monedaPrestamo === "USD" && monedaPago === "COP") {
-    // Préstamo en USD, pagan en COP -> Dividimos el monto en pesos entre la tasa (COP por 1 USD)
     montoAplicadoPrestamo =
       tasaNum > 0 ? Math.round(montoFisicoNum / tasaNum) : 0;
   } else if (monedaPrestamo === "COP" && monedaPago === "USD") {
-    // Préstamo en COP, pagan en USD -> Multiplicamos el monto en dólares por la tasa (COP por 1 USD)
     montoAplicadoPrestamo = Math.round(montoFisicoNum * tasaNum);
   }
 
@@ -1012,13 +1028,19 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: "#10b981",
+    backgroundColor: "#d1fae5",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 16,
   },
-  errorIconContainer: { backgroundColor: "#ef4444" },
-  successIconText: { color: "#ffffff", fontSize: 32, fontWeight: "bold" },
+  errorIconContainer: {
+    backgroundColor: "#fee2e2",
+  },
+  successIconText: {
+    fontSize: 32,
+    fontWeight: "bold",
+    color: "#10b981",
+  },
   modalExitoTitle: {
     fontSize: 20,
     fontWeight: "bold",
@@ -1027,20 +1049,26 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   modalExitoMessage: {
-    fontSize: 14,
-    color: "#64748b",
+    fontSize: 15,
+    color: "#475569",
     textAlign: "center",
     marginBottom: 24,
-    lineHeight: 20,
+    lineHeight: 22,
   },
   successButton: {
     backgroundColor: "#10b981",
-    paddingVertical: 12,
-    paddingHorizontal: 32,
     borderRadius: 12,
-    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 32,
     width: "100%",
+    alignItems: "center",
   },
-  errorButton: { backgroundColor: "#ef4444" },
-  successButtonText: { color: "#ffffff", fontSize: 16, fontWeight: "bold" },
+  errorButton: {
+    backgroundColor: "#ef4444",
+  },
+  successButtonText: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
 });

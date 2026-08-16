@@ -8,9 +8,17 @@ import {
   ActivityIndicator,
   Modal,
   Image,
+  KeyboardAvoidingView,
+  ScrollView,
+  Platform,
+  Dimensions,
 } from "react-native";
 import { supabase } from "../../supabase";
 import { router, Link } from "expo-router";
+import { globalStyles, colors } from "../../constants/globalStyles";
+
+const { width } = Dimensions.get("window");
+const isMobile = width < 768;
 
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
@@ -182,201 +190,117 @@ export default function LoginScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.card}>
-        <View style={styles.logoContainer}>
-          <Image
-            source={require("../../assets/images/logo.png")}
-            style={styles.logo}
-            resizeMode="contain"
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={{ flex: 1 }}
+    >
+      <ScrollView contentContainerStyle={globalStyles.scrollContainer}>
+        <View style={globalStyles.card}>
+          <View style={localStyles.logoContainer}>
+            <Image
+              source={require("../../assets/images/logo.png")}
+              style={localStyles.logo}
+              resizeMode="contain"
+            />
+          </View>
+
+          <Text style={globalStyles.subtitle}>
+            Inicia sesión para continuar
+          </Text>
+
+          <TextInput
+            style={globalStyles.input}
+            placeholder="Correo Electrónico"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            placeholderTextColor="#94a3b8"
           />
-        </View>
-        <Text style={styles.subtitle}>Inicia sesión para continuar</Text>
 
-        <TextInput
-          style={styles.input}
-          placeholder="Correo Electrónico"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          placeholderTextColor="#a4b0be"
-        />
+          <TextInput
+            style={globalStyles.input}
+            placeholder="Contraseña"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            placeholderTextColor="#94a3b8"
+          />
 
-        <TextInput
-          style={styles.input}
-          placeholder="Contraseña"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          placeholderTextColor="#a4b0be"
-        />
+          <TouchableOpacity
+            style={globalStyles.primaryButton}
+            onPress={handleLogin}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={globalStyles.primaryButtonText}>Iniciar Sesión</Text>
+            )}
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.button}
-          onPress={handleLogin}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Iniciar Sesión</Text>
-          )}
-        </TouchableOpacity>
-
-        <View style={styles.registerContainer}>
-          <Text style={styles.registerText}>¿No tienes cuenta? </Text>
-          <Link href="/(auth)/sign-up" asChild>
-            <TouchableOpacity>
-              <Text style={styles.registerLink}>Regístrate aquí</Text>
-            </TouchableOpacity>
-          </Link>
-        </View>
-        {/* <View style={styles.registerContainer}>
-          <Link href="/(auth)/forgot" asChild>
-            <TouchableOpacity>
-              <Text style={styles.registerLink}>¿Olvidaste tu contraseña?</Text>
-            </TouchableOpacity>
-          </Link>
-        </View>*/}
-      </View>
-
-      {/* --- PANTALLA EMERGENTE (MODAL) ELEGANTE --- */}
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>{modalTitle}</Text>
-            <Text style={styles.modalMessage}>{modalMessage}</Text>
-
-            <TouchableOpacity
-              style={styles.modalButton}
-              onPress={() => {
-                if (modalAction) modalAction();
-                else setModalVisible(false);
-              }}
-            >
-              <Text style={styles.modalButtonText}>Aceptar</Text>
-            </TouchableOpacity>
+          <View style={localStyles.registerContainer}>
+            <Text style={localStyles.registerText}>¿No tienes cuenta? </Text>
+            <Link href="/(auth)/sign-up" asChild>
+              <TouchableOpacity>
+                <Text style={localStyles.registerLink}>Regístrate aquí</Text>
+              </TouchableOpacity>
+            </Link>
           </View>
         </View>
-      </Modal>
-    </View>
+
+        {/* --- PANTALLA EMERGENTE (MODAL) ELEGANTE --- */}
+        <Modal
+          animationType="fade"
+          transparent={true}
+          visible={modalVisible}
+          onRequestClose={() => setModalVisible(false)}
+        >
+          <View style={globalStyles.modalOverlay}>
+            <View style={globalStyles.modalContent}>
+              <Text style={globalStyles.modalTitle}>{modalTitle}</Text>
+              <Text style={globalStyles.modalMessage}>{modalMessage}</Text>
+
+              <TouchableOpacity
+                style={globalStyles.primaryButton}
+                onPress={() => {
+                  if (modalAction) modalAction();
+                  else setModalVisible(false);
+                }}
+              >
+                <Text style={globalStyles.primaryButtonText}>Aceptar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#0f172a",
-    padding: 20,
-  },
-  card: {
-    width: "100%",
-    maxWidth: 420,
-    backgroundColor: "#ffffff",
-    borderRadius: 24,
-    padding: 30,
-    elevation: 8,
-  },
+const localStyles = StyleSheet.create({
   logoContainer: {
     alignItems: "center",
-    marginBottom: 10,
+    marginBottom: 5,
+    width: "100%",
   },
   logo: {
-    width: 850,
-    height: 200,
-  },
-  subtitle: {
-    fontSize: 15,
-    textAlign: "center",
-    color: "#64748b",
-    marginBottom: 25,
-  },
-  input: {
-    backgroundColor: "#f8fafc",
-    padding: 16,
-    borderRadius: 14,
-    marginBottom: 16,
-    borderWidth: 1.5,
-    borderColor: "#e2e8f0",
-    fontSize: 16,
-    color: "#1e293b",
-  },
-  button: {
-    backgroundColor: "#6366f1",
-    padding: 16,
-    borderRadius: 14,
-    alignItems: "center",
-    marginTop: 10,
-    elevation: 5,
-  },
-  buttonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
+    width: "100%",
+    maxWidth: 100,
+    height: isMobile ? 40 : 60,
   },
   registerContainer: {
     flexDirection: "row",
     justifyContent: "center",
-    marginTop: 25,
+    marginTop: 20,
   },
   registerText: {
-    color: "#64748b",
+    color: colors.textSecondary,
     fontSize: 15,
   },
   registerLink: {
-    color: "#6366f1",
+    color: colors.primary,
     fontSize: 15,
-    fontWeight: "bold",
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.75)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  modalContent: {
-    width: "100%",
-    maxWidth: 360,
-    backgroundColor: "#ffffff",
-    borderRadius: 20,
-    padding: 24,
-    alignItems: "center",
-    elevation: 10,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#1e293b",
-    marginBottom: 12,
-    textAlign: "center",
-  },
-  modalMessage: {
-    fontSize: 15,
-    color: "#64748b",
-    textAlign: "center",
-    marginBottom: 24,
-    lineHeight: 22,
-  },
-  modalButton: {
-    backgroundColor: "#6366f1",
-    width: "100%",
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: "center",
-    elevation: 4,
-  },
-  modalButtonText: {
-    color: "#ffffff",
-    fontSize: 16,
     fontWeight: "bold",
   },
 });

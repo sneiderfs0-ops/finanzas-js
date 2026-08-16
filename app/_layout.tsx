@@ -15,28 +15,26 @@ export default function RootLayout() {
   const inactivityTimer = useRef<NodeJS.Timeout | null>(null);
   const backgroundTimeRef = useRef<number | null>(null);
 
+  // 5 minutos exactos en milisegundos (5 * 60 * 1000 = 300,000 ms)
+  const FIVE_MINUTES_IN_MS = 5 * 60 * 1000;
+
   // Función para cerrar sesión por inactividad
   const handleInactivityLogout = async () => {
-    if (user) {
-      if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
-      await supabase.auth.signOut({ scope: "local" });
-      setUser(null);
-      router.replace("/(auth)/sign-in");
-    }
+    if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+    await supabase.auth.signOut({ scope: "local" }).catch(() => {});
+    setUser(null);
+    router.replace("/(auth)/sign-in");
   };
 
-  // Función para reiniciar el contador de los 10 minutos
+  // Función para reiniciar el contador de los 5 minutos
   const resetInactivityTimer = () => {
     if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
 
-    // Si hay un usuario logueado, activamos el temporizador de 10 minutos (600,000 ms)
+    // Si hay un usuario logueado, activamos el temporizador de 5 minutos
     if (user) {
-      inactivityTimer.current = setTimeout(
-        () => {
-          handleInactivityLogout();
-        },
-        10 * 60 * 1000,
-      );
+      inactivityTimer.current = setTimeout(() => {
+        handleInactivityLogout();
+      }, FIVE_MINUTES_IN_MS);
     }
   };
 
@@ -47,7 +45,7 @@ export default function RootLayout() {
       setInitializing(false);
     });
 
-    // 2. Escuchar cambios de autenticación
+    // 2. Escuchar cambios de autenticación en tiempo real
     const { data: authListener } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         setUser(session?.user ?? null);
@@ -70,18 +68,18 @@ export default function RootLayout() {
         backgroundTimeRef.current = Date.now();
         if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
       } else if (nextAppState === "active") {
-        // Al volver, verificamos si pasó más de 10 minutos en segundo plano
+        // Al volver, verificamos si pasó más de 5 minutos en segundo plano
         if (backgroundTimeRef.current && user) {
           const elapsedMilliseconds = Date.now() - backgroundTimeRef.current;
-          const tenMinutesInMs = 10 * 60 * 1000;
 
-          if (elapsedMilliseconds >= tenMinutesInMs) {
-            // Si pasaron los 10 minutos, cerramos sesión
+          if (elapsedMilliseconds >= FIVE_MINUTES_IN_MS) {
+            // Si pasaron los 5 minutos, cerramos sesión de inmediato
             handleInactivityLogout();
+            backgroundTimeRef.current = null;
             return;
           }
         }
-        // Si no pasaron 10 minutos, reanudamos el temporizador con el tiempo restante o lo reiniciamos
+        // Si no pasaron 5 minutos, reanudamos el temporizador
         resetInactivityTimer();
         backgroundTimeRef.current = null;
       }

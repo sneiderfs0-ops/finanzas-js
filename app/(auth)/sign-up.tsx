@@ -9,9 +9,12 @@ import {
   ScrollView,
   Alert,
   Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { supabase } from "../../supabase";
 import { router, Link } from "expo-router";
+import { globalStyles } from "../../constants/globalStyles";
 
 export default function SignUpScreen() {
   const [rol, setRol] = useState<"empleado" | "secretaria">("empleado");
@@ -218,143 +221,153 @@ export default function SignUpScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.scrollContainer}>
-      <View style={styles.card}>
-        <Text style={styles.title}>📝 Crear Cuenta</Text>
-        <Text style={styles.subtitle}>Completa tus datos para registrarte</Text>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={{ flex: 1 }}
+    >
+      <ScrollView contentContainerStyle={styles.scrollContainer}>
+        <View style={styles.card}>
+          <Text style={styles.title}>📝 Crear Cuenta</Text>
+          <Text style={styles.subtitle}>
+            Completa tus datos para registrarte
+          </Text>
 
-        <Text style={styles.label}>Selecciona tu Rol:</Text>
-        <View style={styles.rolContainer}>
-          <TouchableOpacity
-            style={[styles.rolButton, rol === "empleado" && styles.rolSelected]}
-            onPress={() => setRol("empleado")}
-          >
-            <Text
-              style={[
-                styles.rolText,
-                rol === "empleado" && styles.rolTextSelected,
-              ]}
-            >
-              Empleado
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.rolButton,
-              rol === "secretaria" && styles.rolSelected,
-            ]}
-            onPress={() => setRol("secretaria")}
-          >
-            <Text
-              style={[
-                styles.rolText,
-                rol === "secretaria" && styles.rolTextSelected,
-              ]}
-            >
-              Secretaria
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <TextInput
-          style={styles.input}
-          placeholder="Cédula"
-          value={cedula}
-          onChangeText={(text) => setCedula(text.replace(/[^0-9]/g, ""))}
-          keyboardType="numeric"
-          maxLength={12}
-          placeholderTextColor="#a4b0be"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Nombres"
-          value={nombres}
-          onChangeText={(text) =>
-            setNombres(text.replace(/[^a-zA-ZÁÉÍÓÚáéíóúÑñ\s]/g, ""))
-          }
-          maxLength={20}
-          placeholderTextColor="#a4b0be"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Apellidos"
-          value={apellidos}
-          onChangeText={(text) =>
-            setApellidos(text.replace(/[^a-zA-ZÁÉÍÓÚáéíóúÑñ\s]/g, ""))
-          }
-          maxLength={20}
-          placeholderTextColor="#a4b0be"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Número de Teléfono"
-          value={telefono}
-          onChangeText={(text) => setTelefono(text.replace(/[^0-9]/g, ""))}
-          keyboardType="phone-pad"
-          maxLength={15}
-          placeholderTextColor="#a4b0be"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Correo Electrónico"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          placeholderTextColor="#a4b0be"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Contraseña"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          placeholderTextColor="#a4b0be"
-        />
-
-        <TouchableOpacity
-          style={styles.button}
-          onPress={handleSignUp}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Registrarse</Text>
-          )}
-        </TouchableOpacity>
-
-        <View style={styles.loginContainer}>
-          <Text style={styles.loginText}>¿Ya tienes cuenta? </Text>
-          <Link href="/(auth)/sign-in" asChild>
-            <TouchableOpacity>
-              <Text style={styles.loginLink}>Inicia sesión</Text>
-            </TouchableOpacity>
-          </Link>
-        </View>
-      </View>
-
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={handleModalClose}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>{modalTitle}</Text>
-            <Text style={styles.modalMessage}>{modalMessage}</Text>
+          <Text style={styles.label}>Selecciona tu Rol:</Text>
+          <View style={styles.rolContainer}>
             <TouchableOpacity
-              style={styles.modalButton}
-              onPress={handleModalClose}
+              style={[
+                styles.rolButton,
+                rol === "empleado" && styles.rolSelected,
+              ]}
+              onPress={() => setRol("empleado")}
             >
-              <Text style={styles.modalButtonText}>Aceptar</Text>
+              <Text
+                style={[
+                  styles.rolText,
+                  rol === "empleado" && styles.rolTextSelected,
+                ]}
+              >
+                Empleado
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.rolButton,
+                rol === "secretaria" && styles.rolSelected,
+              ]}
+              onPress={() => setRol("secretaria")}
+            >
+              <Text
+                style={[
+                  styles.rolText,
+                  rol === "secretaria" && styles.rolTextSelected,
+                ]}
+              >
+                Secretaria
+              </Text>
             </TouchableOpacity>
           </View>
+
+          <TextInput
+            style={styles.input}
+            placeholder="Cédula"
+            value={cedula}
+            onChangeText={(text) => setCedula(text.replace(/[^0-9]/g, ""))}
+            keyboardType="numeric"
+            maxLength={12}
+            placeholderTextColor="#a4b0be"
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Nombres"
+            value={nombres}
+            onChangeText={(text) =>
+              setNombres(text.replace(/[^a-zA-ZÁÉÍÓÚáéíóúÑñ\s]/g, ""))
+            }
+            maxLength={20}
+            placeholderTextColor="#a4b0be"
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Apellidos"
+            value={apellidos}
+            onChangeText={(text) =>
+              setApellidos(text.replace(/[^a-zA-ZÁÉÍÓÚáéíóúÑñ\s]/g, ""))
+            }
+            maxLength={20}
+            placeholderTextColor="#a4b0be"
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Número de Teléfono"
+            value={telefono}
+            onChangeText={(text) => setTelefono(text.replace(/[^0-9]/g, ""))}
+            keyboardType="phone-pad"
+            maxLength={15}
+            placeholderTextColor="#a4b0be"
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Correo Electrónico"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            placeholderTextColor="#a4b0be"
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Contraseña"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            placeholderTextColor="#a4b0be"
+          />
+
+          <TouchableOpacity
+            style={styles.button}
+            onPress={handleSignUp}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.buttonText}>Registrarse</Text>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.loginContainer}>
+            <Text style={styles.loginText}>¿Ya tienes cuenta? </Text>
+            <Link href="/(auth)/sign-in" asChild>
+              <TouchableOpacity>
+                <Text style={styles.loginLink}>Inicia sesión</Text>
+              </TouchableOpacity>
+            </Link>
+          </View>
         </View>
-      </Modal>
-    </ScrollView>
+
+        <Modal
+          animationType="fade"
+          transparent={true}
+          visible={modalVisible}
+          onRequestClose={handleModalClose}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>{modalTitle}</Text>
+              <Text style={styles.modalMessage}>{modalMessage}</Text>
+              <TouchableOpacity
+                style={styles.modalButton}
+                onPress={handleModalClose}
+              >
+                <Text style={styles.modalButtonText}>Aceptar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -365,6 +378,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#0f172a",
     padding: 20,
+    paddingBottom: 40,
   },
   card: {
     width: "100%",

@@ -2,7 +2,7 @@ import "react-native-gesture-handler";
 import { useEffect, useState, useRef } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { supabase } from "../supabase";
-import { View, ActivityIndicator, AppState } from "react-native";
+import { View, ActivityIndicator, AppState, Platform } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 export default function RootLayout() {
@@ -15,8 +15,13 @@ export default function RootLayout() {
   const inactivityTimer = useRef<NodeJS.Timeout | null>(null);
   const backgroundTimeRef = useRef<number | null>(null);
 
-  // 5 minutos exactos en milisegundos (5 * 60 * 1000 = 300,000 ms)
-  const FIVE_MINUTES_IN_MS = 5 * 60 * 1000;
+  // Definimos los tiempos independientes: 10 minutos para web, 5 minutos para móvil (Android)
+  const WEB_TIMEOUT_MS = 10 * 60 * 1000;
+  const MOBILE_TIMEOUT_MS = 5 * 60 * 1000;
+
+  // Seleccionamos el tiempo según la plataforma actual
+  const TIMEOUT_DURATION =
+    Platform.OS === "web" ? WEB_TIMEOUT_MS : MOBILE_TIMEOUT_MS;
 
   // Función para cerrar sesión por inactividad
   const handleInactivityLogout = async () => {
@@ -26,20 +31,20 @@ export default function RootLayout() {
     router.replace("/(auth)/sign-in");
   };
 
-  // Función para reiniciar el contador de los 5 minutos
+  // Función para reiniciar el contador de inactividad
   const resetInactivityTimer = () => {
     if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
 
-    // Si hay un usuario logueado, activamos el temporizador de 5 minutos
+    // Si hay un usuario logueado, activamos el temporizador con la duración correspondiente
     if (user) {
       inactivityTimer.current = setTimeout(() => {
         handleInactivityLogout();
-      }, FIVE_MINUTES_IN_MS);
+      }, TIMEOUT_DURATION);
     }
   };
 
   useEffect(() => {
-    // 1. Obtener la sesión actual al abrir la app
+    // 1. Obtener la sesión actual al abrir la app de forma automática
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
       setInitializing(false);
@@ -68,18 +73,18 @@ export default function RootLayout() {
         backgroundTimeRef.current = Date.now();
         if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
       } else if (nextAppState === "active") {
-        // Al volver, verificamos si pasó más de 5 minutos en segundo plano
+        // Al volver, verificamos si pasó el tiempo límite en segundo plano
         if (backgroundTimeRef.current && user) {
           const elapsedMilliseconds = Date.now() - backgroundTimeRef.current;
 
-          if (elapsedMilliseconds >= FIVE_MINUTES_IN_MS) {
-            // Si pasaron los 5 minutos, cerramos sesión de inmediato
+          if (elapsedMilliseconds >= TIMEOUT_DURATION) {
+            // Si pasaron los minutos correspondientes, cerramos sesión de inmediato
             handleInactivityLogout();
             backgroundTimeRef.current = null;
             return;
           }
         }
-        // Si no pasaron 5 minutos, reanudamos el temporizador
+        // Si no pasó el tiempo límite, reanudamos el temporizador
         resetInactivityTimer();
         backgroundTimeRef.current = null;
       }

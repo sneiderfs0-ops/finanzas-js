@@ -54,209 +54,190 @@ export default function IndexScreen() {
       const emailUser = session.user.email.trim().toLowerCase();
 
       // 1. Verificar en ADMINISTRADORES
-      try {
-        const { data: adminData } = await supabase
-          .from("administradores")
-          .select("*")
-          .eq("correo", emailUser)
-          .maybeSingle();
+      const { data: adminData } = await supabase
+        .from("administradores")
+        .select("*")
+        .eq("correo", emailUser)
+        .maybeSingle();
 
-        if (adminData) {
-          setUserRole("administrador");
-          setUserData(adminData);
-          await Promise.all([
-            cargarResumenGeneral(),
-            cargarCajasYBancos(),
-            cargarClientesYEmpleados(),
-            cargarGastosYNomina(),
-            cargarCobrosYGanancias(),
-          ]);
+      if (adminData) {
+        setUserRole("administrador");
+        setUserData(adminData);
+        await Promise.all([
+          cargarResumenGeneral(),
+          cargarCajasYBancos(),
+          cargarClientesYEmpleados(),
+          cargarGastosYNomina(),
+          cargarCobrosYGanancias(),
+        ]);
 
-          const channelAdmin = supabase.channel("rt-admin-global");
+        const channelName = `rt-admin-global-${session.user.id}-${Date.now()}`;
+        const channelAdmin = supabase
+          .channel(channelName)
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "prestamos" },
+            () => {
+              cargarResumenGeneral();
+              cargarCajasYBancos();
+            },
+          )
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "gastos" },
+            () => {
+              cargarResumenGeneral();
+              cargarGastosYNomina();
+              cargarCajasYBancos();
+            },
+          )
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "pagos" },
+            () => {
+              cargarResumenGeneral();
+              cargarCobrosYGanancias();
+              cargarCajasYBancos();
+            },
+          )
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "empleados" },
+            () => {
+              cargarClientesYEmpleados();
+            },
+          )
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "secretaria" },
+            () => {
+              cargarClientesYEmpleados();
+            },
+          )
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "clientes" },
+            () => {
+              cargarClientesYEmpleados();
+            },
+          )
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "cajas_bancos" },
+            () => {
+              cargarCajasYBancos();
+            },
+          )
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "cierres_caja" },
+            () => {
+              cargarCobrosYGanancias();
+            },
+          )
+          .subscribe();
 
-          channelAdmin
-            .on(
-              "postgres_changes",
-              { event: "*", schema: "public", table: "prestamos" },
-              () => {
-                cargarResumenGeneral();
-                cargarCajasYBancos();
-              },
-            )
-            .on(
-              "postgres_changes",
-              { event: "*", schema: "public", table: "gastos" },
-              () => {
-                cargarResumenGeneral();
-                cargarGastosYNomina();
-                cargarCajasYBancos();
-              },
-            )
-            .on(
-              "postgres_changes",
-              { event: "*", schema: "public", table: "pagos" },
-              () => {
-                cargarResumenGeneral();
-                cargarCobrosYGanancias();
-                cargarCajasYBancos();
-              },
-            )
-            .on(
-              "postgres_changes",
-              { event: "*", schema: "public", table: "empleados" },
-              () => {
-                cargarClientesYEmpleados();
-              },
-            )
-            .on(
-              "postgres_changes",
-              { event: "*", schema: "public", table: "secretaria" },
-              () => {
-                cargarClientesYEmpleados();
-              },
-            )
-            .on(
-              "postgres_changes",
-              { event: "*", schema: "public", table: "clientes" },
-              () => {
-                cargarClientesYEmpleados();
-              },
-            )
-            .on(
-              "postgres_changes",
-              { event: "*", schema: "public", table: "cajas_bancos" },
-              () => {
-                cargarCajasYBancos();
-              },
-            )
-            .on(
-              "postgres_changes",
-              { event: "*", schema: "public", table: "cierres_caja" },
-              () => {
-                cargarCobrosYGanancias();
-              },
-            )
-            .subscribe();
-
-          setLoading(false);
-          return () => {
-            supabase.removeChannel(channelAdmin);
-          };
-        }
-      } catch (e) {
-        console.log("No es administrador o falló la consulta:", e);
+        setLoading(false);
+        return () => {
+          supabase.removeChannel(channelAdmin);
+        };
       }
 
       // 2. Verificar en SECRETARIA
-      try {
-        const { data: secretariaData } = await supabase
-          .from("secretaria")
-          .select("*")
-          .eq("correo", emailUser)
-          .maybeSingle();
+      const { data: secretariaData } = await supabase
+        .from("secretaria")
+        .select("*")
+        .eq("correo", emailUser)
+        .maybeSingle();
 
-        if (secretariaData) {
-          setUserRole("secretaria");
-          setUserData(secretariaData);
-          await Promise.all([cargarResumenGeneral(), cargarCajasYBancos()]);
+      if (secretariaData) {
+        setUserRole("secretaria");
+        setUserData(secretariaData);
+        await cargarResumenGeneral();
 
-          const channelSecretaria = supabase.channel("rt-secretaria-global");
+        const channelName = `rt-secretaria-global-${session.user.id}-${Date.now()}`;
+        const channelSecretaria = supabase
+          .channel(channelName)
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "prestamos" },
+            () => {
+              cargarResumenGeneral();
+            },
+          )
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "pagos" },
+            () => {
+              cargarResumenGeneral();
+            },
+          )
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "gastos" },
+            () => {
+              cargarResumenGeneral();
+            },
+          )
+          .subscribe();
 
-          channelSecretaria
-            .on(
-              "postgres_changes",
-              { event: "*", schema: "public", table: "prestamos" },
-              () => {
-                cargarResumenGeneral();
-                cargarCajasYBancos();
-              },
-            )
-            .on(
-              "postgres_changes",
-              { event: "*", schema: "public", table: "pagos" },
-              () => {
-                cargarResumenGeneral();
-                cargarCajasYBancos();
-              },
-            )
-            .on(
-              "postgres_changes",
-              { event: "*", schema: "public", table: "gastos" },
-              () => {
-                cargarResumenGeneral();
-                cargarCajasYBancos();
-              },
-            )
-            .subscribe();
-
-          setLoading(false);
-          return () => {
-            supabase.removeChannel(channelSecretaria);
-          };
-        }
-      } catch (e) {
-        console.log("No es secretaria o falló la consulta:", e);
+        setLoading(false);
+        return () => {
+          supabase.removeChannel(channelSecretaria);
+        };
       }
 
       // 3. Verificar en EMPLEADOS
-      try {
-        const { data: empleadoData } = await supabase
-          .from("empleados")
-          .select("*")
-          .eq("correo", emailUser)
-          .maybeSingle();
+      const { data: empleadoData } = await supabase
+        .from("empleados")
+        .select("*")
+        .eq("correo", emailUser)
+        .maybeSingle();
 
-        if (empleadoData && empleadoData.cedula) {
-          setUserRole("empleado");
-          setUserData(empleadoData);
-          await cargarResumenPersonal(empleadoData.cedula);
+      if (empleadoData) {
+        setUserRole("empleado");
+        setUserData(empleadoData);
+        await cargarResumenPersonal(empleadoData.cedula);
 
-          const channelEmpleado = supabase.channel(
-            `rt-empleado-${empleadoData.cedula}`,
-          );
+        const channelName = `rt-empleado-${empleadoData.cedula}-${Date.now()}`;
+        const channelEmpleado = supabase
+          .channel(channelName)
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "prestamos" },
+            () => cargarResumenPersonal(empleadoData.cedula),
+          )
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "pagos" },
+            () => cargarResumenPersonal(empleadoData.cedula),
+          )
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "gastos" },
+            () => cargarResumenPersonal(empleadoData.cedula),
+          )
+          .on(
+            "postgres_changes",
+            { event: "UPDATE", schema: "public", table: "empleados" },
+            (payload: any) => {
+              if (payload.new.cedula === empleadoData.cedula) {
+                setUserData(payload.new);
+              }
+            },
+          )
+          .subscribe();
 
-          channelEmpleado
-            .on(
-              "postgres_changes",
-              { event: "*", schema: "public", table: "prestamos" },
-              () => cargarResumenPersonal(empleadoData.cedula),
-            )
-            .on(
-              "postgres_changes",
-              { event: "*", schema: "public", table: "pagos" },
-              () => cargarResumenPersonal(empleadoData.cedula),
-            )
-            .on(
-              "postgres_changes",
-              { event: "*", schema: "public", table: "gastos" },
-              () => cargarResumenPersonal(empleadoData.cedula),
-            )
-            .on(
-              "postgres_changes",
-              { event: "UPDATE", schema: "public", table: "empleados" },
-              (payload) => {
-                if (payload.new.cedula === empleadoData.cedula) {
-                  setUserData(payload.new);
-                }
-              },
-            )
-            .subscribe();
-
-          setLoading(false);
-          return () => {
-            supabase.removeChannel(channelEmpleado);
-          };
-        }
-      } catch (e) {
-        console.log("No es empleado o falló la consulta:", e);
+        setLoading(false);
+        return () => {
+          supabase.removeChannel(channelEmpleado);
+        };
       }
 
-      await supabase.auth.signOut();
-      router.replace("/(auth)/sign-in");
-    } catch (err) {
-      console.error("Error crítico general al verificar sesión:", err);
-      router.replace("/(auth)/sign-in");
-    } finally {
+      // Si no pertenece a ninguna tabla autorizada
+      setLoading(false);
+    } catch (e) {
+      console.log("Error en verificarSesionYDatos:", e);
       setLoading(false);
     }
   };
@@ -459,12 +440,13 @@ export default function IndexScreen() {
     });
     setTotalCobros({ USD: cobrosUSD, COP: cobrosCOP });
 
-    const { data: cierres } = await supabase
-      .from("cierres_caja")
-      .select("ganancia_neta, moneda");
+    const { data: ganancias } = await supabase
+      .from("vista_ganancias_netas")
+      .select("moneda, ganancia_neta");
+
     let gananciaUSD = 0;
     let gananciaCOP = 0;
-    cierres?.forEach((c) => {
+    ganancias?.forEach((c) => {
       if (c.moneda === "USD") gananciaUSD += Number(c.ganancia_neta || 0);
       if (c.moneda === "COP") gananciaCOP += Number(c.ganancia_neta || 0);
     });
@@ -638,7 +620,6 @@ export default function IndexScreen() {
           </View>
         </View>
 
-        {/* MÓDULOS RESTRINGIDOS: Únicamente visibles para el Administrador */}
         {userRole === "administrador" && (
           <>
             <Text style={styles.sectionTitle}>Módulos y Saldos</Text>
@@ -661,7 +642,7 @@ export default function IndexScreen() {
 
               <TouchableOpacity
                 style={[styles.menuCard, { borderLeftColor: "#f43f5e" }]}
-                onPress={() => router.push("/(tabs)/detalle-prestamo")}
+                onPress={() => router.push("/(tabs)/lista-prestamos")}
               >
                 <Text style={styles.menuEmoji}>💸</Text>
                 <Text style={styles.menuTitle}>Cobros</Text>
@@ -741,7 +722,10 @@ export default function IndexScreen() {
                 <Text style={styles.menuDesc}>Autorizaciones y personal</Text>
               </TouchableOpacity>
 
-              <View style={[styles.menuCard, { borderLeftColor: "#10b981" }]}>
+              <TouchableOpacity
+                onPress={() => router.push("/(tabs)/caja")}
+                style={[styles.menuCard, { borderLeftColor: "#10b981" }]}
+              >
                 <Text style={styles.menuEmoji}>📈</Text>
                 <Text style={styles.menuTitle}>Ganancias</Text>
                 <Text style={styles.saldoText}>
@@ -759,7 +743,7 @@ export default function IndexScreen() {
                 <Text style={styles.menuDesc}>
                   Utilidades netas registradas
                 </Text>
-              </View>
+              </TouchableOpacity>
             </View>
           </>
         )}
@@ -811,7 +795,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#1e293b",
     borderWidth: 1,
     borderColor: "#334155",
-    boxShadow: "0px 4px 10px rgba(0, 0, 0, 0.3)",
   },
   cardTitle: {
     fontSize: 13,
@@ -836,7 +819,6 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     borderWidth: 1,
     borderColor: "#334155",
-    boxShadow: "0px 4px 10px rgba(0, 0, 0, 0.3)",
   },
   chartTitle: {
     fontSize: 16,
@@ -920,7 +902,6 @@ const styles = StyleSheet.create({
     borderLeftWidth: 5,
     borderWidth: 1,
     borderColor: "#334155",
-    boxShadow: "0px 4px 8px rgba(0, 0, 0, 0.25)",
   },
   menuEmoji: {
     fontSize: 28,

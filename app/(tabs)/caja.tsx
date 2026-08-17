@@ -24,10 +24,13 @@ interface Caja {
 
 export default function CajaScreen() {
   const { width } = useWindowDimensions();
-  // Si el ancho es menor a 768px (pantallas tipo tablet pequeña / móvil), se muestra a 1 columna
   const isMobile = width < 768 || Platform.OS !== "web";
 
   const [cajas, setCajas] = useState<Caja[]>([]);
+  const [efectivoUSD, setEfectivoUSD] = useState(0);
+  const [efectivoCOP, setEfectivoCOP] = useState(0);
+  const [bancosUSD, setBancosUSD] = useState(0);
+  const [bancosCOP, setBancosCOP] = useState(0);
   const [dineroEnCalleUSD, setDineroEnCalleUSD] = useState(0);
   const [dineroEnCalleCOP, setDineroEnCalleCOP] = useState(0);
   const [totalGastosUSD, setTotalGastosUSD] = useState(0);
@@ -74,119 +77,128 @@ export default function CajaScreen() {
       await cargarDatosCaja();
     } catch (error) {
       console.error("Error al verificar el rol de administrador:", error);
+    } finally {
       setLoading(false);
     }
   };
 
   const cargarDatosCaja = async () => {
-    // 1. Cargar cajas y bancos
-    const { data: cajasData, error: cajasError } = await supabase
-      .from("cajas_bancos")
-      .select("id, nombre, moneda, saldo_actual");
+    try {
+      // 1. Cargar cajas y bancos
+      const { data: cajasData, error: cajasError } = await supabase
+        .from("cajas_bancos")
+        .select("id, nombre, moneda, saldo_actual");
 
-    if (cajasError) {
-      console.log("Error cargando cajas:", cajasError.message);
-    } else {
-      setCajas(cajasData || []);
-    }
+      let fetchedCajas: Caja[] = [];
+      if (cajasError) {
+        console.log("Error cargando cajas:", cajasError.message);
+      } else {
+        fetchedCajas = cajasData || [];
+        setCajas(fetchedCajas);
+      }
 
-    // 2. Cargar dinero en la calle (préstamos activos)
-    const { data: prestamosData, error: prestamosError } = await supabase
-      .from("prestamos")
-      .select("saldo_pendiente, estado, moneda")
-      .eq("estado", "activo");
+      // Calcular Efectivo y Bancos
+      let locEfectivoUSD = 0;
+      let locEfectivoCOP = 0;
+      let locBancosUSD = 0;
+      let locBancosCOP = 0;
 
-    let sumaCalleUSD = 0;
-    let sumaCalleCOP = 0;
-
-    if (!prestamosError && prestamosData) {
-      prestamosData.forEach((curr) => {
-        const saldoPendiente = Number(curr.saldo_pendiente || 0);
-        if (curr.moneda === "USD") {
-          sumaCalleUSD += saldoPendiente;
+      fetchedCajas.forEach((caja) => {
+        const saldo = Math.max(0, Number(caja.saldo_actual || 0));
+        const nombre = caja.nombre.toLowerCase();
+        if (caja.moneda === "USD") {
+          if (
+            nombre.includes("banco") ||
+            nombre.includes("cuenta") ||
+            nombre.includes("transferencia")
+          )
+            locBancosUSD += saldo;
+          else locEfectivoUSD += saldo;
         } else {
-          sumaCalleCOP += saldoPendiente;
+          if (
+            nombre.includes("banco") ||
+            nombre.includes("cuenta") ||
+            nombre.includes("transferencia")
+          )
+            locBancosCOP += saldo;
+          else locEfectivoCOP += saldo;
         }
       });
-      setDineroEnCalleUSD(Math.max(0, sumaCalleUSD));
-      setDineroEnCalleCOP(Math.max(0, sumaCalleCOP));
+
+      setEfectivoUSD(locEfectivoUSD);
+      setEfectivoCOP(locEfectivoCOP);
+      setBancosUSD(locBancosUSD);
+      setBancosCOP(locBancosCOP);
+
+      // 2. Cargar dinero en la calle (préstamos activos)
+      const { data: prestamosData, error: prestamosError } = await supabase
+        .from("prestamos")
+        .select("saldo_pendiente, estado, moneda")
+        .eq("estado", "activo");
+
+      let sumaCalleUSD = 0;
+      let sumaCalleCOP = 0;
+
+      if (!prestamosError && prestamosData) {
+        prestamosData.forEach((curr) => {
+          const saldoPendiente = Number(curr.saldo_pendiente || 0);
+          if (curr.moneda === "USD") {
+            sumaCalleUSD += saldoPendiente;
+          } else {
+            sumaCalleCOP += saldoPendiente;
+          }
+        });
+        setDineroEnCalleUSD(Math.max(0, sumaCalleUSD));
+        setDineroEnCalleCOP(Math.max(0, sumaCalleCOP));
+      }
+
+      // 3. Cargar gastos acumulados
+      const { data: gastosData, error: gastosError } = await supabase
+        .from("gastos")
+        .select("monto, moneda");
+
+      let sumaGastosUSD = 0;
+      let sumaGastosCOP = 0;
+
+      if (!gastosError && gastosData) {
+        gastosData.forEach((curr) => {
+          const monto = Number(curr.monto || 0);
+          if (curr.moneda === "USD") {
+            sumaGastosUSD += monto;
+          } else {
+            sumaGastosCOP += monto;
+          }
+        });
+        setTotalGastosUSD(Math.max(0, sumaGastosUSD));
+        setTotalGastosCOP(Math.max(0, sumaGastosCOP));
+      }
+
+      // 4. Cargar Ganancia Neta desde la vista "vista_ganancias_netas"
+      const { data: vistaData, error: vistaError } = await supabase
+        .from("vista_ganancias_netas")
+        .select("moneda, ganancia_neta");
+
+      if (vistaError) {
+        console.log("Error cargando vista de ganancias:", vistaError.message);
+      }
+
+      let netaUSD = 0;
+      let netaCOP = 0;
+
+      if (vistaData && vistaData.length > 0) {
+        vistaData.forEach((row) => {
+          const monto = Number(row.ganancia_neta || 0);
+          if (row.moneda === "USD") netaUSD = monto;
+          else if (row.moneda === "COP") netaCOP = monto;
+        });
+      }
+
+      setTotalGananciaUSD(netaUSD);
+      setTotalGananciaCOP(netaCOP);
+    } catch (error) {
+      console.error("Error al cargar datos de caja:", error);
     }
-
-    // 3. Cargar todos los pagos/intereses acumulados
-    const { data: pagosData, error: pagosError } = await supabase
-      .from("pagos")
-      .select("monto_pagado, moneda");
-
-    let sumaInteresesUSD = 0;
-    let sumaInteresesCOP = 0;
-
-    if (!pagosError && pagosData) {
-      pagosData.forEach((curr: any) => {
-        const montoPagado = Number(curr.monto_pagado || 0);
-        const interesEstimado = montoPagado * 0.15;
-
-        if (curr.moneda === "USD") {
-          sumaInteresesUSD += interesEstimado;
-        } else {
-          sumaInteresesCOP += interesEstimado;
-        }
-      });
-    }
-
-    // 4. Cargar todos los gastos acumulados
-    const { data: gastosData, error: gastosError } = await supabase
-      .from("gastos")
-      .select("monto, moneda");
-
-    let sumaGastosUSD = 0;
-    let sumaGastosCOP = 0;
-
-    if (!gastosError && gastosData) {
-      gastosData.forEach((curr) => {
-        const monto = Number(curr.monto || 0);
-        if (curr.moneda === "USD") {
-          sumaGastosUSD += monto;
-        } else {
-          sumaGastosCOP += monto;
-        }
-      });
-      setTotalGastosUSD(Math.max(0, sumaGastosUSD));
-      setTotalGastosCOP(Math.max(0, sumaGastosCOP));
-    }
-
-    // 5. Calcular Ganancia Neta Acumulada (Intereses - Gastos)
-    setTotalGananciaUSD(Math.max(0, sumaInteresesUSD - sumaGastosUSD));
-    setTotalGananciaCOP(Math.max(0, sumaInteresesCOP - sumaGastosCOP));
-
-    setLoading(false);
   };
-
-  let efectivoUSD = 0;
-  let efectivoCOP = 0;
-  let bancosUSD = 0;
-  let bancosCOP = 0;
-
-  cajas.forEach((caja) => {
-    const saldo = Math.max(0, Number(caja.saldo_actual || 0));
-    const nombre = caja.nombre.toLowerCase();
-    if (caja.moneda === "USD") {
-      if (
-        nombre.includes("banco") ||
-        nombre.includes("cuenta") ||
-        nombre.includes("transferencia")
-      )
-        bancosUSD += saldo;
-      else efectivoUSD += saldo;
-    } else {
-      if (
-        nombre.includes("banco") ||
-        nombre.includes("cuenta") ||
-        nombre.includes("transferencia")
-      )
-        bancosCOP += saldo;
-      else efectivoCOP += saldo;
-    }
-  });
 
   const fechaActual = new Date().toLocaleDateString();
 
@@ -425,7 +437,6 @@ export default function CajaScreen() {
           </Text>
         </View>
 
-        {/* Tarjeta Ganancia Neta Acumulada USD */}
         <View
           style={[
             styles.card,
@@ -434,7 +445,7 @@ export default function CajaScreen() {
           ]}
         >
           <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitleGanancia}>Ganancia Neta</Text>
+            <Text style={styles.cardTitleGanancia}>Ganancia</Text>
             <Text style={styles.monedaBadgeGanancia}>USD</Text>
           </View>
           <Text style={styles.cardValueGanancia}>
@@ -445,7 +456,6 @@ export default function CajaScreen() {
           </Text>
         </View>
 
-        {/* Tarjeta Ganancia Neta Acumulada COP */}
         <View
           style={[
             styles.card,
@@ -454,7 +464,7 @@ export default function CajaScreen() {
           ]}
         >
           <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitleGanancia}>Ganancia Neta</Text>
+            <Text style={styles.cardTitleGanancia}>Ganancia</Text>
             <Text style={styles.monedaBadgeGanancia}>COP</Text>
           </View>
           <Text style={styles.cardValueGanancia}>
@@ -492,7 +502,7 @@ const styles = StyleSheet.create({
   },
   topHeaderRowMobile: {
     flexDirection: "column",
-    alignometr: "stretch",
+    alignItems: "stretch",
   } as any,
   headerContainer: {
     flex: 1,

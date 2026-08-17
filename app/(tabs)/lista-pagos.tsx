@@ -20,18 +20,20 @@ interface PagoItem {
   id: string;
   fecha_pago: string;
   cedula: string;
-  monto_prestado?: number;
-  monto_total?: number;
-  moneda: "USD" | "COP";
-  tasa_interes?: number;
-  saldo_pendiente?: number;
-  monto_pagado?: number;
+  monto_prestado: number;
+  monto_total: number;
+  moneda_prestamo: string;
+  moneda_pago: string;
+  tasa_interes: number;
+  saldo_pendiente: number;
+  monto_pagado: number;
   registrado_por_cedula: string;
+  metodo_pago?: string;
   estadoTexto?: string;
-  empleadoNombre?: string;
   clientes?: {
     nombres: string;
     apellidos: string;
+    telefono?: string;
   };
 }
 
@@ -49,7 +51,6 @@ export default function PagosHabilesScreen() {
   );
   const router = useRouter();
 
-  // Validar si el usuario actual es Administrador o Secretaria (Excluyendo empleados)
   useEffect(() => {
     verificarRolPermitido();
   }, []);
@@ -68,7 +69,7 @@ export default function PagosHabilesScreen() {
         return;
       }
 
-      // 1. Verificar si está en la tabla de administradores
+      // 1. Verificar administradores
       const { data: adminData } = await supabase
         .from("administradores")
         .select("rol, correo")
@@ -81,7 +82,7 @@ export default function PagosHabilesScreen() {
         return;
       }
 
-      // 2. Si no es admin, verificar si está en la tabla de secretarias
+      // 2. Verificar secretarias
       const { data: secretariaData } = await supabase
         .from("secretaria")
         .select("rol, correo, aprobado")
@@ -99,7 +100,6 @@ export default function PagosHabilesScreen() {
         return;
       }
 
-      // 3. Si no se encuentra en ninguna de las dos (ej. es empleado), se deniega el acceso
       alert("Acceso exclusivo para administradores y secretarias.");
       router.replace("/home");
     } catch (err) {
@@ -123,16 +123,22 @@ export default function PagosHabilesScreen() {
           moneda,
           monto_pagado,
           registrado_por_cedula,
+          metodo_pago,
+          tasa_cambio,
           prestamo_id,
           prestamos (
+            id,
             cedula,
+            monto_prestado,
             monto_total,
             tasa_interes,
             saldo_pendiente,
             estado,
+            moneda,
             clientes (
               nombres,
-              apellidos
+              apellidos,
+              telefono
             )
           )
         `,
@@ -149,22 +155,25 @@ export default function PagosHabilesScreen() {
         const pagosFormateados: PagoItem[] = data.map((p: any) => {
           const prestamo = p.prestamos || {};
           const cliente = prestamo.clientes || {};
+
           return {
             id: p.id,
             fecha_pago: p.fecha_pago,
             cedula: prestamo.cedula || "N/A",
-            monto_prestado: prestamo.monto_total || 0,
+            monto_prestado: prestamo.monto_prestado || 0,
             monto_total: prestamo.monto_total || 0,
-            moneda: p.moneda,
+            moneda_prestamo: prestamo.moneda || "COP",
+            moneda_pago: p.moneda || "COP",
             tasa_interes: prestamo.tasa_interes || 0,
             saldo_pendiente: prestamo.saldo_pendiente || 0,
             monto_pagado: p.monto_pagado || 0,
             registrado_por_cedula: p.registrado_por_cedula,
+            metodo_pago: p.metodo_pago || "Efectivo",
             estadoTexto: prestamo.estado || "activo",
-            empleadoNombre: p.registrado_por_cedula,
             clientes: {
               nombres: cliente.nombres || "Sin nombre",
               apellidos: cliente.apellidos || "",
+              telefono: cliente.telefono || "",
             },
           };
         });
@@ -185,6 +194,7 @@ export default function PagosHabilesScreen() {
     fechaLimite.setHours(0, 0, 0, 0);
 
     const filtrados = listaPagos.filter((item) => {
+      if (!item.fecha_pago) return false;
       const fechaItem = new Date(item.fecha_pago.replace("Z", ""));
       return fechaItem >= fechaLimite && fechaItem <= hoy;
     });
@@ -210,14 +220,13 @@ export default function PagosHabilesScreen() {
               p.subtitle { text-align: center; color: #64748b; margin-top: 0; margin-bottom: 25px; font-size: 14px; }
               table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
               th, td { border: 1px solid #e2e8f0; padding: 10px 12px; text-align: left; }
-              th { background-color: #0f172a; color: #ffffff; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.05em; }
+              th { background-color: #0f172a; color: #ffffff; font-weight: 600; text-transform: uppercase; font-size: 11px; }
               tr:nth-child(even) { background-color: #f8fafc; }
-              .text-right { text-align: right; }
             </style>
           </head>
           <body>
           <h2>Gestión de Préstamos</h2>
-            <p class="subtitle">Control de cobros</p>
+            <p class="subtitle">Control de cobros (Últimos 7 días)</p>
             <table>
               <thead>
                 <tr>
@@ -225,12 +234,13 @@ export default function PagosHabilesScreen() {
                   <th>CLIENTE / CÉDULA</th>
                   <th>MONTO PRESTADO</th>
                   <th>MONEDA</th>
-                  <th>PORCENTAJE</th>
-                  <th>TOTAL A PAGAR</th>
+                  <th>INTERÉS</th>
+                  <th>TOTAL PRÉSTAMO</th>
                   <th>SALDO PENDIENTE</th>
-                  <th>SALDO PAGADO</th>
+                  <th>PAGO ABONADO</th>
+                  <th>MÉTODO</th>
                   <th>REGISTRADO POR</th>
-                  <th>ESTADO / ACCIÓN</th>
+                  <th>ESTADO</th>
                 </tr>
               </thead>
               <tbody>
@@ -240,12 +250,13 @@ export default function PagosHabilesScreen() {
                   <tr>
                     <td>${item.fecha_pago ? new Date(item.fecha_pago.replace("Z", "")).toLocaleDateString() : "N/A"}</td>
                     <td>${item.clientes ? `${item.clientes.nombres} ${item.clientes.apellidos}` : "Desconocido"} (${item.cedula})</td>
-                    <td>${Number(item.monto_prestado ?? item.monto_total ?? 0).toFixed(2)}</td>
-                    <td>${item.moneda}</td>
-                    <td>${item.tasa_interes || 0}%</td>
-                    <td>${Number(item.monto_total || 0).toFixed(2)}</td>
-                    <td>${Number(item.saldo_pendiente || 0).toFixed(2)}</td>
-                    <td>${Number(item.monto_pagado || 0).toFixed(2)}</td>
+                    <td>${Number(item.monto_prestado).toFixed(2)}</td>
+                    <td>${item.moneda_pago}</td>
+                    <td>${item.tasa_interes}%</td>
+                    <td>${Number(item.monto_total).toFixed(2)}</td>
+                    <td>${Number(item.saldo_pendiente).toFixed(2)}</td>
+                    <td>${Number(item.monto_pagado).toFixed(2)}</td>
+                    <td>${item.metodo_pago}</td>
                     <td>${item.registrado_por_cedula}</td>
                     <td>${(item.estadoTexto || "activo").toUpperCase()}</td>
                   </tr>
@@ -292,12 +303,13 @@ export default function PagosHabilesScreen() {
           ? `${item.clientes.nombres} ${item.clientes.apellidos}`
           : "Desconocido",
         Cédula: item.cedula,
-        "Monto Prestado": Number(item.monto_prestado ?? item.monto_total ?? 0),
-        Moneda: item.moneda,
-        "Porcentaje (%)": item.tasa_interes || 0,
-        "Total a Pagar": Number(item.monto_total || 0),
-        "Saldo Pendiente": Number(item.saldo_pendiente || 0),
-        "Saldo Pagado": Number(item.monto_pagado || 0),
+        "Monto Prestado": Number(item.monto_prestado),
+        "Moneda Pago": item.moneda_pago,
+        "Interés (%)": item.tasa_interes,
+        "Total a Pagar": Number(item.monto_total),
+        "Saldo Pendiente": Number(item.saldo_pendiente),
+        "Monto Abonado (Pago)": Number(item.monto_pagado),
+        "Método Pago": item.metodo_pago,
         "Registrado Por": item.registrado_por_cedula,
         Estado: (item.estadoTexto || "activo").toUpperCase(),
       }));
@@ -344,17 +356,17 @@ export default function PagosHabilesScreen() {
       {/* CABECERA Y BOTONES DE EXPORTACIÓN */}
       <View style={styles.headerContainer}>
         <View style={styles.titleWrapper}>
-          <Text style={styles.mainTitle}>Pagos - Semana (Lunes a Lunes)</Text>
+          <Text style={styles.mainTitle}>Pagos - Últimos 7 Días</Text>
           <Text style={styles.subtitle}>
-            Control de cobros registrados en los últimos 7 días corridos
+            Control de cobros registrados en el sistema
           </Text>
         </View>
         <View style={styles.exportButtonsContainer}>
           <TouchableOpacity style={styles.btnExcel} onPress={descargarExcel}>
-            <Text style={styles.btnExcelText}>📥 Descargar Excel</Text>
+            <Text style={styles.btnExcelText}>📥 Excel</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.btnPdf} onPress={descargarPDF}>
-            <Text style={styles.btnPdfText}>📥 Descargar PDF</Text>
+            <Text style={styles.btnPdfText}>📥 PDF</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -376,7 +388,7 @@ export default function PagosHabilesScreen() {
               contentContainerStyle={{ flexGrow: 1 }}
             >
               <View style={styles.tableInnerWrapper}>
-                {/* CABECERA DE LA TABLA ESTILO OSCURO ELEGANTE */}
+                {/* CABECERA DE LA TABLA */}
                 <View style={[styles.gridRow, styles.gridHeader]}>
                   <View style={[styles.gridCell, styles.colFecha]}>
                     <Text style={styles.headerText}>FECHA</Text>
@@ -391,16 +403,16 @@ export default function PagosHabilesScreen() {
                     <Text style={styles.headerText}>MONEDA</Text>
                   </View>
                   <View style={[styles.gridCell, styles.colPorcentaje]}>
-                    <Text style={styles.headerText}>PORCENTAJE</Text>
+                    <Text style={styles.headerText}>INTERÉS</Text>
                   </View>
                   <View style={[styles.gridCell, styles.colTotal]}>
-                    <Text style={styles.headerText}>TOTAL A PAGAR</Text>
+                    <Text style={styles.headerText}>TOTAL PRÉSTAMO</Text>
                   </View>
                   <View style={[styles.gridCell, styles.colTotal]}>
                     <Text style={styles.headerText}>SALDO PENDIENTE</Text>
                   </View>
                   <View style={[styles.gridCell, styles.colTotal]}>
-                    <Text style={styles.headerText}>SALDO PAGADO</Text>
+                    <Text style={styles.headerText}>PAGO ABONADO</Text>
                   </View>
                   <View style={[styles.gridCell, styles.colEmpleado]}>
                     <Text style={styles.headerText}>REGISTRADO POR</Text>
@@ -414,7 +426,7 @@ export default function PagosHabilesScreen() {
                 {pagosHabilesFiltrados.length === 0 ? (
                   <View style={styles.emptyContainer}>
                     <Text style={styles.emptyText}>
-                      No se encontraron préstamos registrados.
+                      No se encontraron pagos registrados en este periodo.
                     </Text>
                   </View>
                 ) : (
@@ -422,29 +434,22 @@ export default function PagosHabilesScreen() {
                     const nombreCliente = item.clientes
                       ? `${item.clientes.nombres} ${item.clientes.apellidos}`
                       : "Cliente desconocido";
-
                     const fechaFormateada = item.fecha_pago
                       ? new Date(
                           item.fecha_pago.replace("Z", ""),
                         ).toLocaleDateString()
                       : "N/A";
-
                     const estado = item.estadoTexto || "activo";
+
                     let badgeBg = "#eff6ff";
                     let badgeColor = "#2563eb";
                     if (estado === "pagado") {
                       badgeBg = "#f0fdf4";
                       badgeColor = "#16a34a";
-                    }
-                    if (estado === "atrasado") {
+                    } else if (estado === "atrasado") {
                       badgeBg = "#fef2f2";
                       badgeColor = "#dc2626";
                     }
-
-                    const montoPrestadoMostrar =
-                      item.monto_prestado ?? item.monto_total ?? 0;
-                    const monedaPrestamo = item.moneda || "COP";
-                    const saldoPagadoMostrar = item.monto_pagado || 0;
 
                     return (
                       <View
@@ -465,38 +470,38 @@ export default function PagosHabilesScreen() {
                         </View>
                         <View style={[styles.gridCell, styles.colMonto]}>
                           <Text style={styles.cellText}>
-                            {Number(montoPrestadoMostrar).toFixed(2)}
+                            {Number(item.monto_prestado).toFixed(2)}
                           </Text>
                         </View>
                         <View style={[styles.gridCell, styles.colMoneda]}>
                           <View style={styles.badgeMoneda}>
                             <Text style={styles.badgeMonedaText}>
-                              {monedaPrestamo}
+                              {item.moneda_pago}
                             </Text>
                           </View>
                         </View>
                         <View style={[styles.gridCell, styles.colPorcentaje]}>
                           <Text style={styles.cellText}>
-                            {item.tasa_interes || 0}%
+                            {item.tasa_interes}%
                           </Text>
                         </View>
                         <View style={[styles.gridCell, styles.colTotal]}>
                           <Text style={styles.cellTextBold}>
-                            {Number(item.monto_total || 0).toFixed(2)}
+                            {Number(item.monto_total).toFixed(2)}
                           </Text>
                         </View>
                         <View style={[styles.gridCell, styles.colTotal]}>
                           <Text
                             style={[styles.cellTextBold, { color: "#dc2626" }]}
                           >
-                            {Number(item.saldo_pendiente || 0).toFixed(2)}
+                            {Number(item.saldo_pendiente).toFixed(2)}
                           </Text>
                         </View>
                         <View style={[styles.gridCell, styles.colTotal]}>
                           <Text
                             style={[styles.cellTextBold, { color: "#16a34a" }]}
                           >
-                            {Number(saldoPagadoMostrar).toFixed(2)}
+                            {Number(item.monto_pagado).toFixed(2)}
                           </Text>
                         </View>
                         <View style={[styles.gridCell, styles.colEmpleado]}>
@@ -539,7 +544,7 @@ export default function PagosHabilesScreen() {
         </View>
       )}
 
-      {/* MODAL DE DETALLES DEL PAGO */}
+      {/* MODAL DE DETALLES */}
       <Modal
         visible={modalDetalleVisible}
         animationType="fade"
@@ -561,7 +566,7 @@ export default function PagosHabilesScreen() {
             </View>
 
             {pagoSeleccionado && (
-              <View style={styles.modalBody}>
+              <ScrollView contentContainerStyle={styles.modalBody}>
                 <View style={styles.modalRow}>
                   <Text style={styles.modalLabel}>Cliente:</Text>
                   <Text style={styles.modalVal}>
@@ -578,50 +583,74 @@ export default function PagosHabilesScreen() {
                   <Text style={styles.modalVal}>
                     {new Date(
                       pagoSeleccionado.fecha_pago.replace("Z", ""),
-                    ).toLocaleString()}
+                    ).toLocaleDateString()}
                   </Text>
                 </View>
                 <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Monto Abonado:</Text>
-                  <Text
-                    style={[
-                      styles.modalVal,
-                      { color: "#16a34a", fontWeight: "bold" },
-                    ]}
-                  >
-                    $ {pagoSeleccionado.monto_pagado?.toFixed(2)}{" "}
-                    {pagoSeleccionado.moneda}
+                  <Text style={styles.modalLabel}>Monto Prestado:</Text>
+                  <Text style={styles.modalVal}>
+                    {Number(pagoSeleccionado.monto_prestado).toFixed(2)}
                   </Text>
                 </View>
                 <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Saldo Pendiente Actual:</Text>
-                  <Text
-                    style={[
-                      styles.modalVal,
-                      { color: "#dc2626", fontWeight: "bold" },
-                    ]}
-                  >
-                    $ {pagoSeleccionado.saldo_pendiente?.toFixed(2)}{" "}
-                    {pagoSeleccionado.moneda}
+                  <Text style={styles.modalLabel}>Moneda de Pago:</Text>
+                  <Text style={styles.modalVal}>
+                    {pagoSeleccionado.moneda_pago}
                   </Text>
                 </View>
                 <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>
-                    Registrado por (Cédula):
+                  <Text style={styles.modalLabel}>Tasa de Interés:</Text>
+                  <Text style={styles.modalVal}>
+                    {pagoSeleccionado.tasa_interes}%
                   </Text>
+                </View>
+                <View style={styles.modalRow}>
+                  <Text style={styles.modalLabel}>Total del Préstamo:</Text>
+                  <Text style={styles.modalVal}>
+                    {Number(pagoSeleccionado.monto_total).toFixed(2)}
+                  </Text>
+                </View>
+                <View style={styles.modalRow}>
+                  <Text style={styles.modalLabel}>Saldo Pendiente:</Text>
+                  <Text style={[styles.modalVal, { color: "#dc2626" }]}>
+                    {Number(pagoSeleccionado.saldo_pendiente).toFixed(2)}
+                  </Text>
+                </View>
+                <View style={styles.modalRow}>
+                  <Text style={styles.modalLabel}>Monto Abonado (Pago):</Text>
+                  <Text style={[styles.modalVal, { color: "#16a34a" }]}>
+                    {Number(pagoSeleccionado.monto_pagado).toFixed(2)}
+                  </Text>
+                </View>
+                <View style={styles.modalRow}>
+                  <Text style={styles.modalLabel}>Método de Pago:</Text>
+                  <Text style={styles.modalVal}>
+                    {pagoSeleccionado.metodo_pago}
+                  </Text>
+                </View>
+                <View style={styles.modalRow}>
+                  <Text style={styles.modalLabel}>Registrado Por:</Text>
                   <Text style={styles.modalVal}>
                     {pagoSeleccionado.registrado_por_cedula}
                   </Text>
                 </View>
-              </View>
+                <View style={styles.modalRow}>
+                  <Text style={styles.modalLabel}>Estado del Préstamo:</Text>
+                  <Text style={styles.modalVal}>
+                    {(pagoSeleccionado.estadoTexto || "activo").toUpperCase()}
+                  </Text>
+                </View>
+              </ScrollView>
             )}
 
-            <TouchableOpacity
-              style={styles.modalAcceptBtn}
-              onPress={() => setModalDetalleVisible(false)}
-            >
-              <Text style={styles.modalAcceptBtnText}>Cerrar</Text>
-            </TouchableOpacity>
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.btnCloseModal}
+                onPress={() => setModalDetalleVisible(false)}
+              >
+                <Text style={styles.btnCloseModalText}>Cerrar</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>

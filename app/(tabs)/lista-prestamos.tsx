@@ -188,8 +188,9 @@ export default function ListaPrestamosScreen() {
               : 0;
 
             const montoTotal = Number(p.monto_total) || 0;
-            const saldoPendienteCalculado =
-              Number(p.saldo_pendiente) ?? montoTotal - totalPagado;
+
+            // Forzar el cálculo matemático para que siempre sea exacto y no dependa de un valor viejo en BD
+            const saldoPendienteCalculado = montoTotal - totalPagado;
 
             let estadoTexto = p.estado || "activo";
             const fechaPrestamoObj = new Date(p.fecha_prestamo);

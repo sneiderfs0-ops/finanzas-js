@@ -36,6 +36,7 @@ interface Prestamo {
   frecuencia: string;
   cuotas: number;
   estado: string;
+  fecha_inicio: string;
 }
 
 export default function CrearPagoScreen({ route }: any) {

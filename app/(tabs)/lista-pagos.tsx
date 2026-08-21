@@ -114,6 +114,7 @@ export default function PagosHabilesScreen() {
     try {
       setLoading(true);
 
+      // 1. Cargar pagos junto con los datos del préstamo y el cliente
       const { data, error } = await supabase
         .from("pagos")
         .select(
@@ -152,24 +153,81 @@ export default function PagosHabilesScreen() {
       }
 
       if (data) {
+        // 2. Consultar listas de personal para mapear nombres por cédula de forma rápida
+        const [adminsRes, empleadosRes, secretariasRes] = await Promise.all([
+          supabase.from("administradores").select("cedula, nombres, apellidos"),
+          supabase.from("empleados").select("cedula, nombres, apellidos"),
+          supabase.from("secretaria").select("cedula, nombres, apellidos"),
+        ]);
+
+        // Crear un diccionario rápido de cédula -> Nombre Completo
+        const mapaNombres: { [cedula: string]: string } = {};
+
+        const registrarEnMapa = (personalList: any[]) => {
+          if (personalList) {
+            personalList.forEach((p) => {
+              if (p.cedula) {
+                mapaNombres[p.cedula] =
+                  `${p.nombres || ""} ${p.apellidos || ""}`.trim();
+              }
+            });
+          }
+        };
+
+        registrarEnMapa(adminsRes.data || []);
+        registrarEnMapa(empleadosRes.data || []);
+        registrarEnMapa(secretariasRes.data || []);
+
+        const hoy = new Date();
+
         const pagosFormateados: PagoItem[] = data.map((p: any) => {
           const prestamo = p.prestamos || {};
           const cliente = prestamo.clientes || {};
+
+          const montoTotal = prestamo.monto_total || 0;
+          const montoPagado = p.monto_pagado || 0;
+
+          // Cálculo correcto del saldo pendiente
+          const saldoCalculado = Math.max(0, montoTotal - montoPagado);
+
+          // Determinación dinámica del estado (activo, pagado, atrasado > 10 días)
+          let estadoFinal = "activo";
+
+          if (saldoCalculado <= 0) {
+            estadoFinal = "pagado";
+          } else if (p.fecha_pago) {
+            const fechaPagoRegistro = new Date(p.fecha_pago.replace("Z", ""));
+            const diferenciaDias = Math.floor(
+              (hoy.getTime() - fechaPagoRegistro.getTime()) /
+                (1000 * 60 * 60 * 24),
+            );
+
+            if (diferenciaDias > 10) {
+              estadoFinal = "atrasado";
+            }
+          }
+
+          // Buscar el nombre del empleado/personal usando la cédula registrada
+          const cedulaRegistro = p.registrado_por_cedula;
+          const nombreEncontrado =
+            cedulaRegistro && mapaNombres[cedulaRegistro]
+              ? mapaNombres[cedulaRegistro]
+              : cedulaRegistro || "Sistema";
 
           return {
             id: p.id,
             fecha_pago: p.fecha_pago,
             cedula: prestamo.cedula || "N/A",
             monto_prestado: prestamo.monto_prestado || 0,
-            monto_total: prestamo.monto_total || 0,
+            monto_total: montoTotal,
             moneda_prestamo: prestamo.moneda || "COP",
             moneda_pago: p.moneda || "COP",
             tasa_interes: prestamo.tasa_interes || 0,
-            saldo_pendiente: prestamo.saldo_pendiente || 0,
-            monto_pagado: p.monto_pagado || 0,
-            registrado_por_cedula: p.registrado_por_cedula,
+            saldo_pendiente: saldoCalculado,
+            monto_pagado: montoPagado,
+            registrado_por_cedula: nombreEncontrado, // <--- Ahora muestra el nombre completo del empleado/admin/secretaria
             metodo_pago: p.metodo_pago || "Efectivo",
-            estadoTexto: prestamo.estado || "activo",
+            estadoTexto: estadoFinal,
             clientes: {
               nombres: cliente.nombres || "Sin nombre",
               apellidos: cliente.apellidos || "",
@@ -231,7 +289,7 @@ export default function PagosHabilesScreen() {
               <thead>
                 <tr>
                   <th>FECHA</th>
-                  <th>CLIENTE / CÉDULA</th>
+                  <th>CLIENTE</th>
                   <th>MONTO PRESTADO</th>
                   <th>MONEDA</th>
                   <th>INTERÉS</th>
@@ -466,7 +524,7 @@ export default function PagosHabilesScreen() {
                           <Text style={styles.cellTextBold} numberOfLines={1}>
                             {nombreCliente}
                           </Text>
-                          <Text style={styles.subCedula}>{item.cedula}</Text>
+                          {/*  <Text style={styles.subCedula}>{item.cedula}</Text>*/}
                         </View>
                         <View style={[styles.gridCell, styles.colMonto]}>
                           <Text style={styles.cellText}>
@@ -574,10 +632,10 @@ export default function PagosHabilesScreen() {
                     {pagoSeleccionado.clientes?.apellidos}
                   </Text>
                 </View>
-                <View style={styles.modalRow}>
+                {/*   <View style={styles.modalRow}>
                   <Text style={styles.modalLabel}>Cédula:</Text>
                   <Text style={styles.modalVal}>{pagoSeleccionado.cedula}</Text>
-                </View>
+                </View>*/}
                 <View style={styles.modalRow}>
                   <Text style={styles.modalLabel}>Fecha de Pago:</Text>
                   <Text style={styles.modalVal}>

@@ -101,6 +101,12 @@ function CustomDrawerContent(props: any) {
         )}
         <Pressable
           style={localStyles.navItem}
+          onPress={() => router.push("/(tabs)/inventario")}
+        >
+          <Text style={localStyles.navText}>📊 Productos: Compra | Venta </Text>
+        </Pressable>
+        <Pressable
+          style={localStyles.navItem}
           onPress={() => router.push("/(tabs)/rutas")}
         >
           <Text style={localStyles.navText}>🗺️ Rutas de Cobro</Text>
@@ -500,6 +506,13 @@ export default function TabLayout() {
         options={{
           title: "Inicio",
           headerTitle: "",
+          headerRight: renderHeaderRight,
+        }}
+      />
+      <Drawer.Screen
+        name="inventario"
+        options={{
+          title: "Compra y venta de productos",
           headerRight: renderHeaderRight,
         }}
       />

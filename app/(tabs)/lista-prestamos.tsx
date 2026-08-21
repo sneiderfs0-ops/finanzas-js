@@ -9,22 +9,18 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
-  Platform,
   useWindowDimensions,
+  Platform,
 } from "react-native";
 import { supabase } from "../../supabase";
 
 export default function ListaPrestamosScreen() {
   const { width } = useWindowDimensions();
-  const esPantallaPequena = width < 768; // Detecta móviles y pantallas estrechas
+  const esPantallaPequena = width < 768;
 
   const [prestamos, setPrestamos] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [verificandoRol, setVerificandoRol] = useState(true);
-
+  const [loading, setLoading] = useState(true);
   const [busqueda, setBusqueda] = useState("");
-  const [fechaInicio, setFechaInicio] = useState("");
-  const [fechaFin, setFechaFin] = useState("");
 
   const [modalVisible, setModalVisible] = useState(false);
   const [prestamoSeleccionado, setPrestamoSeleccionado] = useState<any>(null);
@@ -32,76 +28,11 @@ export default function ListaPrestamosScreen() {
   const [cargandoPagos, setCargandoPagos] = useState(false);
 
   useEffect(() => {
-    verificarRolAdministrador();
-
-    const canalRealtime = supabase
-      .channel("cambios-prestamos-y-pagos")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "prestamos" },
-        () => {
-          cargarPrestamos();
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "pagos" },
-        () => {
-          cargarPrestamos();
-        },
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(canalRealtime);
-    };
-  }, [fechaInicio, fechaFin]);
-
-  const handleFechaChange = (text: string, setter: (val: string) => void) => {
-    const cleaned = text.replace(/[^0-9-]/g, "");
-    setter(cleaned);
-  };
-
-  const verificarRolAdministrador = async () => {
-    setVerificandoRol(true);
-    try {
-      const { data: sessionData, error: sessionError } =
-        await supabase.auth.getSession();
-      const session = sessionData?.session;
-
-      if (sessionError || !session || !session.user || !session.user.email) {
-        Alert.alert("Acceso denegado", "No hay una sesión activa.");
-        setVerificandoRol(false);
-        return;
-      }
-
-      const { data: empleadoData, error: empleadoError } = await supabase
-        .from("empleados")
-        .select("*")
-        .eq("correo", session.user.email)
-        .eq("rol", "administrador")
-        .maybeSingle();
-
-      if (empleadoError || !empleadoData) {
-        Alert.alert(
-          "Acceso Restringido",
-          "Esta sección es exclusiva para administradores.",
-        );
-        setVerificandoRol(false);
-        return;
-      }
-
-      cargarPrestamos();
-    } catch (err: any) {
-      console.log("Error al verificar rol:", err.message);
-      Alert.alert("Error", "No se pudieron verificar los permisos de acceso.");
-    } finally {
-      setVerificandoRol(false);
-    }
-  };
+    cargarPrestamos();
+  }, []);
 
   const obtenerNombreRegistrador = async (cedula: string) => {
-    if (!cedula) return "Administrador";
+    if (!cedula) return "Sin asignar";
 
     try {
       const { data: emp } = await supabase
@@ -127,53 +58,36 @@ export default function ListaPrestamosScreen() {
     } catch (e) {
       console.log("Error buscando registrador:", e);
     }
-
     return "Personal Autorizado";
   };
 
   const cargarPrestamos = async () => {
     setLoading(true);
     try {
-      let query = supabase
+      const { data: prestamosData, error: prestamoError } = await supabase
         .from("prestamos")
-        .select(
-          `
-          id,
-          fecha_prestamo,
-          monto_prestado,
-          tasa_interes,
-          monto_total,
-          saldo_pendiente,
-          registrado_por_cedula,
-          cedula,
-          moneda,
-          frecuencia,
-          cuotas,
-          valor_cuota,
-          estado,
-          clientes (
-            cedula,
-            nombres,
-            apellidos
-          )
-        `,
-        )
+        .select("*")
         .order("fecha_prestamo", { ascending: false });
-
-      if (fechaInicio) {
-        query = query.gte("fecha_prestamo", `${fechaInicio}T00:00:00`);
-      }
-      if (fechaFin) {
-        query = query.lte("fecha_prestamo", `${fechaFin}T23:59:59`);
-      }
-
-      const { data: prestamosData, error: prestamoError } = await query;
 
       if (prestamoError) throw prestamoError;
 
       if (prestamosData) {
         const prestamosProcesados = await Promise.all(
           prestamosData.map(async (p) => {
+            let clienteInfo = {
+              nombres: "Cliente",
+              apellidos: "Desconocido",
+              cedula: p.cedula || "N/A",
+            };
+            if (p.cedula) {
+              const { data: cliData } = await supabase
+                .from("clientes")
+                .select("nombres, apellidos, cedula")
+                .eq("cedula", p.cedula)
+                .maybeSingle();
+              if (cliData) clienteInfo = cliData;
+            }
+
             const { data: pagosData } = await supabase
               .from("pagos")
               .select("monto_pagado")
@@ -188,33 +102,24 @@ export default function ListaPrestamosScreen() {
               : 0;
 
             const montoTotal = Number(p.monto_total) || 0;
-
-            // Forzar el cálculo matemático para que siempre sea exacto y no dependa de un valor viejo en BD
             const saldoPendienteCalculado = montoTotal - totalPagado;
-
-            let estadoTexto = p.estado || "activo";
-            const fechaPrestamoObj = new Date(p.fecha_prestamo);
-            const hoy = new Date();
-            const diferenciaDias = Math.floor(
-              (hoy.getTime() - fechaPrestamoObj.getTime()) /
-                (1000 * 60 * 60 * 24),
-            );
-
-            if (totalPagado >= montoTotal && montoTotal > 0) {
-              estadoTexto = "pagado";
-            } else if (diferenciaDias > 10 && saldoPendienteCalculado > 0) {
-              estadoTexto = "atrasado";
-            }
-
             const empleadoNombre = await obtenerNombreRegistrador(
               p.registrado_por_cedula,
             );
 
+            let estadoCalculado = "activo";
+            if (saldoPendienteCalculado <= 0) {
+              estadoCalculado = "pagado";
+            } else if (p.estado === "atrasado") {
+              estadoCalculado = "atrasado";
+            }
+
             return {
               ...p,
+              clientes: clienteInfo,
               totalPagado,
               saldo_pendiente: saldoPendienteCalculado,
-              estadoTexto,
+              estadoTexto: estadoCalculado,
               empleadoNombre,
             };
           }),
@@ -238,7 +143,7 @@ export default function ListaPrestamosScreen() {
     try {
       const { data, error } = await supabase
         .from("pagos")
-        .select("prestamo_id, monto_pagado, fecha_pago, registrado_por_cedula")
+        .select("*")
         .eq("prestamo_id", item.id)
         .order("fecha_pago", { ascending: false });
 
@@ -252,6 +157,25 @@ export default function ListaPrestamosScreen() {
     }
   };
 
+  const prestamosFiltrados = prestamos.filter((item) => {
+    const texto = busqueda.toLowerCase().trim();
+    if (!texto) return true;
+
+    const nombres = (item.clientes?.nombres || "").toLowerCase();
+    const apellidos = (item.clientes?.apellidos || "").toLowerCase();
+    const nombreCompleto = `${nombres} ${apellidos}`;
+    const montoPrestado = String(item.monto_prestado || "").toLowerCase();
+    const montoTotal = String(item.monto_total || "").toLowerCase();
+
+    return (
+      nombres.includes(texto) ||
+      apellidos.includes(texto) ||
+      nombreCompleto.includes(texto) ||
+      montoPrestado.includes(texto) ||
+      montoTotal.includes(texto)
+    );
+  });
+
   const exportarExcelTablaGeneral = () => {
     if (prestamosFiltrados.length === 0) {
       Alert.alert("Aviso", "No hay datos en la tabla para exportar.");
@@ -260,7 +184,7 @@ export default function ListaPrestamosScreen() {
 
     if (Platform.OS === "web") {
       let csvContent =
-        "data:text/csv;charset=utf-8,\uFEFFFecha;Cliente;Cedula;Monto Prestado;Moneda;Porcentaje;Total a Pagar;Saldo Pendiente;Cuotas;Frecuencia;Valor Cuota;Registrado por;Estado\r\n";
+        "data:text/csv;charset=utf-8,\uFEFFFecha;Cliente;Monto Prestado;Moneda;Porcentaje;Total a Pagar;Saldo Pendiente;Cuotas;Frecuencia;Registrado por;Estado\r\n";
 
       prestamosFiltrados.forEach((item) => {
         const fecha = item.fecha_prestamo
@@ -269,7 +193,6 @@ export default function ListaPrestamosScreen() {
         const cliente = item.clientes
           ? `"${item.clientes.nombres} ${item.clientes.apellidos}"`
           : '"Desconocido"';
-        const cedula = `"${item.cedula || ""}"`;
         const montoPrestado = Number(
           item.monto_prestado || item.monto_total || 0,
         ).toFixed(2);
@@ -279,20 +202,27 @@ export default function ListaPrestamosScreen() {
         const saldoPendiente = Number(item.saldo_pendiente || 0).toFixed(2);
         const cuotas = item.cuotas || 0;
         const frecuencia = `"${item.frecuencia || "N/A"}"`;
-        const valorCuota = Number(item.valor_cuota || 0).toFixed(2);
         const empleado = `"${item.empleadoNombre}"`;
         const estado = `"${item.estadoTexto.toUpperCase()}"`;
 
-        csvContent += `${fecha};${cliente};${cedula};${montoPrestado};${moneda};${porcentaje};${totalPagar};${saldoPendiente};${cuotas};${frecuencia};${valorCuota};${empleado};${estado}\r\n`;
+        csvContent += `${fecha};${cliente};${montoPrestado};${moneda};${porcentaje};${totalPagar};${saldoPendiente};${cuotas};${frecuencia};${empleado};${estado}\r\n`;
       });
 
       const encodedUri = encodeURI(csvContent);
       const link = document.createElement("a");
       link.setAttribute("href", encodedUri);
-      link.setAttribute("download", "reporte_prestamos_detallado.csv");
+      link.setAttribute(
+        "download",
+        `reporte_prestamos_${new Date().toISOString().slice(0, 10)}.csv`,
+      );
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+    } else {
+      Alert.alert(
+        "Aviso",
+        "La exportación a Excel está optimizada para la versión web.",
+      );
     }
   };
 
@@ -321,29 +251,26 @@ export default function ListaPrestamosScreen() {
               body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; color: #1e293b; background-color: #ffffff; }
               h2 { text-align: center; color: #0f172a; margin-bottom: 5px; font-size: 24px; font-weight: 700; }
               p.subtitle { text-align: center; color: #64748b; margin-top: 0; margin-bottom: 25px; font-size: 14px; }
-              table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-              th, td { border: 1px solid #e2e8f0; padding: 10px 12px; text-align: left; }
-              th { background-color: #0f172a; color: #ffffff; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.05em; }
+              table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+              th, td { border: 1px solid #cbd5e1; padding: 8px 10px; text-align: left; }
+              th { background-color: #0f172a; color: #ffffff; font-weight: 600; text-transform: uppercase; font-size: 11px; }
               tr:nth-child(even) { background-color: #f8fafc; }
               .text-right { text-align: right; }
             </style>
           </head>
           <body>
-            <h2>Gestión de Préstamos</h2>
-            <p class="subtitle">Control de créditos</p>
+            <h2>Gestión y Detalles de Préstamos</h2>
+            <p class="subtitle">Reporte generado el ${new Date().toLocaleDateString()}</p>
             <table>
               <thead>
                 <tr>
                   <th>Fecha</th>
                   <th>Cliente</th>
-                  <th>Cédula</th>
                   <th class="text-right">Monto Prestado</th>
                   <th>Moneda</th>
-                  <th>Int. (%)</th>
+                  <th>Porcentaje</th>
                   <th class="text-right">Total a Pagar</th>
                   <th class="text-right">Saldo Pendiente</th>
-                  <th>Cuotas</th>
-                  <th>Frecuencia</th>
                   <th>Registrado por</th>
                   <th>Estado</th>
                 </tr>
@@ -358,16 +285,11 @@ export default function ListaPrestamosScreen() {
         const cliente = item.clientes
           ? `${item.clientes.nombres} ${item.clientes.apellidos}`
           : "Desconocido";
-        const cedula = item.cedula || "";
-        const montoPrestadoNum = Number(
-          item.monto_prestado || item.monto_total || 0,
-        ).toFixed(2);
+        const montoPrestadoNum = Number(item.monto_prestado || 0).toFixed(2);
         const moneda = item.moneda || "COP";
         const porcentaje = `${item.tasa_interes || 0}%`;
         const totalPagarNum = Number(item.monto_total || 0).toFixed(2);
         const saldoPendienteNum = Number(item.saldo_pendiente || 0).toFixed(2);
-        const cuotas = item.cuotas || "-";
-        const frecuencia = item.frecuencia || "-";
         const empleado = item.empleadoNombre;
         const estado = item.estadoTexto.toUpperCase();
 
@@ -375,14 +297,11 @@ export default function ListaPrestamosScreen() {
           <tr>
             <td>${fecha}</td>
             <td><strong>${cliente}</strong></td>
-            <td>${cedula}</td>
             <td class="text-right">${montoPrestadoNum}</td>
             <td><strong>${moneda}</strong></td>
             <td>${porcentaje}</td>
             <td class="text-right">${totalPagarNum}</td>
             <td class="text-right"><strong>${saldoPendienteNum}</strong></td>
-            <td>${cuotas}</td>
-            <td>${frecuencia}</td>
             <td>${empleado}</td>
             <td>${estado}</td>
           </tr>
@@ -402,35 +321,13 @@ export default function ListaPrestamosScreen() {
       setTimeout(() => {
         ventanaImpresion.print();
       }, 500);
+    } else {
+      Alert.alert(
+        "Aviso",
+        "La exportación a PDF está optimizada para la versión web.",
+      );
     }
   };
-
-  const prestamosFiltrados = prestamos.filter((item) => {
-    if (!busqueda.trim()) return true;
-    const texto = busqueda.toLowerCase();
-    const cedula = (item.cedula || "").toLowerCase();
-    const nombres = (item.clientes?.nombres || "").toLowerCase();
-    const apellidos = (item.clientes?.apellidos || "").toLowerCase();
-    const nombreCompleto = `${nombres} ${apellidos}`;
-
-    return (
-      cedula.includes(texto) ||
-      nombres.includes(texto) ||
-      apellidos.includes(texto) ||
-      nombreCompleto.includes(texto)
-    );
-  });
-
-  if (verificandoRol) {
-    return (
-      <View style={styles.loaderContainer}>
-        <ActivityIndicator size="large" color="#4f46e5" />
-        <Text style={[styles.subtitle, { marginTop: 10 }]}>
-          Verificando permisos...
-        </Text>
-      </View>
-    );
-  }
 
   return (
     <View style={styles.container}>
@@ -440,29 +337,16 @@ export default function ListaPrestamosScreen() {
           { flexDirection: esPantallaPequena ? "column" : "row" },
         ]}
       >
-        <View>
-          <Text style={styles.title}>Gestión y Detalles de Préstamos</Text>
-        </View>
-        <View
-          style={[
-            styles.globalExportRow,
-            { flexDirection: esPantallaPequena ? "column" : "row" },
-          ]}
-        >
+        <Text style={styles.title}>Gestión y Detalles de Préstamos</Text>
+        <View style={styles.globalExportRow}>
           <TouchableOpacity
-            style={[
-              styles.btnGlobalExcel,
-              { width: esPantallaPequena ? "100%" : "auto" },
-            ]}
+            style={styles.btnGlobalExcel}
             onPress={exportarExcelTablaGeneral}
           >
             <Text style={styles.btnExportText}>📥 Descargar Excel</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[
-              styles.btnGlobalPdf,
-              { width: esPantallaPequena ? "100%" : "auto" },
-            ]}
+            style={styles.btnGlobalPdf}
             onPress={exportarPDFTablaGeneral}
           >
             <Text style={styles.btnExportText}>📥 Descargar PDF</Text>
@@ -471,60 +355,29 @@ export default function ListaPrestamosScreen() {
       </View>
 
       <View style={styles.filtersWrapper}>
-        <View style={styles.searchContainer}>
+        <View style={styles.searchRow}>
           <TextInput
             style={styles.searchInput}
-            placeholder="Buscar por nombres o apellidos del cliente..."
+            placeholder="Buscar por nombres, apellidos o monto del préstamo..."
             value={busqueda}
             onChangeText={setBusqueda}
             placeholderTextColor="#94a3b8"
           />
-        </View>
-
-        <View style={styles.filtroContainer}>
-          <Text style={styles.filtroLabel}>
-            Filtrar por Rango de Fecha (AAAA-MM-DD):
-          </Text>
-          <View style={styles.inputsFechaRow}>
-            <TextInput
-              style={styles.inputFecha}
-              placeholder="Desde (Ej: 2026-01-01)"
-              value={fechaInicio}
-              onChangeText={(text) => handleFechaChange(text, setFechaInicio)}
-              placeholderTextColor="#94a3b8"
-            />
-            <TextInput
-              style={styles.inputFecha}
-              placeholder="Hasta (Ej: 2026-12-31)"
-              value={fechaFin}
-              onChangeText={(text) => handleFechaChange(text, setFechaFin)}
-              placeholderTextColor="#94a3b8"
-            />
-          </View>
-          <View style={styles.botonesFiltroRow}>
-            <TouchableOpacity
-              style={styles.btnFiltrar}
-              onPress={cargarPrestamos}
-            >
-              <Text style={styles.btnFiltrarText}>Aplicar Filtro</Text>
-            </TouchableOpacity>
+          {busqueda.length > 0 && (
             <TouchableOpacity
               style={styles.btnLimpiar}
-              onPress={() => {
-                setFechaInicio("");
-                setFechaFin("");
-                cargarPrestamos();
-              }}
+              onPress={() => setBusqueda("")}
             >
               <Text style={styles.btnLimpiarText}>Limpiar</Text>
             </TouchableOpacity>
-          </View>
+          )}
         </View>
       </View>
 
       {loading ? (
         <View style={styles.loaderContainer}>
           <ActivityIndicator size="large" color="#4f46e5" />
+          <Text style={{ marginTop: 10 }}>Cargando préstamos...</Text>
         </View>
       ) : (
         <View style={styles.tableFullContainer}>
@@ -574,35 +427,27 @@ export default function ListaPrestamosScreen() {
                   </Text>
                 ) : (
                   prestamosFiltrados.map((item, index) => {
-                    const nombreCliente = item.clientes
-                      ? `${item.clientes.nombres} ${item.clientes.apellidos}`
-                      : "Cliente desconocido";
-
+                    const nombreCliente = `${item.clientes.nombres} ${item.clientes.apellidos}`;
                     const fechaFormateada = item.fecha_prestamo
                       ? new Date(
                           item.fecha_prestamo.replace("Z", ""),
                         ).toLocaleDateString()
                       : "N/A";
 
-                    const estado = item.estadoTexto || "activo";
+                    const estado = item.estadoTexto;
                     let badgeBg = "#eff6ff";
                     let badgeColor = "#2563eb";
                     if (estado === "pagado") {
                       badgeBg = "#f0fdf4";
                       badgeColor = "#16a34a";
-                    }
-                    if (estado === "atrasado") {
+                    } else if (estado === "atrasado") {
                       badgeBg = "#fef2f2";
                       badgeColor = "#dc2626";
                     }
 
-                    const montoPrestadoMostrar =
-                      item.monto_prestado ?? item.monto_total;
-                    const monedaPrestamo = item.moneda || "COP";
-
                     return (
                       <View
-                        key={item.id?.toString() || index}
+                        key={item.id || index}
                         style={[
                           styles.gridRow,
                           index % 2 === 1 ? styles.rowAlternate : null,
@@ -618,13 +463,13 @@ export default function ListaPrestamosScreen() {
                         </View>
                         <View style={[styles.gridCell, styles.colMonto]}>
                           <Text style={styles.cellText}>
-                            {Number(montoPrestadoMostrar).toFixed(2)}
+                            {Number(item.monto_prestado || 0).toFixed(2)}
                           </Text>
                         </View>
                         <View style={[styles.gridCell, styles.colMoneda]}>
                           <View style={styles.badgeMoneda}>
                             <Text style={styles.badgeMonedaText}>
-                              {monedaPrestamo}
+                              {item.moneda || "COP"}
                             </Text>
                           </View>
                         </View>
@@ -635,14 +480,14 @@ export default function ListaPrestamosScreen() {
                         </View>
                         <View style={[styles.gridCell, styles.colTotal]}>
                           <Text style={styles.cellTextBold}>
-                            {Number(item.monto_total).toFixed(2)}
+                            {Number(item.monto_total || 0).toFixed(2)}
                           </Text>
                         </View>
                         <View style={[styles.gridCell, styles.colTotal]}>
                           <Text
                             style={[styles.cellTextBold, { color: "#dc2626" }]}
                           >
-                            {Number(item.saldo_pendiente).toFixed(2)}
+                            {Number(item.saldo_pendiente || 0).toFixed(2)}
                           </Text>
                         </View>
                         <View style={[styles.gridCell, styles.colEmpleado]}>
@@ -679,7 +524,6 @@ export default function ListaPrestamosScreen() {
                     );
                   })
                 )}
-
                 <View style={{ height: 60 }} />
               </View>
             </ScrollView>
@@ -687,6 +531,7 @@ export default function ListaPrestamosScreen() {
         </View>
       )}
 
+      {/* MODAL CON TIPO DE OPERACIÓN Y USUARIO QUE HIZO LA VENTA */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -695,303 +540,189 @@ export default function ListaPrestamosScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.modalTitle}>
-                Detalles Completos del Préstamo
-              </Text>
-
-              {prestamoSeleccionado && (
-                <View style={styles.modalDetailsBox}>
-                  <View style={styles.modalRow}>
-                    <Text style={styles.modalLabel}>Cliente:</Text>
-                    <Text style={styles.modalValue}>
-                      {prestamoSeleccionado.clientes
-                        ? `${prestamoSeleccionado.clientes.nombres} ${prestamoSeleccionado.clientes.apellidos}`
-                        : "Desconocido"}
-                    </Text>
-                  </View>
-                  {/* Se ha eliminado la fila de Cédula aquí */}
-                  <View style={styles.modalRow}>
-                    <Text style={styles.modalLabel}>Moneda:</Text>
-                    <Text style={[styles.modalValue, { color: "#4f46e5" }]}>
-                      {prestamoSeleccionado.moneda || "COP"}
-                    </Text>
-                  </View>
-                  <View style={styles.modalRow}>
-                    <Text style={styles.modalLabel}>Registrado por:</Text>
-                    <Text style={styles.modalValue}>
-                      {prestamoSeleccionado.empleadoNombre}
-                    </Text>
-                  </View>
-                  <View style={styles.modalRow}>
-                    <Text style={styles.modalLabel}>Capital Prestado:</Text>
-                    <Text style={styles.modalValue}>
-                      {Number(
-                        prestamoSeleccionado.monto_prestado ??
-                          prestamoSeleccionado.monto_total,
-                      ).toFixed(2)}{" "}
-                      {prestamoSeleccionado.moneda || "COP"}
-                    </Text>
-                  </View>
-                  <View style={styles.modalRow}>
-                    <Text style={styles.modalLabel}>Tasa de Interés:</Text>
-                    <Text style={styles.modalValue}>
-                      {prestamoSeleccionado.tasa_interes}%
-                    </Text>
-                  </View>
-                  <View style={styles.modalRow}>
-                    <Text style={styles.modalLabel}>Total a Pagar:</Text>
-                    <Text style={styles.modalValue}>
-                      {Number(prestamoSeleccionado.monto_total).toFixed(2)}{" "}
-                      {prestamoSeleccionado.moneda || "COP"}
-                    </Text>
-                  </View>
-                  <View style={styles.modalRow}>
-                    <Text style={styles.modalLabel}>Total Pagado:</Text>
-                    <Text style={[styles.modalValue, { color: "#16a34a" }]}>
-                      {prestamoSeleccionado.totalPagado.toFixed(2)}{" "}
-                      {prestamoSeleccionado.moneda || "COP"}
-                    </Text>
-                  </View>
-                  <View style={styles.modalRow}>
-                    <Text style={styles.modalLabel}>Saldo Pendiente:</Text>
-                    <Text style={[styles.modalValue, { color: "#dc2626" }]}>
-                      {prestamoSeleccionado.saldo_pendiente.toFixed(2)}{" "}
-                      {prestamoSeleccionado.moneda || "COP"}
-                    </Text>
-                  </View>
-                  <View style={styles.modalRow}>
-                    <Text style={styles.modalLabel}>Cuotas:</Text>
-                    <Text style={styles.modalValue}>
-                      {prestamoSeleccionado.cuotas || "-"}
-                    </Text>
-                  </View>
-                  <View style={styles.modalRow}>
-                    <Text style={styles.modalLabel}>Frecuencia:</Text>
-                    <Text style={styles.modalValue}>
-                      {prestamoSeleccionado.frecuencia || "-"}
-                    </Text>
-                  </View>
-                  <View style={styles.modalRow}>
-                    <Text style={styles.modalLabel}>Valor Cuota:</Text>
-                    <Text style={styles.modalValue}>
-                      {prestamoSeleccionado.valor_cuota
-                        ? `${Number(prestamoSeleccionado.valor_cuota).toFixed(2)} ${prestamoSeleccionado.moneda || "COP"}`
-                        : "-"}
-                    </Text>
-                  </View>
-                </View>
-              )}
-
-              <Text style={styles.subtituloPagos}>
-                Historial de Abonos / Pagos
-              </Text>
-
-              {cargandoPagos ? (
-                <ActivityIndicator
-                  size="small"
-                  color="#4f46e5"
-                  style={{ marginVertical: 15 }}
-                />
-              ) : pagosPrestamo.length === 0 ? (
-                <Text style={styles.sinPagosText}>
-                  No hay pagos registrados aún para este préstamo.
-                </Text>
-              ) : (
-                <View style={styles.tablaContainerModal}>
-                  <View
-                    style={[styles.tablaFilaModal, styles.tablaHeaderModal]}
-                  >
-                    <Text
-                      style={[
-                        styles.tablaCeldaModal,
-                        styles.tablaHeaderTextoModal,
-                        { flex: 1 },
-                      ]}
-                    >
-                      Monto
-                    </Text>
-                    <Text
-                      style={[
-                        styles.tablaCeldaModal,
-                        styles.tablaHeaderTextoModal,
-                        { flex: 1.5 },
-                      ]}
-                    >
-                      Fecha
-                    </Text>
-                    <Text
-                      style={[
-                        styles.tablaCeldaModal,
-                        styles.tablaHeaderTextoModal,
-                        { flex: 1.2 },
-                      ]}
-                    >
-                      Reg. por
-                    </Text>
-                  </View>
-                  {pagosPrestamo.map((pago, index) => {
-                    const monedaPago = prestamoSeleccionado?.moneda || "COP";
-                    return (
-                      <View key={index} style={styles.tablaFilaModal}>
-                        <Text style={[styles.tablaCeldaModal, { flex: 1 }]}>
-                          {Number(pago.monto_pagado).toFixed(2)} {monedaPago}
-                        </Text>
-                        <Text style={[styles.tablaCeldaModal, { flex: 1.5 }]}>
-                          {pago.fecha_pago
-                            ? new Date(
-                                pago.fecha_pago.replace("Z", ""),
-                              ).toLocaleDateString()
-                            : "N/A"}
-                        </Text>
-                        <Text style={[styles.tablaCeldaModal, { flex: 1.2 }]}>
-                          {/* Aquí puedes continuar o cerrar el renderizado de pagos */}
-                        </Text>
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
-
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>Detalles del Préstamo</Text>
               <TouchableOpacity
-                style={styles.btnCerrarModal}
                 onPress={() => setModalVisible(false)}
+                style={styles.closeIconBtn}
               >
-                <Text style={styles.btnCerrarModalText}>Cerrar</Text>
+                <Text style={styles.closeIconText}>✕</Text>
               </TouchableOpacity>
-            </ScrollView>
+            </View>
+
+            {prestamoSeleccionado && (
+              <ScrollView
+                style={{ maxHeight: 400 }}
+                showsVerticalScrollIndicator={false}
+              >
+                {/* ETIQUETA DE TIPO DE OPERACIÓN */}
+                <View
+                  style={[
+                    styles.modalRowItem,
+                    {
+                      backgroundColor: "#f1f5f9",
+                      padding: 8,
+                      borderRadius: 6,
+                      marginBottom: 10,
+                    },
+                  ]}
+                >
+                  <Text style={{ fontWeight: "bold", color: "#1e293b" }}>
+                    Tipo de Operación:
+                  </Text>
+                  <Text style={{ fontWeight: "bold", color: "#4f46e5" }}>
+                    VENTA A CRÉDITO
+                  </Text>
+                </View>
+
+                <View style={styles.modalRowItem}>
+                  <Text style={styles.modalLabel}>Cliente:</Text>
+                  <Text style={styles.modalValueBold}>
+                    {prestamoSeleccionado.clientes?.nombres}{" "}
+                    {prestamoSeleccionado.clientes?.apellidos}
+                  </Text>
+                </View>
+
+                <View style={styles.modalRowItem}>
+                  <Text style={styles.modalLabel}>Fecha de Préstamo:</Text>
+                  <Text style={styles.modalValue}>
+                    {prestamoSeleccionado.fecha_prestamo
+                      ? new Date(
+                          prestamoSeleccionado.fecha_prestamo.replace("Z", ""),
+                        ).toLocaleDateString()
+                      : "N/A"}
+                  </Text>
+                </View>
+
+                <View style={styles.modalRowItem}>
+                  <Text style={styles.modalLabel}>Monto Prestado:</Text>
+                  <Text style={styles.modalValue}>
+                    {Number(prestamoSeleccionado.monto_prestado || 0).toFixed(
+                      2,
+                    )}
+                  </Text>
+                </View>
+
+                <View style={styles.modalRowItem}>
+                  <Text style={styles.modalLabel}>Moneda:</Text>
+                  <Text style={styles.modalValue}>
+                    {prestamoSeleccionado.moneda || "COP"}
+                  </Text>
+                </View>
+
+                <View style={styles.modalRowItem}>
+                  <Text style={styles.modalLabel}>Total a Pagar:</Text>
+                  <Text style={styles.modalValue}>
+                    {Number(prestamoSeleccionado.monto_total || 0).toFixed(2)}
+                  </Text>
+                </View>
+
+                <View style={styles.modalRowItem}>
+                  <Text style={styles.modalLabel}>Saldo Pendiente:</Text>
+                  <Text
+                    style={[
+                      styles.modalValue,
+                      { color: "#dc2626", fontWeight: "bold" },
+                    ]}
+                  >
+                    {Number(prestamoSeleccionado.saldo_pendiente || 0).toFixed(
+                      2,
+                    )}
+                  </Text>
+                </View>
+
+                {/* NOMBRE DEL USUARIO QUE HIZO LA VENTA */}
+                <View style={styles.modalRowItem}>
+                  <Text style={styles.modalLabel}>Registrado Por:</Text>
+                  <Text
+                    style={[
+                      styles.modalValue,
+                      { fontWeight: "bold", color: "#0f172a" },
+                    ]}
+                  >
+                    {prestamoSeleccionado.empleadoNombre}
+                  </Text>
+                </View>
+
+                <View style={styles.modalRowItem}>
+                  <Text style={styles.modalLabel}>Estado:</Text>
+                  <Text
+                    style={[
+                      styles.modalValue,
+                      {
+                        fontWeight: "bold",
+                        color:
+                          prestamoSeleccionado.estadoTexto === "pagado"
+                            ? "#16a34a"
+                            : "#2563eb",
+                      },
+                    ]}
+                  >
+                    {prestamoSeleccionado.estadoTexto.toUpperCase()}
+                  </Text>
+                </View>
+              </ScrollView>
+            )}
+
+            <TouchableOpacity
+              style={styles.btnCloseModal}
+              onPress={() => setModalVisible(false)}
+            >
+              <Text style={styles.btnCloseModalText}>Cerrar</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
     </View>
   );
 }
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f8fafc",
-    padding: 20,
-  },
-  loaderContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
+  container: { flex: 1, backgroundColor: "#f8fafc", padding: 16 },
+  loaderContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   headerTitleRow: {
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: 16,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#0f172a",
-  },
-  subtitle: {
-    fontSize: 14,
-    color: "#64748b",
-  },
-  globalExportRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 10,
-  },
+  title: { fontSize: 22, fontWeight: "bold", color: "#0f172a" },
+  globalExportRow: { flexDirection: "row", gap: 10 },
   btnGlobalExcel: {
-    backgroundColor: "#16a34a",
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 8,
+    backgroundColor: "#10b981",
+    padding: 10,
+    borderRadius: 6,
     alignItems: "center",
   },
   btnGlobalPdf: {
-    backgroundColor: "#dc2626",
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 8,
+    backgroundColor: "#ef4444",
+    padding: 10,
+    borderRadius: 6,
     alignItems: "center",
   },
-  btnExportText: {
-    color: "#ffffff",
-    fontWeight: "600",
-    fontSize: 14,
-  },
+  btnExportText: { color: "#fff", fontWeight: "600" },
   filtersWrapper: {
-    backgroundColor: "#ffffff",
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    backgroundColor: "#fff",
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
     elevation: 2,
   },
-  searchContainer: {
-    marginBottom: 15,
-  },
+  searchRow: { flexDirection: "row", gap: 10, alignItems: "center" },
   searchInput: {
-    backgroundColor: "#f1f5f9",
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: "#0f172a",
-  },
-  filtroContainer: {
-    borderTopWidth: 1,
-    borderTopColor: "#e2e8f0",
-    paddingTop: 15,
-  },
-  filtroLabel: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#475569",
-    marginBottom: 8,
-  },
-  inputsFechaRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginBottom: 10,
-  },
-  inputFecha: {
     flex: 1,
-    backgroundColor: "#f1f5f9",
     borderWidth: 1,
     borderColor: "#cbd5e1",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 13,
-    color: "#0f172a",
-  },
-  botonesFiltroRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  btnFiltrar: {
-    backgroundColor: "#4f46e5",
-    paddingVertical: 8,
-    paddingHorizontal: 15,
     borderRadius: 6,
-  },
-  btnFiltrarText: {
-    color: "#ffffff",
-    fontWeight: "600",
-    fontSize: 13,
+    padding: 8,
+    backgroundColor: "#f8fafc",
   },
   btnLimpiar: {
     backgroundColor: "#e2e8f0",
-    paddingVertical: 8,
-    paddingHorizontal: 15,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     borderRadius: 6,
   },
-  btnLimpiarText: {
-    color: "#334155",
-    fontWeight: "600",
-    fontSize: 13,
-  },
+  btnLimpiarText: { color: "#334155", fontWeight: "600" },
   tableFullContainer: {
     flex: 1,
     backgroundColor: "#ffffff",
@@ -1029,9 +760,7 @@ const styles = StyleSheet.create({
     borderBottomColor: "#0f172a",
     minHeight: 48,
   },
-  rowAlternate: {
-    backgroundColor: "#f8fafc",
-  },
+  rowAlternate: { backgroundColor: "#f8fafc" },
   gridCell: {
     paddingVertical: 12,
     paddingHorizontal: 14,
@@ -1042,10 +771,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 12,
     textTransform: "uppercase",
-  },
-  cellText: {
-    color: "#334155",
-    fontSize: 13,
   },
   cellTextBold: {
     color: "#0f172a",
@@ -1067,136 +792,74 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     alignSelf: "flex-start",
   },
-  badgeMonedaText: {
-    color: "#3730a3",
-    fontSize: 11,
-    fontWeight: "600",
-  },
-  badgeEstado: {
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 4,
-  },
-  badgeTextEstado: {
-    fontSize: 10,
-    fontWeight: "bold",
-  },
+  badgeMonedaText: { fontSize: 10, fontWeight: "bold", color: "#334155" },
+  badgeEstado: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  badgeTextEstado: { fontSize: 10, fontWeight: "bold" },
   btnVerAccion: {
     backgroundColor: "#4f46e5",
     paddingHorizontal: 8,
-    paddingVertical: 5,
+    paddingVertical: 4,
     borderRadius: 4,
   },
-  btnVerAccionText: {
-    color: "#ffffff",
-    fontSize: 11,
-    fontWeight: "600",
-  },
-  emptyText: {
-    textAlign: "center",
-    color: "#64748b",
-    marginTop: 40,
-    fontSize: 14,
-  },
+  btnVerAccionText: { color: "#fff", fontSize: 10, fontWeight: "600" },
+  emptyText: { textAlign: "center", padding: 20, color: "#64748b" },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
+    padding: 16,
   },
   modalContent: {
-    backgroundColor: "#ffffff",
-    borderRadius: 12,
-    width: "100%",
-    maxWidth: 600,
-    maxHeight: "85%",
-    padding: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#0f172a",
-    marginBottom: 15,
-    textAlign: "center",
-  },
-  modalDetailsBox: {
-    backgroundColor: "#f8fafc",
+    backgroundColor: "#fff",
     borderRadius: 8,
-    padding: 12,
+    width: "100%",
+    maxWidth: 500,
+    padding: 20,
+    maxHeight: "80%",
+  },
+  modalHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 15,
   },
-  modalRow: {
+  modalTitle: { fontSize: 18, fontWeight: "bold", color: "#0f172a" },
+  closeIconBtn: { padding: 4 },
+  closeIconText: { fontSize: 16, fontWeight: "bold", color: "#64748b" },
+  modalRowItem: {
     flexDirection: "row",
     justifyContent: "space-between",
     paddingVertical: 6,
     borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
+    borderBottomColor: "#f1f5f9",
   },
-  modalLabel: {
-    fontSize: 13,
-    color: "#64748b",
-    fontWeight: "600",
-  },
-  modalValue: {
-    fontSize: 13,
-    color: "#0f172a",
-    fontWeight: "500",
-  },
-  subtituloPagos: {
-    fontSize: 15,
-    fontWeight: "bold",
-    color: "#0f172a",
-    marginBottom: 10,
-    marginTop: 10,
-  },
-  sinPagosText: {
-    fontSize: 13,
-    color: "#64748b",
-    fontStyle: "italic",
-    textAlign: "center",
-    marginVertical: 10,
-  },
-  tablaContainerModal: {
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 8,
-    overflow: "hidden",
-    marginBottom: 15,
-  },
-  tablaFilaModal: {
-    flexDirection: "row",
-    padding: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
-    alignItems: "center",
-  },
-  tablaHeaderModal: {
-    backgroundColor: "#f1f5f9",
-  },
-  tablaCeldaModal: {
-    fontSize: 12,
-    color: "#334155",
-  },
-  tablaHeaderTextoModal: {
-    fontWeight: "bold",
-    color: "#0f172a",
-  },
-  btnCloseModal: {
-    backgroundColor: "#334155",
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: "center",
-    marginTop: 10,
-  },
-  btnCloseModalText: {
-    color: "#ffffff",
-    fontWeight: "bold",
+  modalLabel: { fontSize: 13, color: "#64748b" },
+  modalValue: { fontSize: 13, color: "#1e293b" },
+  modalValueBold: { fontSize: 13, fontWeight: "bold", color: "#0f172a" },
+  subTitleModal: {
     fontSize: 14,
+    fontWeight: "bold",
+    color: "#0f172a",
+    marginBottom: 8,
   },
+  pagoItemRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    backgroundColor: "#f8fafc",
+    padding: 8,
+    borderRadius: 6,
+    marginBottom: 6,
+  },
+  pagoTextFecha: { fontSize: 12, color: "#334155" },
+  pagoTextMonto: { fontSize: 12, fontWeight: "bold", color: "#16a34a" },
+  pagoTextMetodo: { fontSize: 12, color: "#64748b" },
+  btnCloseModal: {
+    backgroundColor: "#0f172a",
+    padding: 12,
+    borderRadius: 6,
+    alignItems: "center",
+    marginTop: 15,
+  },
+  btnCloseModalText: { color: "#fff", fontWeight: "bold" },
 });

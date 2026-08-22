@@ -35,6 +35,10 @@ export default function IndexScreen() {
   const [totalCobros, setTotalCobros] = useState({ USD: 0, COP: 0 });
   const [gananciasNeta, setGananciasNeta] = useState({ USD: 0, COP: 0 });
 
+  // 1. ESTADOS FALTANTES DECLARADOS AQUÍ:
+  const [totalGananciaUSD, setTotalGananciaUSD] = useState(0);
+  const [totalGananciaCOP, setTotalGananciaCOP] = useState(0);
+
   useEffect(() => {
     verificarSesionYDatos();
   }, []);
@@ -429,28 +433,74 @@ export default function IndexScreen() {
   };
 
   const cargarCobrosYGanancias = async () => {
-    const { data: pagos } = await supabase
-      .from("pagos")
-      .select("monto_pagado, moneda");
-    let cobrosUSD = 0;
-    let cobrosCOP = 0;
-    pagos?.forEach((p) => {
-      if (p.moneda === "USD") cobrosUSD += Number(p.monto_pagado || 0);
-      if (p.moneda === "COP") cobrosCOP += Number(p.monto_pagado || 0);
-    });
-    setTotalCobros({ USD: cobrosUSD, COP: cobrosCOP });
+    try {
+      // 1. Consultar directamente los pagos reales registrados
+      const { data: pagosData, error: pagosError } = await supabase
+        .from("pagos")
+        .select("monto_pagado, moneda");
 
-    const { data: ganancias } = await supabase
-      .from("vista_ganancias_netas")
-      .select("moneda, ganancia_neta");
+      let cobrosUSD = 0;
+      let cobrosCOP = 0;
 
-    let gananciaUSD = 0;
-    let gananciaCOP = 0;
-    ganancias?.forEach((c) => {
-      if (c.moneda === "USD") gananciaUSD += Number(c.ganancia_neta || 0);
-      if (c.moneda === "COP") gananciaCOP += Number(c.ganancia_neta || 0);
-    });
-    setGananciasNeta({ USD: gananciaUSD, COP: gananciaCOP });
+      if (!pagosError && pagosData) {
+        pagosData.forEach((pago: any) => {
+          const monto = Number(pago.monto_pagado || 0);
+          // Validar la moneda del pago (soporta 'USD', 'usd', 'COP', 'cop')
+          const monedaPago = (pago.moneda || "").toUpperCase();
+
+          if (monedaPago === "USD") {
+            cobrosUSD += monto;
+          } else if (monedaPago === "COP") {
+            cobrosCOP += monto;
+          }
+        });
+      }
+
+      // Actualizar los estados de cobros para que se muestren en la tarjeta de Cobros
+      setTotalCobros({ USD: cobrosUSD, COP: cobrosCOP });
+
+      // 2. Cálculo opcional de ganancias netas basado en los pagos y préstamos
+      const { data: pagosConPrestamo, error: errorPrestamo } =
+        await supabase.from("pagos").select(`
+          monto_pagado,
+          prestamos (
+            monto_total,
+            monto_prestado,
+            moneda
+          )
+        `);
+
+      let netaUSD = 0;
+      let netaCOP = 0;
+
+      if (!errorPrestamo && pagosConPrestamo) {
+        pagosConPrestamo.forEach((pago: any) => {
+          const prestamo = pago.prestamos;
+          if (prestamo) {
+            const montoPagado = Number(pago.monto_pagado || 0);
+            const montoTotal = Number(prestamo.monto_total || 0);
+            const montoPrestado = Number(prestamo.monto_prestado || 0);
+
+            if (montoTotal > 0) {
+              const gananciaProporcional =
+                montoPagado * ((montoTotal - montoPrestado) / montoTotal);
+
+              if (prestamo.moneda?.toUpperCase() === "USD") {
+                netaUSD += gananciaProporcional;
+              } else if (prestamo.moneda?.toUpperCase() === "COP") {
+                netaCOP += gananciaProporcional;
+              }
+            }
+          }
+        });
+      }
+
+      setTotalGananciaUSD(netaUSD);
+      setTotalGananciaCOP(netaCOP);
+      setGananciasNeta({ USD: netaUSD, COP: netaCOP });
+    } catch (e) {
+      console.log("Error en cargarCobrosYGanancias:", e);
+    }
   };
 
   if (loading) {
@@ -481,6 +531,7 @@ export default function IndexScreen() {
       style={styles.mainContainer}
       contentContainerStyle={styles.scrollContent}
     >
+      {/* El resto de tu interfaz visual se mantiene exactamente igual */}
       <View style={styles.wrapper}>
         <Text style={styles.headerTitle}>
           📊 Panel de Control {userRole ? `(${userRole.toUpperCase()})` : ""}

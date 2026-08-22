@@ -421,10 +421,10 @@ export default function PagosHabilesScreen() {
         </View>
         <View style={styles.exportButtonsContainer}>
           <TouchableOpacity style={styles.btnExcel} onPress={descargarExcel}>
-            <Text style={styles.btnExcelText}>📥 Excel</Text>
+            <Text style={styles.btnExcelText}>📥 Descargar Excel</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.btnPdf} onPress={descargarPDF}>
-            <Text style={styles.btnPdfText}>📥 PDF</Text>
+            <Text style={styles.btnPdfText}>📥 Descargar PDF</Text>
           </TouchableOpacity>
         </View>
       </View>

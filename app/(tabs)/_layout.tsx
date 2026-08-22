@@ -99,12 +99,17 @@ function CustomDrawerContent(props: any) {
             <Text style={localStyles.navText}>📊 Balance General</Text>
           </Pressable>
         )}
-        <Pressable
-          style={localStyles.navItem}
-          onPress={() => router.push("/(tabs)/inventario")}
-        >
-          <Text style={localStyles.navText}>📊 Productos: Compra | Venta </Text>
-        </Pressable>
+        {/* Restringido: visible solo para Administrador */}
+        {isAdmin && (
+          <Pressable
+            style={localStyles.navItem}
+            onPress={() => router.push("/(tabs)/inventario")}
+          >
+            <Text style={localStyles.navText}>
+              📊 Productos: Compra | Venta{" "}
+            </Text>
+          </Pressable>
+        )}
         <Pressable
           style={localStyles.navItem}
           onPress={() => router.push("/(tabs)/rutas")}

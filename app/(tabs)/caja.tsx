@@ -130,7 +130,7 @@ export default function CajaScreen() {
       setBancosUSD(locBancosUSD);
       setBancosCOP(locBancosCOP);
 
-      // 2. Cargar dinero en la calle (préstamos activos)
+      // 2. Cargar dinero en la calle (Suma del saldo pendiente de préstamos activos)
       const { data: prestamosData, error: prestamosError } = await supabase
         .from("prestamos")
         .select("saldo_pendiente, estado, moneda")
@@ -142,14 +142,14 @@ export default function CajaScreen() {
       if (!prestamosError && prestamosData) {
         prestamosData.forEach((curr) => {
           const saldoPendiente = Number(curr.saldo_pendiente || 0);
-          if (curr.moneda === "USD") {
+          if (curr.moneda?.toUpperCase() === "USD") {
             sumaCalleUSD += saldoPendiente;
-          } else {
+          } else if (curr.moneda?.toUpperCase() === "COP") {
             sumaCalleCOP += saldoPendiente;
           }
         });
-        setDineroEnCalleUSD(Math.max(0, sumaCalleUSD));
-        setDineroEnCalleCOP(Math.max(0, sumaCalleCOP));
+        setDineroEnCalleUSD(sumaCalleUSD);
+        setDineroEnCalleCOP(sumaCalleCOP);
       }
 
       // 3. Cargar gastos acumulados
@@ -173,23 +173,41 @@ export default function CajaScreen() {
         setTotalGastosCOP(Math.max(0, sumaGastosCOP));
       }
 
-      // 4. Cargar Ganancia Neta desde la vista "vista_ganancias_netas"
-      const { data: vistaData, error: vistaError } = await supabase
-        .from("vista_ganancias_netas")
-        .select("moneda, ganancia_neta");
-
-      if (vistaError) {
-        console.log("Error cargando vista de ganancias:", vistaError.message);
-      }
+      // 4. Cargar Ganancias Netas calculadas automáticamente desde los pagos reales
+      const { data: pagosData, error: pagosError } = await supabase.from(
+        "pagos",
+      ).select(`
+          monto_pagado,
+          prestamos (
+            monto_total,
+            monto_prestado,
+            moneda
+          )
+        `);
 
       let netaUSD = 0;
       let netaCOP = 0;
 
-      if (vistaData && vistaData.length > 0) {
-        vistaData.forEach((row) => {
-          const monto = Number(row.ganancia_neta || 0);
-          if (row.moneda === "USD") netaUSD = monto;
-          else if (row.moneda === "COP") netaCOP = monto;
+      if (!pagosError && pagosData) {
+        pagosData.forEach((pago: any) => {
+          const prestamo = pago.prestamos;
+          if (prestamo) {
+            const montoPagado = Number(pago.monto_pagado || 0);
+            const montoTotal = Number(prestamo.monto_total || 0);
+            const montoPrestado = Number(prestamo.monto_prestado || 0);
+
+            // Evitar división por cero y calcular ganancia proporcional del pago
+            if (montoTotal > 0) {
+              const gananciaProporcional =
+                montoPagado * ((montoTotal - montoPrestado) / montoTotal);
+
+              if (prestamo.moneda?.toUpperCase() === "USD") {
+                netaUSD += gananciaProporcional;
+              } else if (prestamo.moneda?.toUpperCase() === "COP") {
+                netaCOP += gananciaProporcional;
+              }
+            }
+          }
         });
       }
 

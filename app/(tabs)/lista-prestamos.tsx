@@ -31,34 +31,18 @@ export default function ListaPrestamosScreen() {
     cargarPrestamos();
   }, []);
 
+  // Función para obtener el nombre usando la función RPC de Supabase
   const obtenerNombreRegistrador = async (cedula: string) => {
     if (!cedula) return "Sin asignar";
-
     try {
-      const { data: emp } = await supabase
-        .from("empleados")
-        .select("nombres, apellidos")
-        .eq("cedula", cedula)
-        .maybeSingle();
-      if (emp) return `${emp.nombres} ${emp.apellidos}`;
-
-      const { data: sec } = await supabase
-        .from("secretaria")
-        .select("nombres, apellidos")
-        .eq("cedula", cedula)
-        .maybeSingle();
-      if (sec) return `${sec.nombres} ${sec.apellidos}`;
-
-      const { data: adm } = await supabase
-        .from("administradores")
-        .select("nombres, apellidos")
-        .eq("cedula", cedula)
-        .maybeSingle();
-      if (adm) return `${adm.nombres} ${adm.apellidos}`;
+      const { data, error } = await supabase.rpc("obtener_nombre_registrador", {
+        p_cedula: String(cedula).trim(),
+      });
+      if (!error && data) return data;
     } catch (e) {
       console.log("Error buscando registrador:", e);
     }
-    return "Personal Autorizado";
+    return `Cédula: ${cedula}`;
   };
 
   const cargarPrestamos = async () => {
@@ -495,6 +479,7 @@ export default function ListaPrestamosScreen() {
                             {item.empleadoNombre}
                           </Text>
                         </View>
+
                         <View style={[styles.gridCell, styles.colAccion]}>
                           <View
                             style={[
@@ -555,26 +540,6 @@ export default function ListaPrestamosScreen() {
                 style={{ maxHeight: 400 }}
                 showsVerticalScrollIndicator={false}
               >
-                {/* ETIQUETA DE TIPO DE OPERACIÓN */}
-                <View
-                  style={[
-                    styles.modalRowItem,
-                    {
-                      backgroundColor: "#f1f5f9",
-                      padding: 8,
-                      borderRadius: 6,
-                      marginBottom: 10,
-                    },
-                  ]}
-                >
-                  <Text style={{ fontWeight: "bold", color: "#1e293b" }}>
-                    Tipo de Operación:
-                  </Text>
-                  <Text style={{ fontWeight: "bold", color: "#4f46e5" }}>
-                    VENTA A CRÉDITO
-                  </Text>
-                </View>
-
                 <View style={styles.modalRowItem}>
                   <Text style={styles.modalLabel}>Cliente:</Text>
                   <Text style={styles.modalValueBold}>

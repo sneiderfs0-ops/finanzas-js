@@ -157,7 +157,13 @@ export default function IndexScreen() {
       if (secretariaData) {
         setUserRole("secretaria");
         setUserData(secretariaData);
-        await cargarResumenGeneral();
+        await Promise.all([
+          cargarResumenGeneral(),
+          cargarCajasYBancos(),
+          cargarClientesYEmpleados(),
+          cargarGastosYNomina(),
+          cargarCobrosYGanancias(),
+        ]);
 
         const channelName = `rt-secretaria-global-${session.user.id}-${Date.now()}`;
         const channelSecretaria = supabase
@@ -167,6 +173,7 @@ export default function IndexScreen() {
             { event: "*", schema: "public", table: "prestamos" },
             () => {
               cargarResumenGeneral();
+              cargarCajasYBancos();
             },
           )
           .on(
@@ -174,6 +181,8 @@ export default function IndexScreen() {
             { event: "*", schema: "public", table: "pagos" },
             () => {
               cargarResumenGeneral();
+              cargarCobrosYGanancias();
+              cargarCajasYBancos();
             },
           )
           .on(
@@ -181,6 +190,8 @@ export default function IndexScreen() {
             { event: "*", schema: "public", table: "gastos" },
             () => {
               cargarResumenGeneral();
+              cargarGastosYNomina();
+              cargarCajasYBancos();
             },
           )
           .subscribe();
@@ -671,7 +682,7 @@ export default function IndexScreen() {
           </View>
         </View>
 
-        {userRole === "administrador" && (
+        {(userRole === "administrador" || userRole === "secretaria") && (
           <>
             <Text style={styles.sectionTitle}>Módulos y Saldos</Text>
 

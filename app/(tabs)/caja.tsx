@@ -15,30 +15,33 @@ import { globalStyles } from "@/constants/globalStyles";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 
-interface Caja {
-  id: string;
-  nombre: string;
-  moneda: "USD" | "COP";
-  saldo_actual: number;
+interface ResumenFinanciero {
+  titulo: string;
+  montoUSD: number;
+  montoCOP: number;
+  tipo: "caja" | "calle" | "gastos" | "ganancia";
 }
 
 export default function CajaScreen() {
   const { width } = useWindowDimensions();
   const isMobile = width < 768 || Platform.OS !== "web";
 
-  const [cajas, setCajas] = useState<Caja[]>([]);
-  const [efectivoUSD, setEfectivoUSD] = useState(0);
-  const [efectivoCOP, setEfectivoCOP] = useState(0);
-  const [bancosUSD, setBancosUSD] = useState(0);
-  const [bancosCOP, setBancosCOP] = useState(0);
-  const [dineroEnCalleUSD, setDineroEnCalleUSD] = useState(0);
-  const [dineroEnCalleCOP, setDineroEnCalleCOP] = useState(0);
-  const [totalGastosUSD, setTotalGastosUSD] = useState(0);
-  const [totalGastosCOP, setTotalGastosCOP] = useState(0);
-  const [totalGananciaUSD, setTotalGananciaUSD] = useState(0);
-  const [totalGananciaCOP, setTotalGananciaCOP] = useState(0);
+  const [resumenData, setResumenData] = useState<ResumenFinanciero[]>([]);
   const [loading, setLoading] = useState(true);
   const [generatingPdf, setGeneratingPdf] = useState(false);
+
+  const [totalesPDF, setTotalesPDF] = useState({
+    efectivoUSD: 0,
+    efectivoCOP: 0,
+    bancosUSD: 0,
+    bancosCOP: 0,
+    calleUSD: 0,
+    calleCOP: 0,
+    gastosUSD: 0,
+    gastosCOP: 0,
+    gananciaUSD: 0,
+    gananciaCOP: 0,
+  });
 
   useEffect(() => {
     verificarAccesoYcargarDatos();
@@ -75,62 +78,102 @@ export default function CajaScreen() {
       }
 
       await cargarDatosCaja();
+
+      // Configurar suscripción en tiempo real para actualizar la data automáticamente
+      const channelName = `rt-caja-screen-${session.user.id}-${Date.now()}`;
+      const channelRealtime = supabase
+        .channel(channelName)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "prestamos" },
+          () => {
+            cargarDatosCaja();
+          },
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "pagos" },
+          () => {
+            cargarDatosCaja();
+          },
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "gastos" },
+          () => {
+            cargarDatosCaja();
+          },
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "cajas_bancos" },
+          () => {
+            cargarDatosCaja();
+          },
+        )
+        .subscribe();
+
+      setLoading(false);
+
+      return () => {
+        supabase.removeChannel(channelRealtime);
+      };
     } catch (error) {
       console.error("Error al verificar el rol de administrador:", error);
-    } finally {
       setLoading(false);
     }
   };
 
   const cargarDatosCaja = async () => {
     try {
-      // 1. Cargar cajas y bancos
+      // 1. Cargar cajas y bancos directamente de la tabla
       const { data: cajasData, error: cajasError } = await supabase
         .from("cajas_bancos")
         .select("id, nombre, moneda, saldo_actual");
 
-      let fetchedCajas: Caja[] = [];
-      if (cajasError) {
-        console.log("Error cargando cajas:", cajasError.message);
-      } else {
-        fetchedCajas = cajasData || [];
-        setCajas(fetchedCajas);
-      }
-
-      // Calcular Efectivo y Bancos
       let locEfectivoUSD = 0;
       let locEfectivoCOP = 0;
       let locBancosUSD = 0;
       let locBancosCOP = 0;
+      let listaCajasRender: ResumenFinanciero[] = [];
 
-      fetchedCajas.forEach((caja) => {
-        const saldo = Math.max(0, Number(caja.saldo_actual || 0));
-        const nombre = caja.nombre.toLowerCase();
-        if (caja.moneda === "USD") {
-          if (
-            nombre.includes("banco") ||
-            nombre.includes("cuenta") ||
-            nombre.includes("transferencia")
-          )
-            locBancosUSD += saldo;
-          else locEfectivoUSD += saldo;
-        } else {
-          if (
-            nombre.includes("banco") ||
-            nombre.includes("cuenta") ||
-            nombre.includes("transferencia")
-          )
-            locBancosCOP += saldo;
-          else locEfectivoCOP += saldo;
-        }
-      });
+      if (!cajasError && cajasData) {
+        cajasData.forEach((caja) => {
+          const saldo = Math.max(0, Number(caja.saldo_actual || 0));
+          const nombreLower = caja.nombre.toLowerCase();
 
-      setEfectivoUSD(locEfectivoUSD);
-      setEfectivoCOP(locEfectivoCOP);
-      setBancosUSD(locBancosUSD);
-      setBancosCOP(locBancosCOP);
+          if (caja.moneda === "USD") {
+            if (
+              nombreLower.includes("banco") ||
+              nombreLower.includes("cuenta") ||
+              nombreLower.includes("transferencia")
+            ) {
+              locBancosUSD += saldo;
+            } else {
+              locEfectivoUSD += saldo;
+            }
+          } else {
+            if (
+              nombreLower.includes("banco") ||
+              nombreLower.includes("cuenta") ||
+              nombreLower.includes("transferencia")
+            ) {
+              locBancosCOP += saldo;
+            } else {
+              locEfectivoCOP += saldo;
+            }
+          }
 
-      // 2. Cargar dinero en la calle (Suma del saldo pendiente de préstamos activos)
+          listaCajasRender.push({
+            titulo: caja.nombre,
+            montoUSD: caja.moneda === "USD" ? saldo : 0,
+            montoCOP: caja.moneda === "COP" ? saldo : 0,
+            tipo: "caja",
+          });
+        });
+      }
+
+      // 2. Cargar dinero en la calle (Préstamos activos)
       const { data: prestamosData, error: prestamosError } = await supabase
         .from("prestamos")
         .select("saldo_pendiente, estado, moneda")
@@ -148,8 +191,6 @@ export default function CajaScreen() {
             sumaCalleCOP += saldoPendiente;
           }
         });
-        setDineroEnCalleUSD(sumaCalleUSD);
-        setDineroEnCalleCOP(sumaCalleCOP);
       }
 
       // 3. Cargar gastos acumulados
@@ -163,17 +204,15 @@ export default function CajaScreen() {
       if (!gastosError && gastosData) {
         gastosData.forEach((curr) => {
           const monto = Number(curr.monto || 0);
-          if (curr.moneda === "USD") {
+          if (curr.moneda?.toUpperCase() === "USD") {
             sumaGastosUSD += monto;
-          } else {
+          } else if (curr.moneda?.toUpperCase() === "COP") {
             sumaGastosCOP += monto;
           }
         });
-        setTotalGastosUSD(Math.max(0, sumaGastosUSD));
-        setTotalGastosCOP(Math.max(0, sumaGastosCOP));
       }
 
-      // 4. Cargar Ganancias Netas calculadas automáticamente desde los pagos reales
+      // 4. Cargar Ganancias Netas desde los pagos reales
       const { data: pagosData, error: pagosError } = await supabase.from(
         "pagos",
       ).select(`
@@ -196,7 +235,6 @@ export default function CajaScreen() {
             const montoTotal = Number(prestamo.monto_total || 0);
             const montoPrestado = Number(prestamo.monto_prestado || 0);
 
-            // Evitar división por cero y calcular ganancia proporcional del pago
             if (montoTotal > 0) {
               const gananciaProporcional =
                 montoPagado * ((montoTotal - montoPrestado) / montoTotal);
@@ -211,8 +249,60 @@ export default function CajaScreen() {
         });
       }
 
-      setTotalGananciaUSD(netaUSD);
-      setTotalGananciaCOP(netaCOP);
+      setTotalesPDF({
+        efectivoUSD: locEfectivoUSD,
+        efectivoCOP: locEfectivoCOP,
+        bancosUSD: locBancosUSD,
+        bancosCOP: locBancosCOP,
+        calleUSD: sumaCalleUSD,
+        calleCOP: sumaCalleCOP,
+        gastosUSD: Math.max(0, sumaGastosUSD),
+        gastosCOP: Math.max(0, sumaGastosCOP),
+        gananciaUSD: Math.max(0, netaUSD),
+        gananciaCOP: Math.max(0, netaCOP),
+      });
+
+      const consolidado: ResumenFinanciero[] = [
+        ...listaCajasRender,
+        {
+          titulo: "Dinero en la Calle",
+          montoUSD: sumaCalleUSD,
+          montoCOP: 0,
+          tipo: "calle",
+        },
+        {
+          titulo: "Dinero en la Calle",
+          montoUSD: 0,
+          montoCOP: sumaCalleCOP,
+          tipo: "calle",
+        },
+        {
+          titulo: "Total Gastos",
+          montoUSD: Math.max(0, sumaGastosUSD),
+          montoCOP: 0,
+          tipo: "gastos",
+        },
+        {
+          titulo: "Total Gastos",
+          montoUSD: 0,
+          montoCOP: Math.max(0, sumaGastosCOP),
+          tipo: "gastos",
+        },
+        {
+          titulo: "Ganancia",
+          montoUSD: Math.max(0, netaUSD),
+          montoCOP: 0,
+          tipo: "ganancia",
+        },
+        {
+          titulo: "Ganancia",
+          montoUSD: 0,
+          montoCOP: Math.max(0, netaCOP),
+          tipo: "ganancia",
+        },
+      ];
+
+      setResumenData(consolidado);
     } catch (error) {
       console.error("Error al cargar datos de caja:", error);
     }
@@ -223,7 +313,6 @@ export default function CajaScreen() {
   const handleDownloadPDF = async () => {
     try {
       setGeneratingPdf(true);
-
       const htmlContent = `
         <!DOCTYPE html>
         <html>
@@ -237,7 +326,7 @@ export default function CajaScreen() {
               p.subtitle { text-align: center; color: #64748b; margin-top: 0; margin-bottom: 25px; font-size: 14px; }
               table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
               th, td { border: 1px solid #e2e8f0; padding: 10px 12px; text-align: left; }
-              th { background-color: #0f172a; color: #ffffff; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.05em; }
+              th { background-color: #0f172a; color: #ffffff; font-weight: 600; text-transform: uppercase; font-size: 11px; }
               tr:nth-child(even) { background-color: #f8fafc; }
             </style>
           </head>
@@ -263,16 +352,16 @@ export default function CajaScreen() {
               <tbody>
                 <tr>
                   <td><b>${fechaActual}</b></td>
-                  <td>$${Math.max(0, efectivoUSD).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                  <td>$${Math.max(0, efectivoCOP).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                  <td>$${Math.max(0, bancosUSD).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                  <td>$${Math.max(0, bancosCOP).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                  <td>$${Math.max(0, dineroEnCalleUSD).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                  <td>$${Math.max(0, dineroEnCalleCOP).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                  <td>$${Math.max(0, totalGastosUSD).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                  <td>$${Math.max(0, totalGastosCOP).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                  <td>$${Math.max(0, totalGananciaUSD).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                  <td>$${Math.max(0, totalGananciaCOP).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td>$${totalesPDF.efectivoUSD.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td>$${totalesPDF.efectivoCOP.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td>$${totalesPDF.bancosUSD.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td>$${totalesPDF.bancosCOP.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td>$${totalesPDF.calleUSD.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td>$${totalesPDF.calleCOP.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td>$${totalesPDF.gastosUSD.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td>$${totalesPDF.gastosCOP.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td>$${totalesPDF.gananciaUSD.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td>$${totalesPDF.gananciaCOP.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                 </tr>
               </tbody>
             </table>
@@ -292,24 +381,18 @@ export default function CajaScreen() {
         } else {
           Alert.alert(
             "Aviso",
-            "Por favor permita las ventanas emergentes para descargar el PDF.",
+            "Permita las ventanas emergentes para descargar el PDF.",
           );
         }
       } else {
         const { uri } = await Print.printToFileAsync({ html: htmlContent });
         if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(uri, {
-            mimeType: "application/pdf",
-            dialogTitle: "Reporte Consolidado de Caja",
-            UTI: "com.adobe.pdf",
-          });
-        } else {
-          Alert.alert("Éxito", `PDF guardado en: ${uri}`);
+          await Sharing.shareAsync(uri);
         }
       }
     } catch (error: any) {
       console.error("Error al generar PDF:", error);
-      Alert.alert("Error", "No se pudo generar el PDF. Intente nuevamente.");
+      Alert.alert("Error", "No se pudo generar el PDF.");
     } finally {
       setGeneratingPdf(false);
     }
@@ -354,163 +437,65 @@ export default function CajaScreen() {
       </View>
 
       <View style={styles.gridContainer}>
-        {cajas.map((caja) => {
-          const saldoLimpio = Math.max(0, Number(caja.saldo_actual || 0));
+        {resumenData.map((item, index) => {
+          const esUSD =
+            item.montoUSD > 0 || (item.montoUSD === 0 && item.montoCOP === 0);
+          const moneda = esUSD ? "USD" : "COP";
+          const monto = esUSD ? item.montoUSD : item.montoCOP;
+
+          let cardStyle = styles.cardCaja;
+          let titleStyle = styles.cardTitle;
+          let valueStyle = styles.cardValue;
+          let badgeStyle = styles.monedaBadge;
+
+          if (item.tipo === "calle") {
+            cardStyle = styles.cardCalle;
+            titleStyle = styles.cardTitleCalle;
+            valueStyle = styles.cardValueCalle;
+            badgeStyle = styles.monedaBadgeCalle;
+          } else if (item.tipo === "gastos") {
+            cardStyle = styles.cardGastos;
+            titleStyle = styles.cardTitleGastos;
+            valueStyle = styles.cardValueGastos;
+            badgeStyle = styles.monedaBadgeGastos;
+          } else if (item.tipo === "ganancia") {
+            cardStyle = styles.cardGanancia;
+            titleStyle = styles.cardTitleGanancia;
+            valueStyle = styles.cardValueGanancia;
+            badgeStyle = styles.monedaBadgeGanancia;
+          }
+
           return (
             <View
-              key={caja.id}
+              key={index}
               style={[
                 styles.card,
-                styles.cardCaja,
+                cardStyle,
                 { width: isMobile ? "100%" : "48.5%" },
               ]}
             >
               <View style={styles.cardHeaderRow}>
-                <Text style={styles.cardTitle}>{caja.nombre}</Text>
-                <Text style={styles.monedaBadge}>{caja.moneda}</Text>
+                <Text style={titleStyle}>{item.titulo}</Text>
+                <Text style={badgeStyle}>{moneda}</Text>
               </View>
-              <Text style={styles.cardValue}>
-                {caja.moneda === "USD" ? "$" : "$ "}
-                {saldoLimpio.toLocaleString(undefined, {
+              <Text style={valueStyle}>
+                {moneda === "USD" ? "$" : "$ "}
+                {Math.max(0, monto).toLocaleString(undefined, {
                   minimumFractionDigits: 2,
                 })}
               </Text>
             </View>
           );
         })}
-
-        <View
-          style={[
-            styles.card,
-            styles.cardCalle,
-            { width: isMobile ? "100%" : "48.5%" },
-          ]}
-        >
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitleCalle}>Dinero en la Calle</Text>
-            <Text style={styles.monedaBadgeCalle}>USD</Text>
-          </View>
-          <Text style={styles.cardValueCalle}>
-            $
-            {Math.max(0, dineroEnCalleUSD).toLocaleString(undefined, {
-              minimumFractionDigits: 2,
-            })}
-          </Text>
-        </View>
-
-        <View
-          style={[
-            styles.card,
-            styles.cardCalle,
-            { width: isMobile ? "100%" : "48.5%" },
-          ]}
-        >
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitleCalle}>Dinero en la Calle</Text>
-            <Text style={styles.monedaBadgeCalle}>COP</Text>
-          </View>
-          <Text style={styles.cardValueCalle}>
-            $
-            {Math.max(0, dineroEnCalleCOP).toLocaleString(undefined, {
-              minimumFractionDigits: 2,
-            })}
-          </Text>
-        </View>
-
-        <View
-          style={[
-            styles.card,
-            styles.cardGastos,
-            { width: isMobile ? "100%" : "48.5%" },
-          ]}
-        >
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitleGastos}>Total Gastos</Text>
-            <Text style={styles.monedaBadgeGastos}>USD</Text>
-          </View>
-          <Text style={styles.cardValueGastos}>
-            $
-            {Math.max(0, totalGastosUSD).toLocaleString(undefined, {
-              minimumFractionDigits: 2,
-            })}
-          </Text>
-        </View>
-
-        <View
-          style={[
-            styles.card,
-            styles.cardGastos,
-            { width: isMobile ? "100%" : "48.5%" },
-          ]}
-        >
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitleGastos}>Total Gastos</Text>
-            <Text style={styles.monedaBadgeGastos}>COP</Text>
-          </View>
-          <Text style={styles.cardValueGastos}>
-            $
-            {Math.max(0, totalGastosCOP).toLocaleString(undefined, {
-              minimumFractionDigits: 2,
-            })}
-          </Text>
-        </View>
-
-        <View
-          style={[
-            styles.card,
-            styles.cardGanancia,
-            { width: isMobile ? "100%" : "48.5%" },
-          ]}
-        >
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitleGanancia}>Ganancia</Text>
-            <Text style={styles.monedaBadgeGanancia}>USD</Text>
-          </View>
-          <Text style={styles.cardValueGanancia}>
-            $
-            {Math.max(0, totalGananciaUSD).toLocaleString(undefined, {
-              minimumFractionDigits: 2,
-            })}
-          </Text>
-        </View>
-
-        <View
-          style={[
-            styles.card,
-            styles.cardGanancia,
-            { width: isMobile ? "100%" : "48.5%" },
-          ]}
-        >
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitleGanancia}>Ganancia</Text>
-            <Text style={styles.monedaBadgeGanancia}>COP</Text>
-          </View>
-          <Text style={styles.cardValueGanancia}>
-            $
-            {Math.max(0, totalGananciaCOP).toLocaleString(undefined, {
-              minimumFractionDigits: 2,
-            })}
-          </Text>
-        </View>
       </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  mainContainer: {
-    flex: 1,
-    backgroundColor: "#f8fafc",
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 50,
-  },
-  loaderContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
+  mainContainer: { flex: 1, backgroundColor: "#f8fafc" },
+  scrollContent: { padding: 16, paddingBottom: 50 },
+  loaderContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   topHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -518,24 +503,15 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     gap: 12,
   },
-  topHeaderRowMobile: {
-    flexDirection: "column",
-    alignItems: "stretch",
-  } as any,
-  headerContainer: {
-    flex: 1,
-  },
+  topHeaderRowMobile: { flexDirection: "column", alignItems: "stretch" } as any,
+  headerContainer: { flex: 1 },
   headerTitle: {
     fontSize: 24,
     fontWeight: "800",
     color: "#0f172a",
     letterSpacing: -0.5,
   },
-  subtitle: {
-    fontSize: 14,
-    color: "#64748b",
-    marginTop: 4,
-  },
+  subtitle: { fontSize: 14, color: "#64748b", marginTop: 4 },
   pdfButton: {
     backgroundColor: "#0284c7",
     paddingHorizontal: 16,
@@ -549,14 +525,8 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  pdfButtonMobile: {
-    alignSelf: "flex-end",
-  },
-  pdfButtonText: {
-    color: "#ffffff",
-    fontWeight: "bold",
-    fontSize: 14,
-  },
+  pdfButtonMobile: { alignSelf: "flex-end" },
+  pdfButtonText: { color: "#ffffff", fontWeight: "bold", fontSize: 14 },
   gridContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -581,22 +551,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 10,
   },
-  cardCaja: {
-    borderLeftWidth: 4,
-    borderLeftColor: "#6366f1",
-  },
-  cardCalle: {
-    borderLeftWidth: 4,
-    borderLeftColor: "#0ea5e9",
-  },
-  cardGastos: {
-    borderLeftWidth: 4,
-    borderLeftColor: "#ef4444",
-  },
-  cardGanancia: {
-    borderLeftWidth: 4,
-    borderLeftColor: "#10b981",
-  },
+  cardCaja: { borderLeftWidth: 4, borderLeftColor: "#6366f1" },
+  cardCalle: { borderLeftWidth: 4, borderLeftColor: "#0ea5e9" },
+  cardGastos: { borderLeftWidth: 4, borderLeftColor: "#ef4444" },
+  cardGanancia: { borderLeftWidth: 4, borderLeftColor: "#10b981" },
   cardTitle: {
     fontSize: 14,
     fontWeight: "600",
@@ -625,26 +583,10 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  cardValue: {
-    fontSize: 26,
-    fontWeight: "bold",
-    color: "#1e293b",
-  },
-  cardValueCalle: {
-    fontSize: 26,
-    fontWeight: "bold",
-    color: "#0284c7",
-  },
-  cardValueGastos: {
-    fontSize: 26,
-    fontWeight: "bold",
-    color: "#dc2626",
-  },
-  cardValueGanancia: {
-    fontSize: 26,
-    fontWeight: "bold",
-    color: "#059669",
-  },
+  cardValue: { fontSize: 26, fontWeight: "bold", color: "#1e293b" },
+  cardValueCalle: { fontSize: 26, fontWeight: "bold", color: "#0284c7" },
+  cardValueGastos: { fontSize: 26, fontWeight: "bold", color: "#dc2626" },
+  cardValueGanancia: { fontSize: 26, fontWeight: "bold", color: "#059669" },
   monedaBadge: {
     fontSize: 12,
     fontWeight: "bold",

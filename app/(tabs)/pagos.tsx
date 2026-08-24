@@ -433,7 +433,7 @@ export default function CrearPagoScreen({ route }: any) {
             <View style={{ flex: 1 }}>
               <Text style={styles.dropdownTriggerTitle}>
                 Préstamo en {prestamoSeleccionado.moneda} - Saldo: ${" "}
-                {formatearSinDecimales(prestamoSeleccionado.saldo_pendiente)}
+                {formatearSinDecimales(prestamoSeleccionado.monto_prestado)}
               </Text>
               <Text style={styles.dropdownTriggerSubtitle}>
                 Cuota: ${" "}
@@ -732,6 +732,14 @@ export default function CrearPagoScreen({ route }: any) {
             >
               {prestamosCliente.map((item) => {
                 const isSelected = prestamoSeleccionado?.id === item.id;
+
+                // Función rápida para formatear la fecha (ej: 2026-08-11 -> 11/08/2026)
+                const formatearFecha = (fechaStr) => {
+                  if (!fechaStr) return "";
+                  const [anio, mes, dia] = fechaStr.split("T")[0].split("-");
+                  return `${dia}/${mes}/${anio}`;
+                };
+
                 return (
                   <TouchableOpacity
                     key={item.id}
@@ -751,8 +759,7 @@ export default function CrearPagoScreen({ route }: any) {
                           isSelected && styles.textWhite,
                         ]}
                       >
-                        Préstamo: ${" "}
-                        {formatearSinDecimales(item.saldo_pendiente)}{" "}
+                        Prestado: $ {formatearSinDecimales(item.monto_prestado)}{" "}
                         {item.moneda}
                       </Text>
                       <Text
@@ -761,8 +768,19 @@ export default function CrearPagoScreen({ route }: any) {
                           isSelected && styles.textWhiteSub,
                         ]}
                       >
+                        Total: $ {formatearSinDecimales(item.monto_total)} |
+                        Pendiente: ${" "}
+                        {formatearSinDecimales(item.saldo_pendiente)}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.modalClientCedula,
+                          isSelected && styles.textWhiteSub,
+                        ]}
+                      >
                         Cuota: $ {formatearSinDecimales(item.valor_cuota || 0)}{" "}
-                        ({item.frecuencia})
+                        ({item.frecuencia}) | Fecha:{" "}
+                        {formatearFecha(item.fecha_prestamo)}
                       </Text>
                     </View>
                   </TouchableOpacity>

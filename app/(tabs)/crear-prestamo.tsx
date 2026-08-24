@@ -221,17 +221,14 @@ export default function CrearPrestamoScreen({ route }: any) {
   ) => {
     setFrecuencia(nuevaFrecuencia);
 
+    // Asignar cuotas por defecto según la frecuencia elegida
     if (nuevaFrecuencia === "diario") {
-      setPorcentaje("20");
       setCuotas("24");
     } else if (nuevaFrecuencia === "semanal") {
-      setPorcentaje("25");
       setCuotas("4");
     } else if (nuevaFrecuencia === "quincenal") {
-      setPorcentaje("25");
       setCuotas("2");
     } else if (nuevaFrecuencia === "mensual") {
-      setPorcentaje("25");
       setCuotas("1");
     }
   };
@@ -497,41 +494,74 @@ export default function CrearPrestamoScreen({ route }: any) {
           <Text style={styles.dropdownTriggerIcon}>▼</Text>
         </TouchableOpacity>
 
-        <Text style={styles.label}>4. Modalidad / Frecuencia de Pago</Text>
-        <View style={styles.frecuenciaContainer}>
+        {/* 4. FRECUENCIA DE PAGO (SELECTOR) */}
+        <Text style={styles.label}>4. Frecuencia de Pago</Text>
+        <View style={styles.rowSelector}>
           {[
-            { id: "diario", label: "Diario", desc: "24 cuotas (20%)" },
-            { id: "semanal", label: "Semanal", desc: "4 cuotas (25%)" },
-            { id: "quincenal", label: "Quincenal", desc: "2 cuotas (25%)" },
-            { id: "mensual", label: "Mensual", desc: "1 cuota (25%)" },
+            { id: "diario", label: "Diario" },
+            { id: "semanal", label: "Semanal" },
+            { id: "quincenal", label: "Quincenal" },
+            { id: "mensual", label: "Mensual" },
           ].map((item) => (
             <TouchableOpacity
               key={item.id}
               style={[
-                styles.frecuenciaBtn,
-                frecuencia === item.id && styles.frecuenciaBtnActive,
+                styles.selectChip,
+                frecuencia === item.id && styles.selectChipActive,
               ]}
               onPress={() => handleCambiarFrecuencia(item.id as any)}
             >
               <Text
                 style={[
-                  styles.frecuenciaTxt,
-                  frecuencia === item.id && styles.frecuenciaTxtActive,
+                  styles.selectChipTxt,
+                  frecuencia === item.id && styles.selectChipTxtActive,
                 ]}
               >
                 {item.label}
               </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* 5. TASA DE INTERÉS (SELECTOR) */}
+        <Text style={styles.label}>5. Tasa de Interés (%)</Text>
+        <View style={styles.rowSelector}>
+          {["0.00", "10.00", "15.00", "20.00", "25.00"].map((tasa) => (
+            <TouchableOpacity
+              key={tasa}
+              style={[
+                styles.selectChip,
+                porcentaje === tasa && styles.selectChipActive,
+              ]}
+              onPress={() => setPorcentaje(tasa)}
+            >
               <Text
                 style={[
-                  styles.frecuenciaSubTxt,
-                  frecuencia === item.id && styles.frecuenciaSubTxtActive,
+                  styles.selectChipTxt,
+                  porcentaje === tasa && styles.selectChipTxtActive,
                 ]}
               >
-                {item.desc}
+                {tasa}%
               </Text>
             </TouchableOpacity>
           ))}
         </View>
+
+        {/* 6. NÚMERO DE CUOTAS (SOLO NÚMEROS) */}
+        <Text style={styles.label}>6. Número de Cuotas</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Número de cuotas"
+          placeholderTextColor="#a4b0be"
+          keyboardType="numeric"
+          value={cuotas}
+          onChangeText={(text) => {
+            // Filtra cualquier cosa que no sea un número entero
+            const soloDigitos = text.replace(/\D/g, "");
+            setCuotas(soloDigitos);
+          }}
+          maxLength={3}
+        />
 
         <Text style={styles.label}>5. Monto del Préstamo</Text>
         <TextInput

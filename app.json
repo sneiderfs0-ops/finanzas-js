@@ -45,8 +45,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "98f1eda1-5e82-4396-b06f-ddac0177d53e"
+        "projectId": "feb579c7-d053-45c6-9860-4c9d51cb098a"
       }
-    }
+    },
+    "owner": "sneider"
   }
 }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useLocalSearchParams } from "expo-router";
 import {
   StyleSheet,
   Text,
@@ -9,6 +10,7 @@ import {
   ActivityIndicator,
   useWindowDimensions,
   Modal,
+  Platform,
 } from "react-native";
 import { supabase } from "../../supabase";
 
@@ -60,6 +62,12 @@ export default function CrearPrestamoScreen({ route }: any) {
   const [porcentaje, setPorcentaje] = useState("20");
   const [cuotas, setCuotas] = useState("24");
   const [loading, setLoading] = useState(false);
+
+  // NUEVOS ESTADOS PARA FECHA MANUAL DE ADMINISTRADOR
+  const [usarFechaManual, setUsarFechaManual] = useState(false);
+  const [fechaManual, setFechaManual] = useState(
+    new Date().toISOString().split("T")[0],
+  );
 
   const [usuarioActual, setUsuarioActual] = useState<{
     id: string;
@@ -179,7 +187,6 @@ export default function CrearPrestamoScreen({ route }: any) {
   }) => {
     try {
       if (infoUsuario.tipo === "Empleado") {
-        // 1. Buscar la ruta asignada en la tabla intermedia 'empleado_rutas'
         const { data: rutaRelacion, error: rutaError } = await supabase
           .from("empleado_rutas")
           .select("ruta_id")
@@ -187,12 +194,10 @@ export default function CrearPrestamoScreen({ route }: any) {
           .maybeSingle();
 
         if (rutaError || !rutaRelacion?.ruta_id) {
-          console.log("El empleado no tiene una ruta asignada.");
           setClientes([]);
           return;
         }
 
-        // 2. Obtener los clientes que pertenecen a esa ruta_id
         const { data, error } = await supabase
           .from("clientes")
           .select("cedula, nombres, apellidos, registrado_por_cedula, ruta_id")
@@ -202,7 +207,6 @@ export default function CrearPrestamoScreen({ route }: any) {
         if (error) throw error;
         if (data) setClientes(data);
       } else {
-        // Administradores y Secretarias ven todos los clientes
         const { data, error } = await supabase
           .from("clientes")
           .select("cedula, nombres, apellidos, registrado_por_cedula, ruta_id")
@@ -221,7 +225,6 @@ export default function CrearPrestamoScreen({ route }: any) {
   ) => {
     setFrecuencia(nuevaFrecuencia);
 
-    // Asignar cuotas por defecto según la frecuencia elegida
     if (nuevaFrecuencia === "diario") {
       setCuotas("24");
     } else if (nuevaFrecuencia === "semanal") {
@@ -347,28 +350,45 @@ export default function CrearPrestamoScreen({ route }: any) {
         return;
       }
 
-      const { error: errorPrestamo } = await supabase.from("prestamos").insert([
-        {
-          cedula: clienteSeleccionado,
-          moneda: moneda,
-          monto_prestado: montoNum,
-          tasa_interes: porcentajeNum,
-          monto_total: montoTotal,
-          saldo_pendiente: montoTotal,
-          estado: "activo",
-          frecuencia: frecuencia,
-          cuotas: cuotasNum,
-          valor_cuota: valorCuota,
-          caja_id: cajaSeleccionada.id,
-          registrado_por_cedula: usuarioActual.cedula,
-        },
-      ]);
+      // Estructura de datos a insertar
+      const objetoPrestamo: any = {
+        cedula: clienteSeleccionado,
+        moneda: moneda,
+        monto_prestado: montoNum,
+        tasa_interes: porcentajeNum,
+        monto_total: montoTotal,
+        saldo_pendiente: montoTotal,
+        estado: "activo",
+        frecuencia: frecuencia,
+        cuotas: cuotasNum,
+        valor_cuota: valorCuota,
+        caja_id: cajaSeleccionada.id,
+        registrado_por_cedula: usuarioActual.cedula,
+      };
+
+      // Si es admin y activó la fecha manual, se la agregamos a la consulta
+      if (
+        usuarioActual.tipo === "Administrador" &&
+        usarFechaManual &&
+        fechaManual
+      ) {
+        // Añadimos la hora actual para conservar el formato timestamptz correctamente
+        objetoPrestamo.fecha_prestamo = `${fechaManual}T${new Date().toTimeString().split(" ")[0]}`;
+      }
+
+      const { error: errorPrestamo } = await supabase
+        .from("prestamos")
+        .insert([objetoPrestamo]);
 
       if (errorPrestamo) throw errorPrestamo;
 
+      // Reiniciar formulario y ocultar / resetear el checkbox de fecha manual
       setMonto("");
       setClienteSeleccionado(null);
       setNombreBusqueda("");
+      setUsarFechaManual(false);
+      setFechaManual(new Date().toISOString().split("T")[0]);
+
       mostrarMensaje(
         "exito",
         "El préstamo se ha registrado satisfactoriamente y la caja ha sido actualizada.",
@@ -494,7 +514,6 @@ export default function CrearPrestamoScreen({ route }: any) {
           <Text style={styles.dropdownTriggerIcon}>▼</Text>
         </TouchableOpacity>
 
-        {/* 4. FRECUENCIA DE PAGO (SELECTOR) */}
         <Text style={styles.label}>4. Frecuencia de Pago</Text>
         <View style={styles.rowSelector}>
           {[
@@ -523,7 +542,6 @@ export default function CrearPrestamoScreen({ route }: any) {
           ))}
         </View>
 
-        {/* 5. TASA DE INTERÉS (SELECTOR) */}
         <Text style={styles.label}>5. Tasa de Interés (%)</Text>
         <View style={styles.rowSelector}>
           {["0.00", "10.00", "15.00", "20.00", "25.00"].map((tasa) => (
@@ -547,7 +565,6 @@ export default function CrearPrestamoScreen({ route }: any) {
           ))}
         </View>
 
-        {/* 6. NÚMERO DE CUOTAS (SOLO NÚMEROS) */}
         <Text style={styles.label}>6. Número de Cuotas</Text>
         <TextInput
           style={styles.input}
@@ -556,17 +573,16 @@ export default function CrearPrestamoScreen({ route }: any) {
           keyboardType="numeric"
           value={cuotas}
           onChangeText={(text) => {
-            // Filtra cualquier cosa que no sea un número entero
             const soloDigitos = text.replace(/\D/g, "");
             setCuotas(soloDigitos);
           }}
           maxLength={3}
         />
 
-        <Text style={styles.label}>5. Monto del Préstamo</Text>
+        <Text style={styles.label}>7. Monto del Préstamo</Text>
         <TextInput
           style={styles.input}
-          placeholder="Ingresa monto del prestamos"
+          placeholder="Ingresa monto del prestamo"
           placeholderTextColor="#a4b0be"
           keyboardType="numeric"
           value={monto}
@@ -595,6 +611,49 @@ export default function CrearPrestamoScreen({ route }: any) {
             </Text>
           </View>
         </View>
+
+        {/* ======================================================== */}
+        {/* BLOQUE EXCLUSIVO PARA ADMINISTRADOR: FECHA MANUAL         */}
+        {/* ======================================================== */}
+        {usuarioActual?.tipo === "Administrador" && (
+          <View style={styles.adminDateContainer}>
+            <TouchableOpacity
+              style={styles.checkboxRow}
+              onPress={() => setUsarFechaManual(!usarFechaManual)}
+              activeOpacity={0.8}
+            >
+              <View
+                style={[
+                  styles.checkboxBox,
+                  usarFechaManual && styles.checkboxBoxActive,
+                ]}
+              >
+                {usarFechaManual && <Text style={styles.checkboxCheck}>✓</Text>}
+              </View>
+              <Text style={styles.checkboxLabel}>
+                📅 Registrar fecha de préstamo (Manual)
+              </Text>
+            </TouchableOpacity>
+
+            {usarFechaManual && (
+              <View style={styles.datePickerWrapper}>
+                <Text style={styles.subLabel}>
+                  Seleccione la fecha del préstamo:
+                </Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="AAAA-MM-DD"
+                  value={fechaManual}
+                  onChangeText={setFechaManual}
+                />
+                <Text style={styles.helperText}>
+                  Formato requerido: AAAA-MM-DD (Ej: 2026-05-15)
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+        {/* ======================================================== */}
 
         <TouchableOpacity
           style={[styles.button, loading && { opacity: 0.7 }]}
@@ -803,6 +862,12 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     marginTop: 10,
   },
+  subLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#475569",
+    marginBottom: 6,
+  },
   rowSelector: {
     flexDirection: "row",
     gap: 10,
@@ -872,42 +937,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#1e293b",
   },
-  frecuenciaContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-  frecuenciaBtn: {
-    width: "48%",
-    backgroundColor: "#f8fafc",
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  frecuenciaBtnActive: {
-    backgroundColor: "#0284c7",
-    borderColor: "#0284c7",
-  },
-  frecuenciaTxt: {
-    fontSize: 14,
-    color: "#1e293b",
-    fontWeight: "bold",
-  },
-  frecuenciaSubTxt: {
-    fontSize: 12,
-    color: "#64748b",
-    marginTop: 2,
-  },
-  frecuenciaTxtActive: {
-    color: "#fff",
-  },
-  frecuenciaSubTxtActive: {
-    color: "#e2e8f0",
-  },
   calcBox: {
     backgroundColor: "#f8fafc",
     padding: 16,
@@ -933,6 +962,59 @@ const styles = StyleSheet.create({
   calcText: { fontSize: 14, color: "#475569" },
   bold: { fontWeight: "bold", color: "#1e293b" },
   boldPrimary: { fontWeight: "bold", color: "#0284c7", fontSize: 15 },
+
+  // ESTILOS NUEVOS PARA EL CHECKBOX Y FECHA MANUAL
+  adminDateContainer: {
+    backgroundColor: "#fffbeb",
+    borderWidth: 1,
+    borderColor: "#fde68a",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 20,
+  },
+  checkboxRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  checkboxBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: "#d97706",
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+  },
+  checkboxBoxActive: {
+    backgroundColor: "#d97706",
+  },
+  checkboxCheck: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  checkboxLabel: {
+    fontSize: 14,
+    fontWeight: "bold",
+    color: "#92400e",
+    flex: 1,
+  },
+  datePickerWrapper: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#fef3c7",
+  },
+  helperText: {
+    fontSize: 12,
+    color: "#b45309",
+    fontStyle: "italic",
+    marginTop: -6,
+    marginBottom: 10,
+  },
+
   button: {
     backgroundColor: "#10b981",
     padding: 16,

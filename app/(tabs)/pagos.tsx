@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   StyleSheet,
   Text,
@@ -37,6 +37,7 @@ interface Prestamo {
   cuotas: number;
   estado: string;
   fecha_inicio: string;
+  monto_prestado?: number;
 }
 
 export default function CrearPagoScreen({ route }: any) {
@@ -71,10 +72,17 @@ export default function CrearPagoScreen({ route }: any) {
   const [tasaCambioCopPorUsd, setTasaCambioCopPorUsd] = useState("4100");
   const [tasaInputTemp, setTasaInputTemp] = useState("");
 
+  // ESTADOS PARA FECHA MANUAL (Solo Administrador)
+  const [usarFechaManual, setUsarFechaManual] = useState(false);
+  const [fechaManual, setFechaManual] = useState(
+    new Date().toISOString().split("T")[0],
+  );
+
   const [tipoPago, setTipoPago] = useState<"efectivo" | "transferencia">(
     "efectivo",
   );
   const [loading, setLoading] = useState(false);
+  const guardandoRef = useRef(false);
 
   const [usuarioActual, setUsuarioActual] = useState<{
     id: string;
@@ -185,7 +193,6 @@ export default function CrearPagoScreen({ route }: any) {
     if (data) setCajas(data);
   };
 
-  // Función actualizada de clientes con soporte para empleado_rutas
   const cargarClientes = async (infoUsuario: {
     id: string;
     cedula: string;
@@ -305,19 +312,26 @@ export default function CrearPagoScreen({ route }: any) {
   };
 
   const guardarPago = async () => {
+    if (guardandoRef.current || loading) return;
+    guardandoRef.current = true;
+
     if (!clienteSeleccionado) {
+      guardandoRef.current = false;
       mostrarMensaje("error", "Por favor seleccione un cliente.");
       return;
     }
     if (!prestamoSeleccionado) {
+      guardandoRef.current = false;
       mostrarMensaje("error", "Por favor seleccione el préstamo a abonar.");
       return;
     }
     if (montoFisicoNum <= 0) {
+      guardandoRef.current = false;
       mostrarMensaje("error", "Ingrese un monto de pago válido mayor a 0.");
       return;
     }
     if (montoAplicadoPrestamo > prestamoSeleccionado.saldo_pendiente) {
+      guardandoRef.current = false;
       mostrarMensaje(
         "error",
         `El monto convertido ($ ${formatearSinDecimales(montoAplicadoPrestamo)} ${monedaPrestamo}) supera el saldo pendiente del préstamo.`,
@@ -325,30 +339,58 @@ export default function CrearPagoScreen({ route }: any) {
       return;
     }
     if (!usuarioActual) {
+      guardandoRef.current = false;
       mostrarMensaje("error", "No se pudo identificar el usuario logueado.");
       return;
     }
 
+    if (usarFechaManual && usuarioActual.tipo === "Administrador") {
+      const regexFecha = /^\d{4}-\d{2}-\d{2}$/;
+      if (!regexFecha.test(fechaManual)) {
+        guardandoRef.current = false;
+        mostrarMensaje(
+          "error",
+          "El formato de la fecha manual debe ser AAAA-MM-DD.",
+        );
+        return;
+      }
+    }
+
     setLoading(true);
 
+    const prestamoIdActual = prestamoSeleccionado.id;
+    const monedaPActual = monedaPrestamo;
+    const montoPActual = montoAplicadoPrestamo;
+    const monedaPagoActual = monedaPago;
+    const tasaActual = tasaNum;
+    const cedulaUsuarioActual = usuarioActual.cedula;
+
+    const datosPago: any = {
+      prestamo_id: prestamoIdActual,
+      moneda: monedaPActual,
+      monto_pagado: montoPActual,
+      moneda_pago: monedaPagoActual,
+      tasa_cambio: tasaActual,
+      registrado_por_cedula: cedulaUsuarioActual,
+    };
+
+    // CORRECCIÓN: Usar 'fecha_pago' en lugar de 'created_at' para que coincida con tu base de datos
+    if (usarFechaManual && usuarioActual.tipo === "Administrador") {
+      datosPago.fecha_pago = `${fechaManual}T00:00:00`;
+    }
+
+    setMontoFisico("");
+    setClienteSeleccionado(null);
+    setPrestamoSeleccionado(null);
+    setPrestamosCliente([]);
+
     try {
-      const { error: errorPago } = await supabase.from("pagos").insert([
-        {
-          prestamo_id: prestamoSeleccionado.id,
-          moneda: monedaPrestamo,
-          monto_pagado: montoAplicadoPrestamo,
-          moneda_pago: monedaPago,
-          tasa_cambio: tasaNum,
-          registrado_por_cedula: usuarioActual.cedula,
-        },
-      ]);
+      const { error: errorPago } = await supabase
+        .from("pagos")
+        .insert([datosPago]);
 
       if (errorPago) throw errorPago;
 
-      setMontoFisico("");
-      setClienteSeleccionado(null);
-      setPrestamoSeleccionado(null);
-      setPrestamosCliente([]);
       mostrarMensaje(
         "exito",
         "El pago con cambio de divisa se ha registrado satisfactoriamente.",
@@ -361,6 +403,7 @@ export default function CrearPagoScreen({ route }: any) {
       );
     } finally {
       setLoading(false);
+      guardandoRef.current = false;
     }
   };
 
@@ -433,7 +476,9 @@ export default function CrearPagoScreen({ route }: any) {
             <View style={{ flex: 1 }}>
               <Text style={styles.dropdownTriggerTitle}>
                 Préstamo en {prestamoSeleccionado.moneda} - Saldo: ${" "}
-                {formatearSinDecimales(prestamoSeleccionado.monto_prestado)}
+                {formatearSinDecimales(
+                  prestamoSeleccionado.monto_prestado || 0,
+                )}
               </Text>
               <Text style={styles.dropdownTriggerSubtitle}>
                 Cuota: ${" "}
@@ -576,6 +621,47 @@ export default function CrearPagoScreen({ route }: any) {
             </Text>
           </View>
         </View>
+
+        {/* UBICACIÓN DEL CHECKBOX: JUSTO ARRIBA DEL BOTÓN REGISTRAR PAGO */}
+        {usuarioActual?.tipo === "Administrador" && (
+          <View style={styles.manualDateBox}>
+            <TouchableOpacity
+              style={styles.checkboxRow}
+              activeOpacity={0.8}
+              onPress={() => setUsarFechaManual(!usarFechaManual)}
+            >
+              <View
+                style={[
+                  styles.checkboxBox,
+                  usarFechaManual && styles.checkboxBoxChecked,
+                ]}
+              >
+                {usarFechaManual && <Text style={styles.checkboxTick}>✓</Text>}
+              </View>
+              <Text style={styles.checkboxLabel}>
+                📅 Registrar fecha de pago (Manual)
+              </Text>
+            </TouchableOpacity>
+
+            {usarFechaManual && (
+              <View style={{ marginTop: 10 }}>
+                <Text style={styles.subLabel}>
+                  Seleccione la fecha del pago:
+                </Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="2026-09-01"
+                  value={fechaManual}
+                  onChangeText={setFechaManual}
+                  placeholderTextColor="#94a3b8"
+                />
+                <Text style={styles.helperText}>
+                  Formato requerido: AAAA-MM-DD (Ej: 2026-05-15)
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
 
         <TouchableOpacity
           style={[styles.button, loading && { opacity: 0.7 }]}
@@ -733,8 +819,7 @@ export default function CrearPagoScreen({ route }: any) {
               {prestamosCliente.map((item) => {
                 const isSelected = prestamoSeleccionado?.id === item.id;
 
-                // Función rápida para formatear la fecha (ej: 2026-08-11 -> 11/08/2026)
-                const formatearFecha = (fechaStr) => {
+                const formatearFecha = (fechaStr: string) => {
                   if (!fechaStr) return "";
                   const [anio, mes, dia] = fechaStr.split("T")[0].split("-");
                   return `${dia}/${mes}/${anio}`;
@@ -759,7 +844,8 @@ export default function CrearPagoScreen({ route }: any) {
                           isSelected && styles.textWhite,
                         ]}
                       >
-                        Prestado: $ {formatearSinDecimales(item.monto_prestado)}{" "}
+                        Prestado: ${" "}
+                        {formatearSinDecimales(item.monto_prestado || 0)}{" "}
                         {item.moneda}
                       </Text>
                       <Text
@@ -879,6 +965,56 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     marginTop: 10,
   },
+  subLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#475569",
+    marginBottom: 6,
+  },
+  helperText: {
+    fontSize: 11,
+    color: "#d97706",
+    fontStyle: "italic",
+    marginTop: -8,
+    marginBottom: 10,
+  },
+  manualDateBox: {
+    backgroundColor: "#fefce8",
+    borderWidth: 1,
+    borderColor: "#fef08a",
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 10,
+    marginBottom: 10,
+  },
+  checkboxRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  checkboxBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: "#ca8a04",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+    marginRight: 10,
+  },
+  checkboxBoxChecked: {
+    backgroundColor: "#ca8a04",
+  },
+  checkboxTick: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  checkboxLabel: {
+    fontSize: 14,
+    fontWeight: "bold",
+    color: "#854d0e",
+  },
   rowSelector: { flexDirection: "row", gap: 10, marginBottom: 12 },
   selectChip: {
     flex: 1,
@@ -974,120 +1110,95 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     width: "100%",
     maxWidth: 680,
-    height: "80%",
-    maxHeight: 650,
-    padding: 24,
-    elevation: 8,
-    display: "flex",
-    flexDirection: "column",
+    maxHeight: "80%",
+    padding: 20,
   },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignContent: "center",
     alignItems: "center",
     marginBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
-    paddingBottom: 12,
   },
-  modalTitle: { fontSize: 18, fontWeight: "bold", color: "#0f172a" },
+  modalTitle: { fontSize: 18, fontWeight: "bold", color: "#1e293b" },
   closeBtn: {
-    padding: 6,
-    backgroundColor: "#f1f5f9",
-    borderRadius: 20,
     width: 32,
     height: 32,
-    alignItems: "center",
+    borderRadius: 16,
+    backgroundColor: "#f1f5f9",
     justifyContent: "center",
+    alignItems: "center",
   },
-  closeBtnText: { fontSize: 14, fontWeight: "bold", color: "#64748b" },
-  searchBoxContainer: { marginBottom: 16 },
+  closeBtnText: { fontSize: 16, color: "#64748b", fontWeight: "bold" },
+  searchBoxContainer: { marginBottom: 12 },
   modalSearchInput: {
     backgroundColor: "#f8fafc",
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 12,
     borderWidth: 1,
     borderColor: "#cbd5e1",
-    fontSize: 16,
-    color: "#0f172a",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: "#1e293b",
   },
-  modalList: { flex: 1 },
-  modalListContent: { paddingBottom: 16 },
+  modalList: { maxHeight: 400 },
+  modalListContent: { paddingBottom: 10 },
   modalClientCard: {
     backgroundColor: "#f8fafc",
-    padding: 16,
+    padding: 14,
     borderRadius: 12,
-    marginBottom: 10,
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: "#e2e8f0",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
   },
   modalClientCardSelected: {
     backgroundColor: "#0284c7",
     borderColor: "#0284c7",
   },
   modalClientName: { fontSize: 15, fontWeight: "bold", color: "#1e293b" },
-  modalClientCedula: { fontSize: 13, color: "#64748b", marginTop: 3 },
+  modalClientCedula: { fontSize: 13, color: "#64748b", marginTop: 2 },
   textWhite: { color: "#ffffff" },
-  textWhiteSub: { color: "#e2e8f0" },
+  textWhiteSub: { color: "#e0f2fe" },
   modalExitoContainer: {
     backgroundColor: "#ffffff",
     borderRadius: 20,
+    padding: 24,
     width: "100%",
-    maxWidth: 400,
-    padding: 28,
+    maxWidth: 340,
     alignItems: "center",
-    elevation: 8,
   },
   successIconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: "#d1fae5",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 16,
   },
-  errorIconContainer: {
-    backgroundColor: "#fee2e2",
-  },
-  successIconText: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#10b981",
-  },
+  errorIconContainer: { backgroundColor: "#fee2e2" },
+  successIconText: { fontSize: 28, color: "#10b981", fontWeight: "bold" },
   modalExitoTitle: {
     fontSize: 20,
     fontWeight: "bold",
-    color: "#0f172a",
+    color: "#1e293b",
     marginBottom: 8,
     textAlign: "center",
   },
   modalExitoMessage: {
-    fontSize: 15,
-    color: "#475569",
+    fontSize: 14,
+    color: "#64748b",
     textAlign: "center",
-    marginBottom: 24,
-    lineHeight: 22,
+    marginBottom: 20,
+    lineHeight: 20,
   },
   successButton: {
     backgroundColor: "#10b981",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
     borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 32,
     width: "100%",
     alignItems: "center",
   },
-  errorButton: {
-    backgroundColor: "#ef4444",
-  },
-  successButtonText: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
+  errorButton: { backgroundColor: "#ef4444" },
+  successButtonText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
 });

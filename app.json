@@ -36,7 +36,8 @@
         }
       ],
       "expo-sharing",
-      "expo-build-properties"
+      "expo-build-properties",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true
@@ -44,7 +45,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "feb579c7-d053-45c6-9860-4c9d51cb098a"
+        "projectId": "98f1eda1-5e82-4396-b06f-ddac0177d53e"
       }
     }
   }

@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   Alert,
   useWindowDimensions,
+  RefreshControl,
 } from "react-native";
 import { supabase } from "../../supabase";
 import { globalStyles } from "@/constants/globalStyles";
@@ -28,6 +29,7 @@ export default function CajaScreen() {
 
   const [resumenData, setResumenData] = useState<ResumenFinanciero[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false); // Estado para el pull-to-refresh
   const [generatingPdf, setGeneratingPdf] = useState(false);
 
   const [totalesPDF, setTotalesPDF] = useState({
@@ -111,6 +113,13 @@ export default function CajaScreen() {
             cargarDatosCaja();
           },
         )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "productos" },
+          () => {
+            cargarDatosCaja();
+          },
+        )
         .subscribe();
 
       setLoading(false);
@@ -126,7 +135,7 @@ export default function CajaScreen() {
 
   const cargarDatosCaja = async () => {
     try {
-      // 1. Cargar cajas y bancos directamente de la tabla
+      // 1. Cargar cajas y bancos
       const { data: cajasData, error: cajasError } = await supabase
         .from("cajas_bancos")
         .select("id, nombre, moneda, saldo_actual");
@@ -173,11 +182,10 @@ export default function CajaScreen() {
         });
       }
 
-      // 2. Cargar dinero en la calle (Préstamos activos)
+      // 2. Cargar Dinero en la Calle (Préstamos con estado activo)
       const { data: prestamosData, error: prestamosError } = await supabase
         .from("prestamos")
-        .select("saldo_pendiente, estado, moneda")
-        .eq("estado", "activo");
+        .select("saldo_pendiente, estado, moneda");
 
       let sumaCalleUSD = 0;
       let sumaCalleCOP = 0;
@@ -185,66 +193,40 @@ export default function CajaScreen() {
       if (!prestamosError && prestamosData) {
         prestamosData.forEach((curr) => {
           const saldoPendiente = Number(curr.saldo_pendiente || 0);
-          if (curr.moneda?.toUpperCase() === "USD") {
-            sumaCalleUSD += saldoPendiente;
-          } else if (curr.moneda?.toUpperCase() === "COP") {
-            sumaCalleCOP += saldoPendiente;
+          const moneda = curr.moneda?.toUpperCase();
+
+          if (curr.estado === "activo") {
+            if (moneda === "USD") {
+              sumaCalleUSD += saldoPendiente;
+            } else if (moneda === "COP") {
+              sumaCalleCOP += saldoPendiente;
+            }
           }
         });
       }
 
-      // 3. Cargar gastos acumulados
-      const { data: gastosData, error: gastosError } = await supabase
-        .from("gastos")
-        .select("monto, moneda");
+      // 3. Consultar directamente tu vista de ganancias y gastos totales
+      const { data: vistaData, error: vistaError } = await supabase
+        .from("vista_ganancias_totales")
+        .select("moneda, gastos, ganancia_neta");
 
       let sumaGastosUSD = 0;
       let sumaGastosCOP = 0;
-
-      if (!gastosError && gastosData) {
-        gastosData.forEach((curr) => {
-          const monto = Number(curr.monto || 0);
-          if (curr.moneda?.toUpperCase() === "USD") {
-            sumaGastosUSD += monto;
-          } else if (curr.moneda?.toUpperCase() === "COP") {
-            sumaGastosCOP += monto;
-          }
-        });
-      }
-
-      // 4. Cargar Ganancias Netas desde los pagos reales
-      const { data: pagosData, error: pagosError } = await supabase.from(
-        "pagos",
-      ).select(`
-          monto_pagado,
-          prestamos (
-            monto_total,
-            monto_prestado,
-            moneda
-          )
-        `);
-
       let netaUSD = 0;
       let netaCOP = 0;
 
-      if (!pagosError && pagosData) {
-        pagosData.forEach((pago: any) => {
-          const prestamo = pago.prestamos;
-          if (prestamo) {
-            const montoPagado = Number(pago.monto_pagado || 0);
-            const montoTotal = Number(prestamo.monto_total || 0);
-            const montoPrestado = Number(prestamo.monto_prestado || 0);
+      if (!vistaError && vistaData) {
+        vistaData.forEach((row: any) => {
+          const moneda = row.moneda?.toUpperCase();
+          const gastos = Number(row.gastos || 0);
+          const gananciaNeta = Number(row.ganancia_neta || 0);
 
-            if (montoTotal > 0) {
-              const gananciaProporcional =
-                montoPagado * ((montoTotal - montoPrestado) / montoTotal);
-
-              if (prestamo.moneda?.toUpperCase() === "USD") {
-                netaUSD += gananciaProporcional;
-              } else if (prestamo.moneda?.toUpperCase() === "COP") {
-                netaCOP += gananciaProporcional;
-              }
-            }
+          if (moneda === "USD") {
+            sumaGastosUSD += gastos;
+            netaUSD += gananciaNeta;
+          } else if (moneda === "COP") {
+            sumaGastosCOP += gastos;
+            netaCOP += gananciaNeta;
           }
         });
       }
@@ -306,6 +288,13 @@ export default function CajaScreen() {
     } catch (error) {
       console.error("Error al cargar datos de caja:", error);
     }
+  };
+
+  // Función para manejar el gesto de deslizar hacia abajo (Pull-to-refresh)
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await cargarDatosCaja();
+    setRefreshing(false);
   };
 
   const fechaActual = new Date().toLocaleDateString();
@@ -411,6 +400,14 @@ export default function CajaScreen() {
       style={styles.mainContainer}
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={true}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor="#6366f1"
+          colors={["#6366f1"]}
+        />
+      }
     >
       <View
         style={[styles.topHeaderRow, isMobile && styles.topHeaderRowMobile]}
@@ -418,8 +415,7 @@ export default function CajaScreen() {
         <View style={styles.headerContainer}>
           <Text style={styles.headerTitle}>Control de Caja y Bancos</Text>
           <Text style={styles.subtitle}>
-            Balance general, efectivo, bancos, gastos y ganancia neta en tiempo
-            real
+            Balance general, efectivo, bancos, gastos y ganancia en tiempo real
           </Text>
         </View>
 
@@ -439,7 +435,8 @@ export default function CajaScreen() {
       <View style={styles.gridContainer}>
         {resumenData.map((item, index) => {
           const esUSD =
-            item.montoUSD > 0 || (item.montoUSD === 0 && item.montoCOP === 0);
+            item.montoUSD > 0 ||
+            (item.montoUSD === 0 && item.montoCOP === 0 && index % 2 === 0);
           const moneda = esUSD ? "USD" : "COP";
           const monto = esUSD ? item.montoUSD : item.montoCOP;
 

@@ -11,6 +11,7 @@ import {
   ScrollView,
   useWindowDimensions,
   Platform,
+  RefreshControl,
 } from "react-native";
 import { supabase } from "../../supabase";
 
@@ -20,8 +21,8 @@ export default function ListaPrestamosScreen() {
 
   const [prestamos, setPrestamos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [busqueda, setBusqueda] = useState("");
-
   const [modalVisible, setModalVisible] = useState(false);
   const [prestamoSeleccionado, setPrestamoSeleccionado] = useState<any>(null);
   const [pagosPrestamo, setPagosPrestamo] = useState<any[]>([]);
@@ -31,7 +32,6 @@ export default function ListaPrestamosScreen() {
     cargarPrestamos();
   }, []);
 
-  // Función para obtener el nombre usando la función RPC de Supabase
   const obtenerNombreRegistrador = async (cedula: string) => {
     if (!cedula) return "Sin asignar";
     try {
@@ -45,8 +45,12 @@ export default function ListaPrestamosScreen() {
     return `Cédula: ${cedula}`;
   };
 
-  const cargarPrestamos = async () => {
-    setLoading(true);
+  const cargarPrestamos = async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     try {
       const { data: prestamosData, error: prestamoError } = await supabase
         .from("prestamos")
@@ -63,12 +67,14 @@ export default function ListaPrestamosScreen() {
               apellidos: "Desconocido",
               cedula: p.cedula || "N/A",
             };
+
             if (p.cedula) {
               const { data: cliData } = await supabase
                 .from("clientes")
                 .select("nombres, apellidos, cedula")
                 .eq("cedula", p.cedula)
                 .maybeSingle();
+
               if (cliData) clienteInfo = cliData;
             }
 
@@ -116,6 +122,7 @@ export default function ListaPrestamosScreen() {
       Alert.alert("Error", "No se pudieron cargar los préstamos.");
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -144,7 +151,6 @@ export default function ListaPrestamosScreen() {
   const prestamosFiltrados = prestamos.filter((item) => {
     const texto = busqueda.toLowerCase().trim();
     if (!texto) return true;
-
     const nombres = (item.clientes?.nombres || "").toLowerCase();
     const apellidos = (item.clientes?.apellidos || "").toLowerCase();
     const nombreCompleto = `${nombres} ${apellidos}`;
@@ -373,6 +379,14 @@ export default function ListaPrestamosScreen() {
             <ScrollView
               showsVerticalScrollIndicator={true}
               style={{ width: "100%" }}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={() => cargarPrestamos(true)}
+                  colors={["#4f46e5"]}
+                  tintColor="#4f46e5"
+                />
+              }
             >
               <View style={styles.tableInnerWrapper}>
                 <View style={[styles.gridRow, styles.gridHeader]}>
@@ -417,7 +431,6 @@ export default function ListaPrestamosScreen() {
                           item.fecha_prestamo.replace("Z", ""),
                         ).toLocaleDateString()
                       : "N/A";
-
                     const estado = item.estadoTexto;
                     let badgeBg = "#eff6ff";
                     let badgeColor = "#2563eb";
@@ -479,7 +492,6 @@ export default function ListaPrestamosScreen() {
                             {item.empleadoNombre}
                           </Text>
                         </View>
-
                         <View style={[styles.gridCell, styles.colAccion]}>
                           <View
                             style={[
@@ -516,7 +528,7 @@ export default function ListaPrestamosScreen() {
         </View>
       )}
 
-      {/* MODAL CON TIPO DE OPERACIÓN Y USUARIO QUE HIZO LA VENTA */}
+      {/* MODAL DE DETALLES E HISTORIAL DE PAGOS */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -537,7 +549,7 @@ export default function ListaPrestamosScreen() {
 
             {prestamoSeleccionado && (
               <ScrollView
-                style={{ maxHeight: 400 }}
+                style={{ maxHeight: 500 }}
                 showsVerticalScrollIndicator={false}
               >
                 <View style={styles.modalRowItem}>
@@ -590,13 +602,16 @@ export default function ListaPrestamosScreen() {
                       { color: "#dc2626", fontWeight: "bold" },
                     ]}
                   >
-                    {Number(prestamoSeleccionado.saldo_pendiente || 0).toFixed(
-                      2,
-                    )}
+                    {(
+                      Number(prestamoSeleccionado.monto_total || 0) -
+                      pagosPrestamo.reduce(
+                        (sum, p) => sum + Number(p.monto_pagado || 0),
+                        0,
+                      )
+                    ).toFixed(2)}
                   </Text>
                 </View>
 
-                {/* NOMBRE DEL USUARIO QUE HIZO LA VENTA */}
                 <View style={styles.modalRowItem}>
                   <Text style={styles.modalLabel}>Registrado Por:</Text>
                   <Text
@@ -626,6 +641,58 @@ export default function ListaPrestamosScreen() {
                     {prestamoSeleccionado.estadoTexto.toUpperCase()}
                   </Text>
                 </View>
+
+                {/* SECCIÓN DEL HISTORIAL DE PAGOS */}
+                <Text style={styles.historySectionTitle}>
+                  Historial de Pagos
+                </Text>
+
+                {cargandoPagos ? (
+                  <ActivityIndicator
+                    size="small"
+                    color="#4f46e5"
+                    style={{ marginVertical: 10 }}
+                  />
+                ) : pagosPrestamo.length === 0 ? (
+                  <Text style={styles.emptyHistoryText}>
+                    No hay pagos registrados para este préstamo.
+                  </Text>
+                ) : (
+                  <View style={styles.historyTable}>
+                    <View style={styles.historyHeaderRow}>
+                      <Text style={styles.historyHeaderText}>Fecha</Text>
+                      <Text style={styles.historyHeaderText}>Monto</Text>
+                      <Text style={styles.historyHeaderText}>
+                        Tipo / Moneda
+                      </Text>
+                    </View>
+                    {pagosPrestamo.map((pago, pIndex) => (
+                      <View
+                        key={pago.id || pIndex}
+                        style={styles.historyItemRow}
+                      >
+                        <Text style={styles.historyCellText}>
+                          {pago.fecha_pago
+                            ? new Date(
+                                pago.fecha_pago.replace("Z", ""),
+                              ).toLocaleDateString()
+                            : "N/A"}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.historyCellText,
+                            { fontWeight: "bold", color: "#16a34a" },
+                          ]}
+                        >
+                          {Number(pago.monto_pagado || 0).toFixed(2)}
+                        </Text>
+                        <Text style={styles.historyCellText}>
+                          {pago.moneda_pago || pago.moneda || "Efectivo"}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
               </ScrollView>
             )}
 
@@ -737,6 +804,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textTransform: "uppercase",
   },
+  cellText: { color: "#334155", fontSize: 13 },
   cellTextBold: {
     color: "#0f172a",
     fontWeight: "600",
@@ -779,9 +847,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderRadius: 8,
     width: "100%",
-    maxWidth: 500,
+    maxWidth: 550,
     padding: 20,
-    maxHeight: "80%",
+    maxHeight: "85%",
   },
   modalHeaderRow: {
     flexDirection: "row",
@@ -802,29 +870,64 @@ const styles = StyleSheet.create({
   modalLabel: { fontSize: 13, color: "#64748b" },
   modalValue: { fontSize: 13, color: "#1e293b" },
   modalValueBold: { fontSize: 13, fontWeight: "bold", color: "#0f172a" },
-  subTitleModal: {
-    fontSize: 14,
+  historySectionTitle: {
+    fontSize: 15,
     fontWeight: "bold",
     color: "#0f172a",
+    marginTop: 18,
     marginBottom: 8,
   },
-  pagoItemRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    backgroundColor: "#f8fafc",
-    padding: 8,
-    borderRadius: 6,
-    marginBottom: 6,
+  emptyHistoryText: {
+    fontSize: 12,
+    color: "#64748b",
+    fontStyle: "italic",
+    marginVertical: 6,
   },
-  pagoTextFecha: { fontSize: 12, color: "#334155" },
-  pagoTextMonto: { fontSize: 12, fontWeight: "bold", color: "#16a34a" },
-  pagoTextMetodo: { fontSize: 12, color: "#64748b" },
+  historyTable: {
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderRadius: 6,
+    overflow: "hidden",
+    marginBottom: 10,
+  },
+  historyHeaderRow: {
+    flexDirection: "row",
+    backgroundColor: "#f1f5f9",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e2e8f0",
+  },
+  historyHeaderText: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: "bold",
+    color: "#475569",
+    textTransform: "uppercase",
+  },
+  historyItemRow: {
+    flexDirection: "row",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f8fafc",
+    alignItems: "center",
+  },
+  historyCellText: {
+    flex: 1,
+    fontSize: 12,
+    color: "#334155",
+  },
   btnCloseModal: {
     backgroundColor: "#0f172a",
-    padding: 12,
+    marginTop: 15,
+    paddingVertical: 10,
     borderRadius: 6,
     alignItems: "center",
-    marginTop: 15,
   },
-  btnCloseModalText: { color: "#fff", fontWeight: "bold" },
+  btnCloseModalText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 14,
+  },
 });

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   StyleSheet,
   Text,
@@ -8,9 +8,10 @@ import {
   ActivityIndicator,
   Modal,
   Platform,
+  RefreshControl,
 } from "react-native";
 import { supabase } from "../../supabase";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import * as XLSX from "xlsx";
@@ -19,6 +20,7 @@ import * as FileSystem from "expo-file-system";
 interface PagoItem {
   id: string;
   fecha_pago: string;
+  fecha_prestamo?: string; // NUEVO: Fecha en la que se creó el préstamo
   cedula: string;
   monto_prestado: number;
   monto_total: number;
@@ -27,6 +29,7 @@ interface PagoItem {
   tasa_interes: number;
   saldo_pendiente: number;
   monto_pagado: number;
+  total_pagado_acumulado: number;
   registrado_por_cedula: string;
   metodo_pago?: string;
   estadoTexto?: string;
@@ -49,11 +52,155 @@ export default function PagosHabilesScreen() {
   const [pagoSeleccionado, setPagoSeleccionado] = useState<PagoItem | null>(
     null,
   );
+  const [refreshing, setRefreshing] = useState(false);
   const router = useRouter();
 
-  useEffect(() => {
-    verificarRolPermitido();
-  }, []);
+  const cargarPagosYFiltrarSemana = async () => {
+    try {
+      setLoading(true);
+
+      const { data, error } = await supabase
+        .from("pagos")
+        .select(
+          `
+          id,
+          fecha_pago,
+          moneda,
+          monto_pagado,
+          registrado_por_cedula,
+          metodo_pago,
+          tasa_cambio,
+          prestamo_id,
+          prestamos (
+            id,
+            cedula,
+            monto_prestado,
+            monto_total,
+            tasa_interes,
+            saldo_pendiente,
+            estado,
+            moneda,
+            fecha_prestamo,
+            clientes (
+              nombres,
+              apellidos,
+              telefono
+            )
+          )
+        `,
+        )
+        .order("fecha_pago", { ascending: false });
+
+      if (error) {
+        console.log("Error al cargar pagos:", error.message);
+        setPagosHabilesFiltrados([]);
+        return;
+      }
+
+      if (data) {
+        const [adminsRes, empleadosRes, secretariasRes] = await Promise.all([
+          supabase.from("administradores").select("cedula, nombres, apellidos"),
+          supabase.from("empleados").select("cedula, nombres, apellidos"),
+          supabase.from("secretaria").select("cedula, nombres, apellidos"),
+        ]);
+
+        const mapaNombres: { [cedula: string]: string } = {};
+
+        const registrarEnMapa = (personalList: any[]) => {
+          if (personalList) {
+            personalList.forEach((p) => {
+              if (p.cedula) {
+                mapaNombres[p.cedula] =
+                  `${p.nombres || ""} ${p.apellidos || ""}`.trim();
+              }
+            });
+          }
+        };
+
+        registrarEnMapa(adminsRes.data || []);
+        registrarEnMapa(empleadosRes.data || []);
+        registrarEnMapa(secretariasRes.data || []);
+
+        const acumuladoPagosPorPrestamo: { [prestamoId: string]: number } = {};
+        data.forEach((p: any) => {
+          if (p.prestamo_id) {
+            const montoAbonado = Number(p.monto_pagado) || 0;
+            acumuladoPagosPorPrestamo[p.prestamo_id] =
+              (acumuladoPagosPorPrestamo[p.prestamo_id] || 0) + montoAbonado;
+          }
+        });
+
+        const hoy = new Date();
+
+        const pagosFormateados: PagoItem[] = data.map((p: any) => {
+          const prestamo = p.prestamos || {};
+          const cliente = prestamo.clientes || {};
+
+          const montoTotal = Number(prestamo.monto_total) || 0;
+          const totalPagadoAcumulado =
+            acumuladoPagosPorPrestamo[prestamo.id] ||
+            Number(p.monto_pagado) ||
+            0;
+
+          const saldoCalculado = Math.max(0, montoTotal - totalPagadoAcumulado);
+
+          let estadoFinal = "activo";
+
+          if (saldoCalculado <= 0) {
+            estadoFinal = "pagado";
+          } else if (p.fecha_pago) {
+            const fechaPagoRegistro = new Date(p.fecha_pago.replace("Z", ""));
+            const diferenciaDias = Math.floor(
+              (hoy.getTime() - fechaPagoRegistro.getTime()) /
+                (1000 * 60 * 60 * 24),
+            );
+
+            if (diferenciaDias > 10) {
+              estadoFinal = "atrasado";
+            }
+          }
+
+          const cedulaRegistro = p.registrado_por_cedula;
+          const nombreEncontrado =
+            cedulaRegistro && mapaNombres[cedulaRegistro]
+              ? mapaNombres[cedulaRegistro]
+              : cedulaRegistro || "Sistema";
+
+          return {
+            id: p.id,
+            fecha_pago: p.fecha_pago,
+            fecha_prestamo: prestamo.fecha_prestamo || null,
+            cedula: prestamo.cedula || "N/A",
+            monto_prestado: prestamo.monto_prestado || 0,
+            monto_total: montoTotal,
+            moneda_prestamo: prestamo.moneda || "COP",
+            moneda_pago: p.moneda || "COP",
+            tasa_interes: prestamo.tasa_interes || 0,
+            saldo_pendiente: saldoCalculado,
+            monto_pagado: Number(p.monto_pagado) || 0,
+            total_pagado_acumulado: totalPagadoAcumulado,
+            registrado_por_cedula: nombreEncontrado,
+            metodo_pago: p.metodo_pago || "Efectivo",
+            estadoTexto: estadoFinal,
+            clientes: {
+              nombres: cliente.nombres || "Sin nombre",
+              apellidos: cliente.apellidos || "",
+              telefono: cliente.telefono || "",
+            },
+          };
+        });
+
+        const filtrados = pagosFormateados.filter(
+          (item) => item.saldo_pendiente > 0,
+        );
+        setPagosHabilesFiltrados(filtrados);
+      }
+    } catch (err) {
+      console.log("Error inesperado:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const verificarRolPermitido = async () => {
     try {
@@ -69,7 +216,6 @@ export default function PagosHabilesScreen() {
         return;
       }
 
-      // 1. Verificar administradores
       const { data: adminData } = await supabase
         .from("administradores")
         .select("rol, correo")
@@ -82,7 +228,6 @@ export default function PagosHabilesScreen() {
         return;
       }
 
-      // 2. Verificar secretarias
       const { data: secretariaData } = await supabase
         .from("secretaria")
         .select("rol, correo, aprobado")
@@ -110,155 +255,25 @@ export default function PagosHabilesScreen() {
     }
   };
 
-  const cargarPagosYFiltrarSemana = async () => {
-    try {
-      setLoading(true);
+  useEffect(() => {
+    verificarRolPermitido();
+  }, []);
 
-      // 1. Cargar pagos junto con los datos del préstamo y el cliente
-      const { data, error } = await supabase
-        .from("pagos")
-        .select(
-          `
-          id,
-          fecha_pago,
-          moneda,
-          monto_pagado,
-          registrado_por_cedula,
-          metodo_pago,
-          tasa_cambio,
-          prestamo_id,
-          prestamos (
-            id,
-            cedula,
-            monto_prestado,
-            monto_total,
-            tasa_interes,
-            saldo_pendiente,
-            estado,
-            moneda,
-            clientes (
-              nombres,
-              apellidos,
-              telefono
-            )
-          )
-        `,
-        )
-        .order("fecha_pago", { ascending: false });
-
-      if (error) {
-        console.log("Error al cargar pagos:", error.message);
-        setPagosHabilesFiltrados([]);
-        return;
+  // 🔄 Recarga automáticamente los datos cada vez que entras a esta pantalla
+  useFocusEffect(
+    useCallback(() => {
+      if (tienePermiso) {
+        cargarPagosYFiltrarSemana();
       }
+      return undefined;
+    }, [tienePermiso]),
+  );
 
-      if (data) {
-        // 2. Consultar listas de personal para mapear nombres por cédula de forma rápida
-        const [adminsRes, empleadosRes, secretariasRes] = await Promise.all([
-          supabase.from("administradores").select("cedula, nombres, apellidos"),
-          supabase.from("empleados").select("cedula, nombres, apellidos"),
-          supabase.from("secretaria").select("cedula, nombres, apellidos"),
-        ]);
-
-        // Crear un diccionario rápido de cédula -> Nombre Completo
-        const mapaNombres: { [cedula: string]: string } = {};
-
-        const registrarEnMapa = (personalList: any[]) => {
-          if (personalList) {
-            personalList.forEach((p) => {
-              if (p.cedula) {
-                mapaNombres[p.cedula] =
-                  `${p.nombres || ""} ${p.apellidos || ""}`.trim();
-              }
-            });
-          }
-        };
-
-        registrarEnMapa(adminsRes.data || []);
-        registrarEnMapa(empleadosRes.data || []);
-        registrarEnMapa(secretariasRes.data || []);
-
-        const hoy = new Date();
-
-        const pagosFormateados: PagoItem[] = data.map((p: any) => {
-          const prestamo = p.prestamos || {};
-          const cliente = prestamo.clientes || {};
-
-          const montoTotal = prestamo.monto_total || 0;
-          const montoPagado = p.monto_pagado || 0;
-
-          // Cálculo correcto del saldo pendiente
-          const saldoCalculado = Math.max(0, montoTotal - montoPagado);
-
-          // Determinación dinámica del estado (activo, pagado, atrasado > 10 días)
-          let estadoFinal = "activo";
-
-          if (saldoCalculado <= 0) {
-            estadoFinal = "pagado";
-          } else if (p.fecha_pago) {
-            const fechaPagoRegistro = new Date(p.fecha_pago.replace("Z", ""));
-            const diferenciaDias = Math.floor(
-              (hoy.getTime() - fechaPagoRegistro.getTime()) /
-                (1000 * 60 * 60 * 24),
-            );
-
-            if (diferenciaDias > 10) {
-              estadoFinal = "atrasado";
-            }
-          }
-
-          // Buscar el nombre del empleado/personal usando la cédula registrada
-          const cedulaRegistro = p.registrado_por_cedula;
-          const nombreEncontrado =
-            cedulaRegistro && mapaNombres[cedulaRegistro]
-              ? mapaNombres[cedulaRegistro]
-              : cedulaRegistro || "Sistema";
-
-          return {
-            id: p.id,
-            fecha_pago: p.fecha_pago,
-            cedula: prestamo.cedula || "N/A",
-            monto_prestado: prestamo.monto_prestado || 0,
-            monto_total: montoTotal,
-            moneda_prestamo: prestamo.moneda || "COP",
-            moneda_pago: p.moneda || "COP",
-            tasa_interes: prestamo.tasa_interes || 0,
-            saldo_pendiente: saldoCalculado,
-            monto_pagado: montoPagado,
-            registrado_por_cedula: nombreEncontrado, // <--- Ahora muestra el nombre completo del empleado/admin/secretaria
-            metodo_pago: p.metodo_pago || "Efectivo",
-            estadoTexto: estadoFinal,
-            clientes: {
-              nombres: cliente.nombres || "Sin nombre",
-              apellidos: cliente.apellidos || "",
-              telefono: cliente.telefono || "",
-            },
-          };
-        });
-
-        filtrarLunesALunes(pagosFormateados);
-      }
-    } catch (err) {
-      console.log("Error inesperado:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const filtrarLunesALunes = (listaPagos: PagoItem[]) => {
-    const hoy = new Date();
-    const fechaLimite = new Date();
-    fechaLimite.setDate(hoy.getDate() - 7);
-    fechaLimite.setHours(0, 0, 0, 0);
-
-    const filtrados = listaPagos.filter((item) => {
-      if (!item.fecha_pago) return false;
-      const fechaItem = new Date(item.fecha_pago.replace("Z", ""));
-      return fechaItem >= fechaLimite && fechaItem <= hoy;
-    });
-
-    setPagosHabilesFiltrados(filtrados);
-  };
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await cargarPagosYFiltrarSemana();
+    setRefreshing(false);
+  }, []);
 
   const abrirDetalles = (item: PagoItem) => {
     setPagoSeleccionado(item);
@@ -284,11 +299,11 @@ export default function PagosHabilesScreen() {
           </head>
           <body>
           <h2>Gestión de Préstamos</h2>
-            <p class="subtitle">Control de cobros (Últimos 7 días)</p>
+            <p class="subtitle">Control de cobros activos</p>
             <table>
               <thead>
                 <tr>
-                  <th>FECHA</th>
+                  <th>FECHA PAGO</th>
                   <th>CLIENTE</th>
                   <th>MONTO PRESTADO</th>
                   <th>MONEDA</th>
@@ -354,7 +369,7 @@ export default function PagosHabilesScreen() {
   const descargarExcel = async () => {
     try {
       const dataMapeada = pagosHabilesFiltrados.map((item) => ({
-        Fecha: item.fecha_pago
+        "Fecha Pago": item.fecha_pago
           ? new Date(item.fecha_pago.replace("Z", "")).toLocaleDateString()
           : "N/A",
         Cliente: item.clientes
@@ -382,9 +397,9 @@ export default function PagosHabilesScreen() {
       });
 
       if (Platform.OS === "web") {
-        XLSX.writeFile(workbook, "Reporte_Pagos_Semana.xlsx");
+        XLSX.writeFile(workbook, "Reporte_Pagos_Activos.xlsx");
       } else {
-        const fileUri = `${FileSystem.documentDirectory}Reporte_Pagos_Semana.xlsx`;
+        const fileUri = `${FileSystem.documentDirectory}Reporte_Pagos_Activos.xlsx`;
         await FileSystem.writeAsStringAsync(fileUri, excelBuffer, {
           encoding: FileSystem.EncodingType.Base64,
         });
@@ -411,10 +426,9 @@ export default function PagosHabilesScreen() {
 
   return (
     <View style={styles.container}>
-      {/* CABECERA Y BOTONES DE EXPORTACIÓN */}
       <View style={styles.headerContainer}>
         <View style={styles.titleWrapper}>
-          <Text style={styles.mainTitle}>Pagos - Últimos 7 Días</Text>
+          <Text style={styles.mainTitle}>Pagos - General</Text>
           <Text style={styles.subtitle}>
             Control de cobros registrados en el sistema
           </Text>
@@ -444,9 +458,15 @@ export default function PagosHabilesScreen() {
               showsVerticalScrollIndicator={true}
               style={{ width: "100%" }}
               contentContainerStyle={{ flexGrow: 1 }}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                  colors={["#0f172a"]}
+                />
+              }
             >
               <View style={styles.tableInnerWrapper}>
-                {/* CABECERA DE LA TABLA */}
                 <View style={[styles.gridRow, styles.gridHeader]}>
                   <View style={[styles.gridCell, styles.colFecha]}>
                     <Text style={styles.headerText}>FECHA</Text>
@@ -480,11 +500,10 @@ export default function PagosHabilesScreen() {
                   </View>
                 </View>
 
-                {/* FILAS DE LA TABLA */}
                 {pagosHabilesFiltrados.length === 0 ? (
                   <View style={styles.emptyContainer}>
                     <Text style={styles.emptyText}>
-                      No se encontraron pagos registrados en este periodo.
+                      No se encontraron pagos con saldo pendiente mayor a 0.
                     </Text>
                   </View>
                 ) : (
@@ -524,7 +543,6 @@ export default function PagosHabilesScreen() {
                           <Text style={styles.cellTextBold} numberOfLines={1}>
                             {nombreCliente}
                           </Text>
-                          {/*  <Text style={styles.subCedula}>{item.cedula}</Text>*/}
                         </View>
                         <View style={[styles.gridCell, styles.colMonto]}>
                           <Text style={styles.cellText}>
@@ -632,10 +650,17 @@ export default function PagosHabilesScreen() {
                     {pagoSeleccionado.clientes?.apellidos}
                   </Text>
                 </View>
-                {/*   <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Cédula:</Text>
-                  <Text style={styles.modalVal}>{pagoSeleccionado.cedula}</Text>
-                </View>*/}
+                {/* NUEVA FILA: FECHA DEL PRÉSTAMO */}
+                <View style={styles.modalRow}>
+                  <Text style={styles.modalLabel}>Fecha del Préstamo:</Text>
+                  <Text style={styles.modalVal}>
+                    {pagoSeleccionado.fecha_prestamo
+                      ? new Date(
+                          pagoSeleccionado.fecha_prestamo.replace("Z", ""),
+                        ).toLocaleDateString()
+                      : "No disponible"}
+                  </Text>
+                </View>
                 <View style={styles.modalRow}>
                   <Text style={styles.modalLabel}>Fecha de Pago:</Text>
                   <Text style={styles.modalVal}>
@@ -675,9 +700,22 @@ export default function PagosHabilesScreen() {
                   </Text>
                 </View>
                 <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Monto Abonado (Pago):</Text>
-                  <Text style={[styles.modalVal, { color: "#16a34a" }]}>
+                  <Text style={styles.modalLabel}>
+                    Monto Abonado (Esta Cuota):
+                  </Text>
+                  <Text style={[styles.modalVal, { color: "#2563eb" }]}>
                     {Number(pagoSeleccionado.monto_pagado).toFixed(2)}
+                  </Text>
+                </View>
+                <View style={styles.modalRow}>
+                  <Text style={styles.modalLabel}>Total Acumulado Pagado:</Text>
+                  <Text
+                    style={[
+                      styles.modalVal,
+                      { color: "#16a34a", fontWeight: "bold" },
+                    ]}
+                  >
+                    {Number(pagoSeleccionado.total_pagado_acumulado).toFixed(2)}
                   </Text>
                 </View>
                 <View style={styles.modalRow}>
@@ -838,11 +876,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#0f172a",
   },
-  subCedula: {
-    fontSize: 12,
-    color: "#64748b",
-    marginTop: 2,
-  },
   colFecha: { width: 110 },
   colCliente: { flex: 1, minWidth: 180 },
   colMonto: { width: 140 },
@@ -879,46 +912,45 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   btnVerAccionText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "bold",
     color: "#475569",
   },
   emptyContainer: {
-    padding: 40,
+    padding: 24,
     alignItems: "center",
   },
   emptyText: {
-    color: "#64748b",
-    fontStyle: "italic",
     fontSize: 14,
+    color: "#64748b",
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.5)",
+    backgroundColor: "rgba(15, 23, 42, 0.6)",
     justifyContent: "center",
     alignItems: "center",
     padding: 16,
   },
   modalContainer: {
     backgroundColor: "#ffffff",
-    borderRadius: 16,
+    borderRadius: 12,
     width: "100%",
-    maxWidth: 450,
-    padding: 24,
+    maxWidth: 500,
+    maxHeight: "85%",
+    overflow: "hidden",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 6,
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
+    padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
-    paddingBottom: 10,
+    borderBottomColor: "#e2e8f0",
   },
   modalTitle: {
     fontSize: 18,
@@ -927,47 +959,50 @@ const styles = StyleSheet.create({
   },
   closeBtn: {
     padding: 4,
-    backgroundColor: "#f1f5f9",
-    borderRadius: 16,
-    width: 28,
-    height: 28,
-    alignItems: "center",
-    justifyContent: "center",
   },
   closeBtnText: {
-    fontSize: 13,
+    fontSize: 16,
     fontWeight: "bold",
     color: "#64748b",
   },
   modalBody: {
-    gap: 12,
-    marginBottom: 20,
+    padding: 16,
   },
   modalRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: "#f8fafc",
-    paddingBottom: 8,
+    borderBottomColor: "#f1f5f9",
   },
   modalLabel: {
     fontSize: 14,
     color: "#64748b",
+    fontWeight: "600",
+    flex: 1,
   },
   modalVal: {
     fontSize: 14,
     color: "#1e293b",
     fontWeight: "500",
+    flex: 1,
+    textAlign: "right",
   },
-  modalAcceptBtn: {
+  modalFooter: {
+    padding: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#e2e8f0",
+    alignItems: "flex-end",
+  },
+  btnCloseModal: {
     backgroundColor: "#0f172a",
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
   },
-  modalAcceptBtnText: {
+  btnCloseModalText: {
     color: "#ffffff",
-    fontSize: 15,
     fontWeight: "bold",
+    fontSize: 14,
   },
 });

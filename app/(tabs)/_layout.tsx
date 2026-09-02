@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { SymbolView } from "expo-symbols";
 import { Link, useRouter } from "expo-router";
 import { Drawer } from "expo-router/drawer";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   Pressable,
   Platform,
@@ -66,6 +67,8 @@ function CustomDrawerContent(props: any) {
 
   const handleSignOut = async () => {
     try {
+      await AsyncStorage.clear();
+
       const { error } = await supabase.auth.signOut({ scope: "local" });
       if (error) {
         console.log("Error al cerrar sesión:", error.message);
@@ -99,17 +102,7 @@ function CustomDrawerContent(props: any) {
             <Text style={localStyles.navText}>📊 Balance General</Text>
           </Pressable>
         )}
-        {/* Restringido: visible solo para Administrador */}
-        {isAdmin && (
-          <Pressable
-            style={localStyles.navItem}
-            onPress={() => router.push("/(tabs)/inventario")}
-          >
-            <Text style={localStyles.navText}>
-              📊 Productos: Compra | Venta{" "}
-            </Text>
-          </Pressable>
-        )}
+
         <Pressable
           style={localStyles.navItem}
           onPress={() => router.push("/(tabs)/rutas")}
@@ -151,7 +144,9 @@ function CustomDrawerContent(props: any) {
             style={localStyles.navItem}
             onPress={() => router.push("/(tabs)/lista-pagos")}
           >
-            <Text style={localStyles.navText}>📋 Lista de Cobros Semanal</Text>
+            <Text style={localStyles.navText}>
+              📋 Lista de Pagos de Clientes
+            </Text>
           </Pressable>
         )}
 
@@ -166,21 +161,21 @@ function CustomDrawerContent(props: any) {
           style={localStyles.navItem}
           onPress={() => router.push("/(tabs)/crear-clientes")}
         >
-          <Text style={localStyles.navText}>📝 Registrar Clientes</Text>
+          <Text style={localStyles.navText}>📝 Registrar Nuevo Cliente</Text>
         </Pressable>
 
         <Pressable
           style={localStyles.navItem}
           onPress={() => router.push("/(tabs)/crear-prestamo")}
         >
-          <Text style={localStyles.navText}>📝 Nuevo Préstamo</Text>
+          <Text style={localStyles.navText}>📝 Registrar Nuevo Préstamo</Text>
         </Pressable>
 
         <Pressable
           style={localStyles.navItem}
           onPress={() => router.push("/(tabs)/pagos")}
         >
-          <Text style={localStyles.navText}>📝 Registrar pago de clientes</Text>
+          <Text style={localStyles.navText}>📝 Registrar Pago de Clientes</Text>
         </Pressable>
 
         <Pressable
@@ -515,13 +510,6 @@ export default function TabLayout() {
         }}
       />
       <Drawer.Screen
-        name="inventario"
-        options={{
-          title: "Compra y venta de productos",
-          headerRight: renderHeaderRight,
-        }}
-      />
-      <Drawer.Screen
         name="rutas"
         options={{ title: "Gestión de Rutas", headerRight: renderHeaderRight }}
       />
@@ -554,7 +542,7 @@ export default function TabLayout() {
       <Drawer.Screen
         name="lista-pagos"
         options={{
-          title: "Lista de Cobros Semanales",
+          title: "Lista de Cobros",
           headerRight: renderHeaderRight,
         }}
       />

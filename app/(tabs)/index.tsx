@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   StyleSheet,
   Text,
@@ -6,12 +6,15 @@ import {
   ScrollView,
   ActivityIndicator,
   TouchableOpacity,
+  RefreshControl,
 } from "react-native";
 import { router } from "expo-router";
 import { supabase } from "../../supabase";
+import { useFocusEffect } from "expo-router/react-navigation";
 
 export default function IndexScreen() {
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [userData, setUserData] = useState<any>(null);
 
@@ -35,15 +38,13 @@ export default function IndexScreen() {
   const [totalCobros, setTotalCobros] = useState({ USD: 0, COP: 0 });
   const [gananciasNeta, setGananciasNeta] = useState({ USD: 0, COP: 0 });
 
-  // 1. ESTADOS FALTANTES DECLARADOS AQUÍ:
   const [totalGananciaUSD, setTotalGananciaUSD] = useState(0);
   const [totalGananciaCOP, setTotalGananciaCOP] = useState(0);
 
-  useEffect(() => {
-    verificarSesionYDatos();
-  }, []);
-
-  const verificarSesionYDatos = async () => {
+  const verificarSesionYDatos = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    }
     try {
       const {
         data: { session },
@@ -51,7 +52,7 @@ export default function IndexScreen() {
       } = await supabase.auth.getSession();
 
       if (sessionError || !session || !session.user?.email) {
-        router.replace("/(auth)/sign-in");
+        router.replace("/(auth)/sign-in" as any);
         return;
       }
 
@@ -142,6 +143,7 @@ export default function IndexScreen() {
           .subscribe();
 
         setLoading(false);
+        setRefreshing(false);
         return () => {
           supabase.removeChannel(channelAdmin);
         };
@@ -197,6 +199,7 @@ export default function IndexScreen() {
           .subscribe();
 
         setLoading(false);
+        setRefreshing(false);
         return () => {
           supabase.removeChannel(channelSecretaria);
         };
@@ -244,70 +247,58 @@ export default function IndexScreen() {
           .subscribe();
 
         setLoading(false);
+        setRefreshing(false);
         return () => {
           supabase.removeChannel(channelEmpleado);
         };
       }
 
-      // Si no pertenece a ninguna tabla autorizada
       setLoading(false);
+      setRefreshing(false);
     } catch (e) {
       console.log("Error en verificarSesionYDatos:", e);
       setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, []);
 
   const cargarResumenGeneral = async () => {
     try {
-      const hoy = new Date().toISOString().split("T")[0];
-      const mañana = new Date(Date.now() + 86400000)
-        .toISOString()
-        .split("T")[0];
+      const { data, error } = await supabase.rpc("obtener_resumen_diario");
 
-      const { data: prestamos } = await supabase
-        .from("prestamos")
-        .select("monto_total, moneda, fecha_prestamo")
-        .gte("fecha_prestamo", `${hoy} 00:00:00`)
-        .lt("fecha_prestamo", `${mañana} 00:00:00`);
+      if (error) {
+        console.log("Error en RPC obtener_resumen_diario:", error);
+        return;
+      }
 
       let prestadoUSD = 0;
       let prestadoCOP = 0;
-      prestamos?.forEach((item) => {
-        const monto = Number(item.monto_total || 0);
-        if (item.moneda === "USD") prestadoUSD += monto;
-        if (item.moneda === "COP") prestadoCOP += monto;
-      });
-
-      const { data: pagos } = await supabase
-        .from("pagos")
-        .select("monto_pagado, moneda, fecha_pago")
-        .gte("fecha_pago", `${hoy} 00:00:00`)
-        .lt("fecha_pago", `${mañana} 00:00:00`);
-
       let recaudadoUSD = 0;
       let recaudadoCOP = 0;
-      pagos?.forEach((item) => {
-        const monto = Number(item.monto_pagado || 0);
-        if (item.moneda === "USD") recaudadoUSD += monto;
-        if (item.moneda === "COP") recaudadoCOP += monto;
-      });
-
-      const { data: gastos } = await supabase
-        .from("gastos")
-        .select("monto, moneda, fecha_gasto")
-        .gte("fecha_gasto", `${hoy} 00:00:00`)
-        .lt("fecha_gasto", `${mañana} 00:00:00`);
-
       let gastosUSD = 0;
       let gastosCOP = 0;
-      gastos?.forEach((item) => {
-        const monto = Number(item.monto || 0);
-        if (item.moneda === "USD") gastosUSD += monto;
-        if (item.moneda === "COP") gastosCOP += monto;
+
+      data?.forEach((item: any) => {
+        const moneda = (item.moneda || "").toUpperCase();
+
+        if (moneda === "USD") {
+          prestadoUSD = Number(item.total_prestado || 0);
+          recaudadoUSD = Number(item.total_recaudado || 0);
+          gastosUSD = Number(item.total_gastos || 0);
+        } else if (moneda === "COP") {
+          prestadoCOP = Number(item.total_prestado || 0);
+          recaudadoCOP = Number(item.total_recaudado || 0);
+          gastosCOP = Number(item.total_gastos || 0);
+        }
       });
 
       const netoUSD = recaudadoUSD - gastosUSD - prestadoUSD;
       const netoCOP = recaudadoCOP - gastosCOP - prestadoCOP;
+
+      const { count: countActivos } = await supabase
+        .from("prestamos")
+        .select("*", { count: "exact", head: true })
+        .eq("estado", "activo");
 
       setResumen({
         prestadoHoy: { USD: prestadoUSD, COP: prestadoCOP },
@@ -321,7 +312,7 @@ export default function IndexScreen() {
           USD: netoUSD < 0 ? Math.abs(netoUSD) : 0,
           COP: netoCOP < 0 ? Math.abs(netoCOP) : 0,
         },
-        activos: prestamos?.length || 0,
+        activos: countActivos || 0,
       });
     } catch (e) {
       console.log("Error en cargarResumenGeneral:", e);
@@ -330,54 +321,40 @@ export default function IndexScreen() {
 
   const cargarResumenPersonal = async (cedulaEmpleado: string) => {
     try {
-      const hoy = new Date().toISOString().split("T")[0];
-      const mañana = new Date(Date.now() + 86400000)
-        .toISOString()
-        .split("T")[0];
+      const { data, error } = await supabase.rpc("obtener_resumen_personal", {
+        p_cedula: cedulaEmpleado,
+      });
 
-      const { data: prestamos } = await supabase
-        .from("prestamos")
-        .select("monto_total, moneda, fecha_prestamo")
-        .eq("registrado_por_cedula", cedulaEmpleado)
-        .gte("fecha_prestamo", `${hoy} 00:00:00`)
-        .lt("fecha_prestamo", `${mañana} 00:00:00`);
+      if (error) {
+        console.log("Error en RPC obtener_resumen_personal:", error);
+        return;
+      }
 
       let prestadoUSD = 0;
       let prestadoCOP = 0;
-      prestamos?.forEach((item) => {
-        const monto = Number(item.monto_total || 0);
-        if (item.moneda === "USD") prestadoUSD += monto;
-        if (item.moneda === "COP") prestadoCOP += monto;
-      });
-
-      const { data: pagos } = await supabase
-        .from("pagos")
-        .select("monto_pagado, moneda, fecha_pago")
-        .eq("registrado_por_cedula", cedulaEmpleado)
-        .gte("fecha_pago", `${hoy} 00:00:00`)
-        .lt("fecha_pago", `${mañana} 00:00:00`);
-
       let recaudadoUSD = 0;
       let recaudadoCOP = 0;
-      pagos?.forEach((item) => {
-        const monto = Number(item.monto_pagado || 0);
-        if (item.moneda === "USD") recaudadoUSD += monto;
-        if (item.moneda === "COP") recaudadoCOP += monto;
-      });
-
-      const { data: gastos } = await supabase
-        .from("gastos")
-        .select("monto, moneda, fecha_gasto")
-        .eq("registrado_por_cedula", cedulaEmpleado)
-        .gte("fecha_gasto", `${hoy} 00:00:00`)
-        .lt("fecha_gasto", `${mañana} 00:00:00`);
-
       let gastosUSD = 0;
       let gastosCOP = 0;
-      gastos?.forEach((item) => {
-        const monto = Number(item.monto || 0);
-        if (item.moneda === "USD") gastosUSD += monto;
-        if (item.moneda === "COP") gastosCOP += monto;
+      let cantidadActivos = 0;
+
+      data?.forEach((item: any) => {
+        const moneda = (item.moneda || "").toUpperCase();
+        const prestado = Number(item.total_prestado || 0);
+        const recaudado = Number(item.total_recaudado || 0);
+        const gastos = Number(item.total_gastos || 0);
+
+        if (moneda === "USD") {
+          prestadoUSD = prestado;
+          recaudadoUSD = recaudado;
+          gastosUSD = gastos;
+        } else if (moneda === "COP") {
+          prestadoCOP = prestado;
+          recaudadoCOP = recaudado;
+          gastosCOP = gastos;
+        }
+
+        cantidadActivos += Number(item.cantidad_prestamos || 0);
       });
 
       const netoUSD = recaudadoUSD - gastosUSD - prestadoUSD;
@@ -395,7 +372,7 @@ export default function IndexScreen() {
           USD: netoUSD < 0 ? Math.abs(netoUSD) : 0,
           COP: netoCOP < 0 ? Math.abs(netoCOP) : 0,
         },
-        activos: prestamos?.length || 0,
+        activos: cantidadActivos,
       });
     } catch (e) {
       console.log("Error en cargarResumenPersonal:", e);
@@ -408,7 +385,7 @@ export default function IndexScreen() {
       .select("saldo_actual, moneda");
     let usd = 0;
     let cop = 0;
-    data?.forEach((item) => {
+    data?.forEach((item: any) => {
       const saldo = Number(item.saldo_actual || 0);
       if (item.moneda === "USD") usd += saldo;
       if (item.moneda === "COP") cop += saldo;
@@ -436,7 +413,7 @@ export default function IndexScreen() {
       .select("monto, moneda");
     let usd = 0;
     let cop = 0;
-    gastos?.forEach((item) => {
+    gastos?.forEach((item: any) => {
       if (item.moneda === "USD") usd += Number(item.monto || 0);
       if (item.moneda === "COP") cop += Number(item.monto || 0);
     });
@@ -445,7 +422,6 @@ export default function IndexScreen() {
 
   const cargarCobrosYGanancias = async () => {
     try {
-      // 1. Consultar directamente los pagos reales registrados
       const { data: pagosData, error: pagosError } = await supabase
         .from("pagos")
         .select("monto_pagado, moneda");
@@ -454,54 +430,32 @@ export default function IndexScreen() {
       let cobrosCOP = 0;
 
       if (!pagosError && pagosData) {
-        pagosData.forEach((pago: any) => {
-          const monto = Number(pago.monto_pagado || 0);
-          // Validar la moneda del pago (soporta 'USD', 'usd', 'COP', 'cop')
-          const monedaPago = (pago.moneda || "").toUpperCase();
-
-          if (monedaPago === "USD") {
-            cobrosUSD += monto;
-          } else if (monedaPago === "COP") {
-            cobrosCOP += monto;
-          }
+        pagosData.forEach((item: any) => {
+          const moneda = (item.moneda || "").toUpperCase();
+          const monto = Number(item.monto_pagado || 0);
+          if (moneda === "USD") cobrosUSD += monto;
+          else if (moneda === "COP") cobrosCOP += monto;
         });
       }
 
-      // Actualizar los estados de cobros para que se muestren en la tarjeta de Cobros
       setTotalCobros({ USD: cobrosUSD, COP: cobrosCOP });
 
-      // 2. Cálculo opcional de ganancias netas basado en los pagos y préstamos
-      const { data: pagosConPrestamo, error: errorPrestamo } =
-        await supabase.from("pagos").select(`
-          monto_pagado,
-          prestamos (
-            monto_total,
-            monto_prestado,
-            moneda
-          )
-        `);
+      const { data: gananciaData, error: gananciaError } = await supabase.rpc(
+        "obtener_ganancias_netas_generales",
+      );
 
       let netaUSD = 0;
       let netaCOP = 0;
 
-      if (!errorPrestamo && pagosConPrestamo) {
-        pagosConPrestamo.forEach((pago: any) => {
-          const prestamo = pago.prestamos;
-          if (prestamo) {
-            const montoPagado = Number(pago.monto_pagado || 0);
-            const montoTotal = Number(prestamo.monto_total || 0);
-            const montoPrestado = Number(prestamo.monto_prestado || 0);
+      if (!gananciaError && gananciaData) {
+        gananciaData.forEach((item: any) => {
+          const moneda = (item.moneda || "").toUpperCase();
+          const montoNeta = Number(item.ganancia_neta_final || 0);
 
-            if (montoTotal > 0) {
-              const gananciaProporcional =
-                montoPagado * ((montoTotal - montoPrestado) / montoTotal);
-
-              if (prestamo.moneda?.toUpperCase() === "USD") {
-                netaUSD += gananciaProporcional;
-              } else if (prestamo.moneda?.toUpperCase() === "COP") {
-                netaCOP += gananciaProporcional;
-              }
-            }
+          if (moneda === "USD") {
+            netaUSD = montoNeta;
+          } else if (moneda === "COP") {
+            netaCOP = montoNeta;
           }
         });
       }
@@ -513,6 +467,34 @@ export default function IndexScreen() {
       console.log("Error en cargarCobrosYGanancias:", e);
     }
   };
+
+  useEffect(() => {
+    const intervalo = setInterval(() => {
+      const ahora = new Date();
+      const horaCaracas = ahora.toLocaleString("en-US", {
+        timeZone: "America/Caracas",
+        hour: "numeric",
+        minute: "numeric",
+        hour12: false,
+      });
+
+      if (horaCaracas === "1:00" || horaCaracas === "01:00") {
+        verificarSesionYDatos();
+      }
+    }, 60000);
+
+    return () => clearInterval(intervalo);
+  }, [verificarSesionYDatos]);
+
+  useFocusEffect(
+    useCallback(() => {
+      verificarSesionYDatos();
+    }, [verificarSesionYDatos]),
+  );
+
+  useEffect(() => {
+    verificarSesionYDatos();
+  }, [verificarSesionYDatos]);
 
   if (loading) {
     return (
@@ -541,8 +523,15 @@ export default function IndexScreen() {
     <ScrollView
       style={styles.mainContainer}
       contentContainerStyle={styles.scrollContent}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => verificarSesionYDatos(true)}
+          colors={["#6366f1"]}
+          tintColor="#6366f1"
+        />
+      }
     >
-      {/* El resto de tu interfaz visual se mantiene exactamente igual */}
       <View style={styles.wrapper}>
         <Text style={styles.headerTitle}>
           📊 Panel de Control {userRole ? `(${userRole.toUpperCase()})` : ""}
@@ -689,7 +678,7 @@ export default function IndexScreen() {
             <View style={styles.menuGrid}>
               <TouchableOpacity
                 style={[styles.menuCard, { borderLeftColor: "#a855f7" }]}
-                onPress={() => router.push("/(tabs)/clientes")}
+                onPress={() => router.push("/(tabs)/clientes" as any)}
               >
                 <Text style={styles.menuEmoji}>👤</Text>
                 <Text style={styles.menuTitle}>Clientes</Text>
@@ -704,7 +693,7 @@ export default function IndexScreen() {
 
               <TouchableOpacity
                 style={[styles.menuCard, { borderLeftColor: "#f43f5e" }]}
-                onPress={() => router.push("/(tabs)/lista-prestamos")}
+                onPress={() => router.push("/(tabs)/lista-prestamos" as any)}
               >
                 <Text style={styles.menuEmoji}>💸</Text>
                 <Text style={styles.menuTitle}>Cobros</Text>
@@ -725,7 +714,7 @@ export default function IndexScreen() {
 
               <TouchableOpacity
                 style={[styles.menuCard, { borderLeftColor: "#4ade80" }]}
-                onPress={() => router.push("/(tabs)/caja")}
+                onPress={() => router.push("/(tabs)/caja" as any)}
               >
                 <Text style={styles.menuEmoji}>💰</Text>
                 <Text style={styles.menuTitle}>Caja / Bancos</Text>
@@ -750,7 +739,7 @@ export default function IndexScreen() {
 
               <TouchableOpacity
                 style={[styles.menuCard, { borderLeftColor: "#fbbf24" }]}
-                onPress={() => router.push("/(tabs)/gastos")}
+                onPress={() => router.push("/(tabs)/gastos" as any)}
               >
                 <Text style={styles.menuEmoji}>📑</Text>
                 <Text style={styles.menuTitle}>Gastos & Nómina</Text>
@@ -773,7 +762,7 @@ export default function IndexScreen() {
 
               <TouchableOpacity
                 style={[styles.menuCard, { borderLeftColor: "#6366f1" }]}
-                onPress={() => router.push("/(tabs)/empleados")}
+                onPress={() => router.push("/(tabs)/empleados" as any)}
               >
                 <Text style={styles.menuEmoji}>👥</Text>
                 <Text style={styles.menuTitle}>Empleados</Text>
@@ -785,7 +774,7 @@ export default function IndexScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity
-                onPress={() => router.push("/(tabs)/caja")}
+                onPress={() => router.push("/(tabs)/caja" as any)}
                 style={[styles.menuCard, { borderLeftColor: "#10b981" }]}
               >
                 <Text style={styles.menuEmoji}>📈</Text>
@@ -793,13 +782,13 @@ export default function IndexScreen() {
                 <Text style={styles.saldoText}>
                   USD:{" "}
                   <Text style={styles.boldGanancia}>
-                    ${gananciasNeta.USD.toLocaleString()}
+                    ${Number(gananciasNeta.USD.toFixed(0)).toLocaleString()}
                   </Text>
                 </Text>
                 <Text style={styles.saldoText}>
                   COP:{" "}
                   <Text style={styles.boldGanancia}>
-                    ${gananciasNeta.COP.toLocaleString()}
+                    ${Number(gananciasNeta.COP.toFixed(0)).toLocaleString()}
                   </Text>
                 </Text>
                 <Text style={styles.menuDesc}>

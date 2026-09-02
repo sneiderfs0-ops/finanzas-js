@@ -4,19 +4,19 @@ const { width } = Dimensions.get("window");
 const isMobile = width < 768;
 
 export const colors = {
-  background: "#0f172a", // Fondo oscuro principal
-  cardBackground: "#1e293b", // Fondo de tarjetas y contenedores
+  background: "#0d1424", // Fondo oscuro principal
+  cardBackground: "#293143", // Fondo de tarjetas y contenedores
   border: "#334155", // Bordes sutiles
   textPrimary: "#f8fafc", // Texto principal blanco/claro
-  textSecondary: "#94a3b8", // Texto secundario gris claro
-  primary: "#6366f1", // Azul/Índigo llamativo (botones)
+  textSecondary: "#bcc3cc", // Texto secundario gris claro
+  primary: "#4f52f2", // Azul/Índigo llamativo (botones)
   primaryHover: "#4f46e5",
   accentBlue: "#38bdf8", // Cian brillante
   accentGreen: "#4ade80", // Verde esmeralda brillante
   accentRed: "#f43f5e", // Rojo coral
   accentYellow: "#fbbf24", // Amarillo ámbar
   inputBackground: "#f8fafc", // Fondo para inputs en formularios claros si aplica
-  inputDarkBg: "#0f172a", // Fondo de inputs en modo oscuro
+  inputDarkBg: "#0d1424", // Fondo de inputs en modo oscuro
 };
 
 export const globalStyles = StyleSheet.create({
@@ -32,7 +32,7 @@ export const globalStyles = StyleSheet.create({
     flexGrow: 1,
     backgroundColor: colors.background,
     padding: isMobile ? 16 : 20,
-    paddingBottom: 40, // Espacio extra abajo para que el teclado no tape el último input
+    paddingBottom: 80, // Espacio extra abajo para que el teclado no tape el último input
     alignItems: "center",
     justifyContent: isMobile ? "flex-start" : "center",
   },

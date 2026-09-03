@@ -347,12 +347,13 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     marginBottom: 20,
     textAlign: "center",
+    color: "#000000",
   },
   label: {
     fontSize: 14,
     fontWeight: "600",
     marginBottom: 6,
-    color: "#94a3b8",
+    color: "#000000",
   },
   input: {
     backgroundColor: "#ffffff",
@@ -385,7 +386,7 @@ const styles = StyleSheet.create({
   },
   infoRutaText: {
     fontSize: 14,
-    color: "#475569",
+    color: "#061429",
   },
   boldText: {
     fontWeight: "bold",

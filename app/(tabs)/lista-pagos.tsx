@@ -375,7 +375,6 @@ export default function PagosHabilesScreen() {
         Cliente: item.clientes
           ? `${item.clientes.nombres} ${item.clientes.apellidos}`
           : "Desconocido",
-        Cédula: item.cedula,
         "Monto Prestado": Number(item.monto_prestado),
         "Moneda Pago": item.moneda_pago,
         "Interés (%)": item.tasa_interes,
@@ -472,7 +471,7 @@ export default function PagosHabilesScreen() {
                     <Text style={styles.headerText}>FECHA</Text>
                   </View>
                   <View style={[styles.gridCell, styles.colCliente]}>
-                    <Text style={styles.headerText}>CLIENTE / CÉDULA</Text>
+                    <Text style={styles.headerText}>CLIENTE</Text>
                   </View>
                   <View style={[styles.gridCell, styles.colMonto]}>
                     <Text style={styles.headerText}>MONTO PRESTADO</Text>

@@ -9,6 +9,7 @@ import {
   Alert,
   Modal,
   Platform,
+  KeyboardAvoidingView,
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import { supabase } from "../../supabase";
@@ -65,7 +66,6 @@ export default function CrearClienteModal({
 
       if (adminData || secData) {
         setEsAdminOSecretaria(true);
-        // Admin o Secretaría ven TODAS las rutas y pueden elegir
         const { data: rutasData, error: rutasError } = await supabase
           .from("rutas")
           .select("*");
@@ -75,7 +75,6 @@ export default function CrearClienteModal({
           setRutaSeleccionada(rutasData[0].id);
         }
       } else {
-        // 2. Si es Empleado, buscamos su ruta asignada automáticamente sin mostrar selector
         setEsAdminOSecretaria(false);
         const { data: empData } = await supabase
           .from("empleados")
@@ -95,7 +94,6 @@ export default function CrearClienteModal({
               .filter(Boolean);
             setRutasDisponibles(listadoRutas);
             if (listadoRutas.length > 0) {
-              // Asignación automática de su ruta
               setRutaSeleccionada(listadoRutas[0].id);
             }
           }
@@ -106,7 +104,6 @@ export default function CrearClienteModal({
     }
   };
 
-  // Validaciones
   const handleSoloLetras = (
     text: string,
     setter: React.Dispatch<React.SetStateAction<string>>,
@@ -169,7 +166,7 @@ export default function CrearClienteModal({
         telefono: telefono.trim(),
         direccion: direccion.trim(),
         registrado_por_cedula: cedulaUsuarioLogueado,
-        ruta_id: rutaSeleccionada, // Se asigna automáticamente (sea elegida o la del empleado)
+        ruta_id: rutaSeleccionada,
       };
 
       const { error } = await supabase
@@ -203,130 +200,140 @@ export default function CrearClienteModal({
   };
 
   return (
-    <ScrollView
-      style={[
-        styles.baseContainer,
-        Platform.OS === "android" && styles.androidContainer,
-      ]}
-      contentContainerStyle={styles.container}
-      nestedScrollEnabled={true}
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={{ flex: 1 }}
     >
-      <Text style={[styles.title, { color: Colors[colorScheme].text }]}>
-        📝 Registrar Nuevo Cliente
-      </Text>
-
-      {/* Selector de Rutas SOLO visible para Administradores y Secretarias */}
-      {esAdminOSecretaria && (
-        <View style={styles.pickerContainer}>
-          <Text style={styles.label}>Asignar a Ruta:</Text>
-          <View style={styles.pickerWrapper}>
-            <Picker
-              selectedValue={rutaSeleccionada}
-              onValueChange={(itemValue) => setRutaSeleccionada(itemValue)}
-              style={styles.picker}
-            >
-              {rutasDisponibles.length > 0 ? (
-                rutasDisponibles.map((ruta) => (
-                  <Picker.Item
-                    key={ruta.id}
-                    label={ruta.nombre_ruta}
-                    value={ruta.id}
-                  />
-                ))
-              ) : (
-                <Picker.Item label="No hay rutas disponibles" value="" />
-              )}
-            </Picker>
-          </View>
-        </View>
-      )}
-
-      {/* Si es empleado, podemos mostrar un texto informativo sutil de la ruta asignada */}
-      {!esAdminOSecretaria && rutasDisponibles.length > 0 && (
-        <View style={styles.infoRutaContainer}>
-          <Text style={styles.infoRutaText}>
-            📍 Ruta asignada:{" "}
-            <Text style={styles.boldText}>
-              {rutasDisponibles[0].nombre_ruta}
-            </Text>
-          </Text>
-        </View>
-      )}
-
-      <Text style={styles.label}>Nombres</Text>
-      <TextInput
-        style={styles.input}
-        value={nombres}
-        onChangeText={(text) => handleSoloLetras(text, setNombres)}
-      />
-
-      <Text style={styles.label}>Apellidos</Text>
-      <TextInput
-        style={styles.input}
-        value={apellidos}
-        onChangeText={(text) => handleSoloLetras(text, setApellidos)}
-      />
-
-      <Text style={styles.label}>Teléfono</Text>
-      <TextInput
-        style={styles.input}
-        value={telefono}
-        onChangeText={(text) => handleSoloNumeros(text, setTelefono)}
-        keyboardType="numeric"
-      />
-
-      <Text style={styles.label}>Dirección</Text>
-      <TextInput
-        style={styles.input}
-        value={direccion}
-        onChangeText={setDireccion}
-      />
-
-      <TouchableOpacity
-        style={[styles.btnGuardar, loading && { opacity: 0.7 }]}
-        onPress={handleCrearCliente}
-        disabled={loading}
+      <ScrollView
+        style={styles.baseContainer}
+        contentContainerStyle={styles.container}
+        nestedScrollEnabled={true}
+        keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.btnText}>
-          {loading ? "Guardando..." : "Guardar Cliente"}
+        <Text style={[styles.title, { color: Colors[colorScheme].text }]}>
+          📝 Registrar Nuevo Cliente
         </Text>
-      </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.btnClose}
-        onPress={() => (onClose ? onClose() : router.replace("/"))}
-      >
-        <Text style={styles.btnCloseText}>Cancelar</Text>
-      </TouchableOpacity>
-
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={successModalVisible}
-      >
-        <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.successModalContent,
-              { backgroundColor: Colors[colorScheme].background },
-            ]}
-          >
-            <Text style={styles.successIcon}>🎉</Text>
-            <Text
-              style={[styles.successTitle, { color: Colors[colorScheme].text }]}
-            >
-              ¡Cliente Registrado!
-            </Text>
-            <TouchableOpacity
-              style={styles.btnSuccessOk}
-              onPress={handleCerrarExito}
-            >
-              <Text style={styles.btnText}>Aceptar</Text>
-            </TouchableOpacity>
+        {esAdminOSecretaria && (
+          <View style={styles.pickerContainer}>
+            <Text style={styles.label}>Asignar a Ruta:</Text>
+            <View style={styles.pickerWrapper}>
+              <Picker
+                selectedValue={rutaSeleccionada}
+                onValueChange={(itemValue) => setRutaSeleccionada(itemValue)}
+                style={styles.picker}
+                dropdownIconColor="#000000"
+              >
+                {rutasDisponibles.length > 0 ? (
+                  rutasDisponibles.map((ruta) => (
+                    <Picker.Item
+                      key={ruta.id}
+                      label={ruta.nombre_ruta}
+                      value={ruta.id}
+                      color="#000000"
+                    />
+                  ))
+                ) : (
+                  <Picker.Item
+                    label="No hay rutas disponibles"
+                    value=""
+                    color="#000000"
+                  />
+                )}
+              </Picker>
+            </View>
           </View>
-        </View>
-      </Modal>
-    </ScrollView>
+        )}
+
+        {!esAdminOSecretaria && rutasDisponibles.length > 0 && (
+          <View style={styles.infoRutaContainer}>
+            <Text style={styles.infoRutaText}>
+              📍 Ruta asignada:{" "}
+              <Text style={styles.boldText}>
+                {rutasDisponibles[0].nombre_ruta}
+              </Text>
+            </Text>
+          </View>
+        )}
+
+        <Text style={styles.label}>Nombres</Text>
+        <TextInput
+          style={styles.input}
+          value={nombres}
+          onChangeText={(text) => handleSoloLetras(text, setNombres)}
+        />
+
+        <Text style={styles.label}>Apellidos</Text>
+        <TextInput
+          style={styles.input}
+          value={apellidos}
+          onChangeText={(text) => handleSoloLetras(text, setApellidos)}
+        />
+
+        <Text style={styles.label}>Teléfono</Text>
+        <TextInput
+          style={styles.input}
+          value={telefono}
+          onChangeText={(text) => handleSoloNumeros(text, setTelefono)}
+          keyboardType="numeric"
+        />
+
+        <Text style={styles.label}>Dirección</Text>
+        <TextInput
+          style={styles.input}
+          value={direccion}
+          onChangeText={setDireccion}
+        />
+
+        <TouchableOpacity
+          style={[styles.btnGuardar, loading && { opacity: 0.7 }]}
+          onPress={handleCrearCliente}
+          disabled={loading}
+        >
+          <Text style={styles.btnText}>
+            {loading ? "Guardando..." : "Guardar Cliente"}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.btnClose}
+          onPress={() => (onClose ? onClose() : router.replace("/"))}
+        >
+          <Text style={styles.btnCloseText}>Cancelar</Text>
+        </TouchableOpacity>
+
+        <Modal
+          animationType="fade"
+          transparent={true}
+          visible={successModalVisible}
+        >
+          <View style={styles.modalOverlay}>
+            <View
+              style={[
+                styles.successModalContent,
+                { backgroundColor: Colors[colorScheme].background },
+              ]}
+            >
+              <Text style={styles.successIcon}>🎉</Text>
+              <Text
+                style={[
+                  styles.successTitle,
+                  { color: Colors[colorScheme].text },
+                ]}
+              >
+                ¡Cliente Registrado!
+              </Text>
+              <TouchableOpacity
+                style={styles.btnSuccessOk}
+                onPress={handleCerrarExito}
+              >
+                <Text style={styles.btnText}>Aceptar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -334,20 +341,17 @@ const styles = StyleSheet.create({
   baseContainer: {
     flex: 1,
   },
-  androidContainer: {
-    flexGrow: 1,
-  },
   container: {
     padding: 20,
     flexGrow: 1,
     justifyContent: "center",
+    paddingBottom: 60, // Espacio extra de scroll para evitar que el teclado cubra los botones
   },
   title: {
     fontSize: 20,
     fontWeight: "bold",
     marginBottom: 20,
     textAlign: "center",
-    color: "#000000",
   },
   label: {
     fontSize: 14,
@@ -375,6 +379,7 @@ const styles = StyleSheet.create({
   picker: {
     height: 50,
     width: "100%",
+    color: "#000000",
   },
   infoRutaContainer: {
     backgroundColor: "#f1f5f9",

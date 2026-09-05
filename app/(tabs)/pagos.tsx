@@ -9,6 +9,8 @@ import {
   ActivityIndicator,
   useWindowDimensions,
   Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { supabase } from "../../supabase";
 
@@ -38,6 +40,7 @@ interface Prestamo {
   estado: string;
   fecha_inicio: string;
   monto_prestado?: number;
+  fecha_prestamo?: string;
 }
 
 export default function CrearPagoScreen({ route }: any) {
@@ -374,7 +377,6 @@ export default function CrearPagoScreen({ route }: any) {
       registrado_por_cedula: cedulaUsuarioActual,
     };
 
-    // CORRECCIÓN: Usar 'fecha_pago' en lugar de 'created_at' para que coincida con tu base de datos
     if (usarFechaManual && usuarioActual.tipo === "Administrador") {
       datosPago.fecha_pago = `${fechaManual}T00:00:00`;
     }
@@ -417,508 +419,510 @@ export default function CrearPagoScreen({ route }: any) {
   );
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={[
-        styles.contentContainer,
-        isWebOrTablet && styles.contentContainerWeb,
-      ]}
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
     >
-      <View style={[styles.mainCard, isWebOrTablet && styles.mainCardWeb]}>
-        <Text style={styles.title}>Registrar Cobro / Pago</Text>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={[
+          styles.contentContainer,
+          isWebOrTablet && styles.contentContainerWeb,
+        ]}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={[styles.mainCard, isWebOrTablet && styles.mainCardWeb]}>
+          <Text style={styles.title}>Registrar Cobro / Pago</Text>
 
-        {usuarioActual && (
-          <View style={styles.userCard}>
-            <Text style={styles.userCardTitle}>
-              Registrado por ({usuarioActual.tipo}):
-            </Text>
-            <Text style={styles.userCardText}>
-              {usuarioActual.nombreCompleto}
-            </Text>
-          </View>
-        )}
-
-        <Text style={styles.label}>1. Cliente</Text>
-        <TouchableOpacity
-          style={styles.dropdownTrigger}
-          activeOpacity={0.7}
-          onPress={() => setModalClienteVisible(true)}
-        >
-          {clienteObjetoSeleccionado ? (
-            <View style={{ flex: 1 }}>
-              <Text style={styles.dropdownTriggerTitle}>
-                {clienteObjetoSeleccionado.nombres}{" "}
-                {clienteObjetoSeleccionado.apellidos}
+          {usuarioActual && (
+            <View style={styles.userCard}>
+              <Text style={styles.userCardTitle}>
+                Registrado por ({usuarioActual.tipo}):
               </Text>
-              <Text style={styles.dropdownTriggerSubtitle}>
-                Cédula: {clienteObjetoSeleccionado.cedula}
+              <Text style={styles.userCardText}>
+                {usuarioActual.nombreCompleto}
               </Text>
             </View>
-          ) : (
-            <Text style={styles.dropdownTriggerPlaceholder}>
-              Seleccionar cliente...
-            </Text>
           )}
-          <Text style={styles.dropdownTriggerIcon}>▼</Text>
-        </TouchableOpacity>
 
-        <Text style={styles.label}>2. Préstamo Activo</Text>
-        <TouchableOpacity
-          style={[
-            styles.dropdownTrigger,
-            !clienteSeleccionado && { opacity: 0.6 },
-          ]}
-          activeOpacity={0.7}
-          disabled={!clienteSeleccionado}
-          onPress={() => setModalPrestamoVisible(true)}
-        >
-          {prestamoSeleccionado ? (
-            <View style={{ flex: 1 }}>
-              <Text style={styles.dropdownTriggerTitle}>
-                Préstamo en {prestamoSeleccionado.moneda} - Saldo: ${" "}
-                {formatearSinDecimales(
-                  prestamoSeleccionado.monto_prestado || 0,
-                )}
-              </Text>
-              <Text style={styles.dropdownTriggerSubtitle}>
-                Cuota: ${" "}
-                {formatearSinDecimales(prestamoSeleccionado.valor_cuota || 0)} (
-                {prestamoSeleccionado.frecuencia})
-              </Text>
-            </View>
-          ) : (
-            <Text style={styles.dropdownTriggerPlaceholder}>
-              {clienteSeleccionado
-                ? "Seleccionar préstamo activo..."
-                : "Primero seleccione un cliente"}
-            </Text>
-          )}
-          <Text style={styles.dropdownTriggerIcon}>▼</Text>
-        </TouchableOpacity>
-
-        <Text style={styles.label}>
-          3. ¿En qué moneda realiza el pago el cliente?
-        </Text>
-        <View style={styles.rowSelector}>
-          {(["COP", "USD"] as const).map((m) => (
-            <TouchableOpacity
-              key={m}
-              style={[
-                styles.selectChip,
-                monedaPago === m && styles.selectChipActive,
-              ]}
-              onPress={() => cambiarMonedaPago(m)}
-            >
-              <Text
-                style={[
-                  styles.selectChipTxt,
-                  monedaPago === m && styles.selectChipTxtActive,
-                ]}
-              >
-                {m === "COP" ? "Pesos (COP)" : "Dólares (USD)"}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {monedaPago !== monedaPrestamo && (
+          <Text style={styles.label}>1. Cliente</Text>
           <TouchableOpacity
-            style={styles.tasaBanner}
-            onPress={() => setModalTasaVisible(true)}
+            style={styles.dropdownTrigger}
+            activeOpacity={0.7}
+            onPress={() => setModalClienteVisible(true)}
           >
-            <Text style={styles.tasaBannerText}>
-              💱 Tasa aplicada:{" "}
-              <Text style={styles.bold}>
-                1 USD = $ {tasaCambioCopPorUsd} COP
-              </Text>{" "}
-              (Click para editar)
-            </Text>
+            {clienteObjetoSeleccionado ? (
+              <View style={{ flex: 1 }}>
+                <Text style={styles.dropdownTriggerTitle}>
+                  {clienteObjetoSeleccionado.nombres}{" "}
+                  {clienteObjetoSeleccionado.apellidos}
+                </Text>
+              </View>
+            ) : (
+              <Text style={styles.dropdownTriggerPlaceholder}>
+                Seleccionar cliente...
+              </Text>
+            )}
+            <Text style={styles.dropdownTriggerIcon}>▼</Text>
           </TouchableOpacity>
-        )}
 
-        <Text style={styles.label}>4. Método de Cobro</Text>
-        <View style={styles.rowSelector}>
-          {[
-            { id: "efectivo", label: `Efectivo (${monedaPago})` },
-            { id: "transferencia", label: `Transferencia (${monedaPago})` },
-          ].map((t) => (
-            <TouchableOpacity
-              key={t.id}
-              style={[
-                styles.selectChip,
-                tipoPago === t.id && styles.selectChipActive,
-              ]}
-              onPress={() => setTipoPago(t.id as any)}
-            >
-              <Text
+          <Text style={styles.label}>2. Préstamo Activo</Text>
+          <TouchableOpacity
+            style={[
+              styles.dropdownTrigger,
+              !clienteSeleccionado && { opacity: 0.6 },
+            ]}
+            activeOpacity={0.7}
+            disabled={!clienteSeleccionado}
+            onPress={() => setModalPrestamoVisible(true)}
+          >
+            {prestamoSeleccionado ? (
+              <View style={{ flex: 1 }}>
+                <Text style={styles.dropdownTriggerTitle}>
+                  Préstamo en {prestamoSeleccionado.moneda} - Saldo: ${" "}
+                  {formatearSinDecimales(
+                    prestamoSeleccionado.monto_prestado || 0,
+                  )}
+                </Text>
+                <Text style={styles.dropdownTriggerSubtitle}>
+                  Cuota: ${" "}
+                  {formatearSinDecimales(prestamoSeleccionado.valor_cuota || 0)}{" "}
+                  ({prestamoSeleccionado.frecuencia})
+                </Text>
+              </View>
+            ) : (
+              <Text style={styles.dropdownTriggerPlaceholder}>
+                {clienteSeleccionado
+                  ? "Seleccionar préstamo activo..."
+                  : "Primero seleccione un cliente"}
+              </Text>
+            )}
+            <Text style={styles.dropdownTriggerIcon}>▼</Text>
+          </TouchableOpacity>
+
+          <Text style={styles.label}>
+            3. ¿En qué moneda realiza el pago el cliente?
+          </Text>
+          <View style={styles.rowSelector}>
+            {(["COP", "USD"] as const).map((m) => (
+              <TouchableOpacity
+                key={m}
                 style={[
-                  styles.selectChipTxt,
-                  tipoPago === t.id && styles.selectChipTxtActive,
+                  styles.selectChip,
+                  monedaPago === m && styles.selectChipActive,
                 ]}
+                onPress={() => cambiarMonedaPago(m)}
               >
-                {t.label}
+                <Text
+                  style={[
+                    styles.selectChipTxt,
+                    monedaPago === m && styles.selectChipTxtActive,
+                  ]}
+                >
+                  {m === "COP" ? "Pesos (COP)" : "Dólares (USD)"}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {monedaPago !== monedaPrestamo && (
+            <TouchableOpacity
+              style={styles.tasaBanner}
+              onPress={() => setModalTasaVisible(true)}
+            >
+              <Text style={styles.tasaBannerText}>
+                💱 Tasa aplicada:{" "}
+                <Text style={styles.bold}>
+                  1 USD = $ {tasaCambioCopPorUsd} COP
+                </Text>{" "}
+                (Click para editar)
               </Text>
             </TouchableOpacity>
-          ))}
-        </View>
+          )}
 
-        <Text style={styles.label}>
-          5. Monto Entregado Físicamente ({monedaPago})
-        </Text>
-        <TextInput
-          style={styles.input}
-          placeholder={`Monto en ${monedaPago}`}
-          value={montoFisico}
-          onChangeText={handleMontoChange}
-          keyboardType="numeric"
-          maxLength={15}
-          placeholderTextColor="#a4b0be"
-        />
+          <Text style={styles.label}>4. Método de Cobro</Text>
+          <View style={styles.rowSelector}>
+            {[
+              { id: "efectivo", label: `Efectivo (${monedaPago})` },
+              { id: "transferencia", label: `Transferencia (${monedaPago})` },
+            ].map((t) => (
+              <TouchableOpacity
+                key={t.id}
+                style={[
+                  styles.selectChip,
+                  tipoPago === t.id && styles.selectChipActive,
+                ]}
+                onPress={() => setTipoPago(t.id as any)}
+              >
+                <Text
+                  style={[
+                    styles.selectChipTxt,
+                    tipoPago === t.id && styles.selectChipTxtActive,
+                  ]}
+                >
+                  {t.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
 
-        <View style={styles.calcBox}>
-          <Text style={styles.calcTitle}>Resumen de Conversión y Cobro</Text>
-          <View style={styles.calcRow}>
-            <Text style={styles.calcText}>Saldo Actual del Préstamo:</Text>
-            <Text style={styles.bold}>
-              ${" "}
-              {prestamoSeleccionado
-                ? formatearSinDecimales(prestamoSeleccionado.saldo_pendiente)
-                : "0"}{" "}
-              {monedaPrestamo}
-            </Text>
-          </View>
-          <View style={styles.calcRow}>
-            <Text style={styles.calcText}>Monto Recibido ({monedaPago}):</Text>
-            <Text style={styles.bold}>
-              $ {formatearSinDecimales(montoFisicoNum)} {monedaPago}
-            </Text>
-          </View>
-          {monedaPago !== monedaPrestamo && (
+          <Text style={styles.label}>
+            5. Monto Entregado Físicamente ({monedaPago})
+          </Text>
+          <TextInput
+            style={styles.input}
+            placeholder={`Monto en ${monedaPago}`}
+            value={montoFisico}
+            onChangeText={handleMontoChange}
+            keyboardType="numeric"
+            maxLength={15}
+            placeholderTextColor="#a4b0be"
+          />
+
+          <View style={styles.calcBox}>
+            <Text style={styles.calcTitle}>Resumen de Conversión y Cobro</Text>
             <View style={styles.calcRow}>
-              <Text style={styles.calcText}>
-                Equivalente Abonado al Préstamo:
-              </Text>
-              <Text style={styles.boldPrimary}>
-                $ {formatearSinDecimales(montoAplicadoPrestamo)}{" "}
+              <Text style={styles.calcText}>Saldo Actual del Préstamo:</Text>
+              <Text style={styles.bold}>
+                ${" "}
+                {prestamoSeleccionado
+                  ? formatearSinDecimales(prestamoSeleccionado.saldo_pendiente)
+                  : "0"}{" "}
                 {monedaPrestamo}
               </Text>
             </View>
-          )}
-          <View style={styles.calcRow}>
-            <Text style={styles.calcText}>Nuevo Saldo Resultante:</Text>
-            <Text style={styles.bold}>
-              ${" "}
-              {prestamoSeleccionado
-                ? formatearSinDecimales(
-                    Math.max(
-                      0,
-                      prestamoSeleccionado.saldo_pendiente -
-                        montoAplicadoPrestamo,
-                    ),
-                  )
-                : "0"}{" "}
-              {monedaPrestamo}
-            </Text>
-          </View>
-        </View>
-
-        {/* UBICACIÓN DEL CHECKBOX: JUSTO ARRIBA DEL BOTÓN REGISTRAR PAGO */}
-        {usuarioActual?.tipo === "Administrador" && (
-          <View style={styles.manualDateBox}>
-            <TouchableOpacity
-              style={styles.checkboxRow}
-              activeOpacity={0.8}
-              onPress={() => setUsarFechaManual(!usarFechaManual)}
-            >
-              <View
-                style={[
-                  styles.checkboxBox,
-                  usarFechaManual && styles.checkboxBoxChecked,
-                ]}
-              >
-                {usarFechaManual && <Text style={styles.checkboxTick}>✓</Text>}
-              </View>
-              <Text style={styles.checkboxLabel}>
-                📅 Registrar fecha de pago (Manual)
+            <View style={styles.calcRow}>
+              <Text style={styles.calcText}>
+                Monto Recibido ({monedaPago}):
               </Text>
-            </TouchableOpacity>
-
-            {usarFechaManual && (
-              <View style={{ marginTop: 10 }}>
-                <Text style={styles.subLabel}>
-                  Seleccione la fecha del pago:
+              <Text style={styles.bold}>
+                $ {formatearSinDecimales(montoFisicoNum)} {monedaPago}
+              </Text>
+            </View>
+            {monedaPago !== monedaPrestamo && (
+              <View style={styles.calcRow}>
+                <Text style={styles.calcText}>
+                  Equivalente Abonado al Préstamo:
                 </Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="2026-09-01"
-                  value={fechaManual}
-                  onChangeText={setFechaManual}
-                  placeholderTextColor="#94a3b8"
-                />
-                <Text style={styles.helperText}>
-                  Formato requerido: AAAA-MM-DD (Ej: 2026-05-15)
+                <Text style={styles.boldPrimary}>
+                  $ {formatearSinDecimales(montoAplicadoPrestamo)}{" "}
+                  {monedaPrestamo}
                 </Text>
               </View>
             )}
+            <View style={styles.calcRow}>
+              <Text style={styles.calcText}>Nuevo Saldo Resultante:</Text>
+              <Text style={styles.bold}>
+                ${" "}
+                {prestamoSeleccionado
+                  ? formatearSinDecimales(
+                      Math.max(
+                        0,
+                        prestamoSeleccionado.saldo_pendiente -
+                          montoAplicadoPrestamo,
+                      ),
+                    )
+                  : "0"}{" "}
+                {monedaPrestamo}
+              </Text>
+            </View>
           </View>
-        )}
 
-        <TouchableOpacity
-          style={[styles.button, loading && { opacity: 0.7 }]}
-          onPress={guardarPago}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Registrar Pago</Text>
+          {usuarioActual?.tipo === "Administrador" && (
+            <View style={styles.manualDateBox}>
+              <TouchableOpacity
+                style={styles.checkboxRow}
+                activeOpacity={0.8}
+                onPress={() => setUsarFechaManual(!usarFechaManual)}
+              >
+                <View
+                  style={[
+                    styles.checkboxBox,
+                    usarFechaManual && styles.checkboxBoxChecked,
+                  ]}
+                >
+                  {usarFechaManual && (
+                    <Text style={styles.checkboxTick}>✓</Text>
+                  )}
+                </View>
+                <Text style={styles.checkboxLabel}>
+                  📅 Registrar fecha de pago (Manual)
+                </Text>
+              </TouchableOpacity>
+
+              {usarFechaManual && (
+                <View style={{ marginTop: 10 }}>
+                  <Text style={styles.subLabel}>
+                    Seleccione la fecha del pago:
+                  </Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="2026-09-01"
+                    value={fechaManual}
+                    onChangeText={setFechaManual}
+                    placeholderTextColor="#94a3b8"
+                  />
+                  <Text style={styles.helperText}>
+                    Formato requerido: AAAA-MM-DD (Ej: 2026-05-15)
+                  </Text>
+                </View>
+              )}
+            </View>
           )}
-        </TouchableOpacity>
-      </View>
 
-      {/* MODAL TASA DE CAMBIO */}
-      <Modal
-        visible={modalTasaVisible}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => setModalTasaVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalExitoContainer, { maxWidth: 380 }]}>
-            <Text style={styles.modalExitoTitle}>Tasa de Cambio</Text>
-            <Text style={styles.modalExitoMessage}>
-              Ingrese la tasa de cambio actual (COP por 1 USD):
-            </Text>
-            <TextInput
-              style={[
-                styles.input,
-                {
-                  width: "100%",
-                  textAlign: "center",
-                  fontSize: 18,
-                  fontWeight: "bold",
-                },
-              ]}
-              placeholder="Ej: 4100"
-              keyboardType="numeric"
-              value={tasaInputTemp}
-              onChangeText={setTasaInputTemp}
-              autoFocus={true}
-              placeholderTextColor="#94a3b8"
-            />
-            <TouchableOpacity
-              style={styles.successButton}
-              onPress={() => {
-                if (tasaInputTemp && parseFloat(tasaInputTemp) > 0) {
-                  setTasaCambioCopPorUsd(tasaInputTemp);
-                  setModalTasaVisible(false);
-                } else {
-                  mostrarMensaje("error", "Ingrese una tasa válida.");
-                }
-              }}
-            >
-              <Text style={styles.successButtonText}>Guardar Tasa</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            style={[styles.button, loading && { opacity: 0.7 }]}
+            onPress={guardarPago}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.buttonText}>Registrar Pago</Text>
+            )}
+          </TouchableOpacity>
         </View>
-      </Modal>
 
-      {/* MODAL DE SELECCIÓN DE CLIENTE */}
-      <Modal
-        visible={modalClienteVisible}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => setModalClienteVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                Buscar y Seleccionar Cliente
+        {/* MODAL TASA DE CAMBIO */}
+        <Modal
+          visible={modalTasaVisible}
+          animationType="fade"
+          transparent={true}
+          onRequestClose={() => setModalTasaVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalExitoContainer, { maxWidth: 380 }]}>
+              <Text style={styles.modalExitoTitle}>Tasa de Cambio</Text>
+              <Text style={styles.modalExitoMessage}>
+                Ingrese la tasa de cambio actual (COP por 1 USD):
               </Text>
-              <TouchableOpacity
-                onPress={() => setModalClienteVisible(false)}
-                style={styles.closeBtn}
-              >
-                <Text style={styles.closeBtnText}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.searchBoxContainer}>
               <TextInput
-                style={styles.modalSearchInput}
-                placeholder="🔍 Escribe nombre o cédula..."
-                value={nombreBusqueda}
-                onChangeText={setNombreBusqueda}
-                placeholderTextColor="#94a3b8"
+                style={[
+                  styles.input,
+                  {
+                    width: "100%",
+                    textAlign: "center",
+                    fontSize: 18,
+                    fontWeight: "bold",
+                  },
+                ]}
+                placeholder="Ej: 4100"
+                keyboardType="numeric"
+                value={tasaInputTemp}
+                onChangeText={setTasaInputTemp}
                 autoFocus={true}
+                placeholderTextColor="#94a3b8"
               />
-            </View>
-            <ScrollView
-              style={styles.modalList}
-              contentContainerStyle={styles.modalListContent}
-            >
-              {clientesFiltrados.map((item) => {
-                const isSelected = clienteSeleccionado === item.cedula;
-                return (
-                  <TouchableOpacity
-                    key={item.cedula}
-                    style={[
-                      styles.modalClientCard,
-                      isSelected && styles.modalClientCardSelected,
-                    ]}
-                    onPress={() => handleSeleccionarCliente(item.cedula)}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        style={[
-                          styles.modalClientName,
-                          isSelected && styles.textWhite,
-                        ]}
-                      >
-                        {item.nombres} {item.apellidos}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.modalClientCedula,
-                          isSelected && styles.textWhiteSub,
-                        ]}
-                      >
-                        Cédula: {item.cedula}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* MODAL DE SELECCIÓN DE PRÉSTAMO */}
-      <Modal
-        visible={modalPrestamoVisible}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => setModalPrestamoVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Seleccionar Préstamo Activo</Text>
               <TouchableOpacity
-                onPress={() => setModalPrestamoVisible(false)}
-                style={styles.closeBtn}
+                style={styles.successButton}
+                onPress={() => {
+                  if (tasaInputTemp && parseFloat(tasaInputTemp) > 0) {
+                    setTasaCambioCopPorUsd(tasaInputTemp);
+                    setModalTasaVisible(false);
+                  } else {
+                    mostrarMensaje("error", "Ingrese una tasa válida.");
+                  }
+                }}
               >
-                <Text style={styles.closeBtnText}>✕</Text>
+                <Text style={styles.successButtonText}>Guardar Tasa</Text>
               </TouchableOpacity>
             </View>
-            <ScrollView
-              style={styles.modalList}
-              contentContainerStyle={styles.modalListContent}
-            >
-              {prestamosCliente.map((item) => {
-                const isSelected = prestamoSeleccionado?.id === item.id;
-
-                const formatearFecha = (fechaStr: string) => {
-                  if (!fechaStr) return "";
-                  const [anio, mes, dia] = fechaStr.split("T")[0].split("-");
-                  return `${dia}/${mes}/${anio}`;
-                };
-
-                return (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={[
-                      styles.modalClientCard,
-                      isSelected && styles.modalClientCardSelected,
-                    ]}
-                    onPress={() => {
-                      seleccionarPrestamo(item);
-                      setModalPrestamoVisible(false);
-                    }}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        style={[
-                          styles.modalClientName,
-                          isSelected && styles.textWhite,
-                        ]}
-                      >
-                        Prestado: ${" "}
-                        {formatearSinDecimales(item.monto_prestado || 0)}{" "}
-                        {item.moneda}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.modalClientCedula,
-                          isSelected && styles.textWhiteSub,
-                        ]}
-                      >
-                        Total: $ {formatearSinDecimales(item.monto_total)} |
-                        Pendiente: ${" "}
-                        {formatearSinDecimales(item.saldo_pendiente)}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.modalClientCedula,
-                          isSelected && styles.textWhiteSub,
-                        ]}
-                      >
-                        Cuota: $ {formatearSinDecimales(item.valor_cuota || 0)}{" "}
-                        ({item.frecuencia}) | Fecha:{" "}
-                        {formatearFecha(item.fecha_prestamo)}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
           </View>
-        </View>
-      </Modal>
+        </Modal>
 
-      {/* MODAL DE RESULTADO */}
-      <Modal
-        visible={modalResultadoVisible}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => setModalResultadoVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalExitoContainer}>
-            <View
-              style={[
-                styles.successIconContainer,
-                tipoResultado === "error" && styles.errorIconContainer,
-              ]}
-            >
-              <Text style={styles.successIconText}>
-                {tipoResultado === "exito" ? "✓" : "✕"}
-              </Text>
+        {/* MODAL DE SELECCIÓN DE CLIENTE */}
+        <Modal
+          visible={modalClienteVisible}
+          animationType="fade"
+          transparent={true}
+          onRequestClose={() => setModalClienteVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContainer}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>
+                  Buscar y Seleccionar Cliente
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setModalClienteVisible(false)}
+                  style={styles.closeBtn}
+                >
+                  <Text style={styles.closeBtnText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.searchBoxContainer}>
+                <TextInput
+                  style={styles.modalSearchInput}
+                  placeholder="🔍 Escribe nombre o cédula..."
+                  value={nombreBusqueda}
+                  onChangeText={setNombreBusqueda}
+                  placeholderTextColor="#94a3b8"
+                  autoFocus={true}
+                />
+              </View>
+              <ScrollView
+                style={styles.modalList}
+                contentContainerStyle={styles.modalListContent}
+              >
+                {clientesFiltrados.map((item) => {
+                  const isSelected = clienteSeleccionado === item.cedula;
+                  return (
+                    <TouchableOpacity
+                      key={item.cedula}
+                      style={[
+                        styles.modalClientCard,
+                        isSelected && styles.modalClientCardSelected,
+                      ]}
+                      onPress={() => handleSeleccionarCliente(item.cedula)}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text
+                          style={[
+                            styles.modalClientName,
+                            isSelected && styles.textWhite,
+                          ]}
+                        >
+                          {item.nombres} {item.apellidos}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
             </View>
-            <Text style={styles.modalExitoTitle}>
-              {tipoResultado === "exito" ? "¡Pago Registrado!" : "Atención"}
-            </Text>
-            <Text style={styles.modalExitoMessage}>{mensajeResultado}</Text>
-            <TouchableOpacity
-              style={[
-                styles.successButton,
-                tipoResultado === "error" && styles.errorButton,
-              ]}
-              onPress={() => setModalResultadoVisible(false)}
-            >
-              <Text style={styles.successButtonText}>Aceptar</Text>
-            </TouchableOpacity>
           </View>
-        </View>
-      </Modal>
-    </ScrollView>
+        </Modal>
+
+        {/* MODAL DE SELECCIÓN DE PRÉSTAMO */}
+        <Modal
+          visible={modalPrestamoVisible}
+          animationType="fade"
+          transparent={true}
+          onRequestClose={() => setModalPrestamoVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContainer}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>
+                  Seleccionar Préstamo Activo
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setModalPrestamoVisible(false)}
+                  style={styles.closeBtn}
+                >
+                  <Text style={styles.closeBtnText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+              <ScrollView
+                style={styles.modalList}
+                contentContainerStyle={styles.modalListContent}
+              >
+                {prestamosCliente.map((item) => {
+                  const isSelected = prestamoSeleccionado?.id === item.id;
+
+                  const formatearFecha = (fechaStr: string) => {
+                    if (!fechaStr) return "";
+                    const [anio, mes, dia] = fechaStr.split("T")[0].split("-");
+                    return `${dia}/${mes}/${anio}`;
+                  };
+
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={[
+                        styles.modalClientCard,
+                        isSelected && styles.modalClientCardSelected,
+                      ]}
+                      onPress={() => {
+                        seleccionarPrestamo(item);
+                        setModalPrestamoVisible(false);
+                      }}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text
+                          style={[
+                            styles.modalClientName,
+                            isSelected && styles.textWhite,
+                          ]}
+                        >
+                          Prestado: ${" "}
+                          {formatearSinDecimales(item.monto_prestado || 0)}{" "}
+                          {item.moneda}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.modalClientCedula,
+                            isSelected && styles.textWhiteSub,
+                          ]}
+                        >
+                          Total: $ {formatearSinDecimales(item.monto_total)} |
+                          Pendiente: ${" "}
+                          {formatearSinDecimales(item.saldo_pendiente)}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.modalClientCedula,
+                            isSelected && styles.textWhiteSub,
+                          ]}
+                        >
+                          Cuota: ${" "}
+                          {formatearSinDecimales(item.valor_cuota || 0)} (
+                          {item.frecuencia}) | Fecha:{" "}
+                          {formatearFecha(item.fecha_prestamo || "")}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
+        {/* MODAL DE RESULTADO */}
+        <Modal
+          visible={modalResultadoVisible}
+          animationType="fade"
+          transparent={true}
+          onRequestClose={() => setModalResultadoVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalExitoContainer}>
+              <View
+                style={[
+                  styles.successIconContainer,
+                  tipoResultado === "error" && styles.errorIconContainer,
+                ]}
+              >
+                <Text style={styles.successIconText}>
+                  {tipoResultado === "exito" ? "✓" : "✕"}
+                </Text>
+              </View>
+              <Text style={styles.modalExitoTitle}>
+                {tipoResultado === "exito" ? "¡Pago Registrado!" : "Atención"}
+              </Text>
+              <Text style={styles.modalExitoMessage}>{mensajeResultado}</Text>
+              <TouchableOpacity
+                style={[
+                  styles.successButton,
+                  tipoResultado === "error" && styles.errorButton,
+                ]}
+                onPress={() => setModalResultadoVisible(false)}
+              >
+                <Text style={styles.successButtonText}>Aceptar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f0f2f5" },
-  contentContainer: { padding: 12, paddingBottom: 40 },
+  contentContainer: { padding: 12, paddingBottom: 60 },
   contentContainerWeb: { alignItems: "center", padding: 24 },
   mainCard: {
     width: "100%",
@@ -996,14 +1000,13 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: 6,
     borderWidth: 2,
-    borderColor: "#ca8a04",
+    borderColor: "#f1b228",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#fff",
-    marginRight: 10,
   },
   checkboxBoxChecked: {
-    backgroundColor: "#ca8a04",
+    backgroundColor: "#ad7702",
   },
   checkboxTick: {
     color: "#fff",
@@ -1011,34 +1014,37 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   checkboxLabel: {
+    marginLeft: 8,
     fontSize: 14,
-    fontWeight: "bold",
+    fontWeight: "600",
     color: "#854d0e",
   },
-  rowSelector: { flexDirection: "row", gap: 10, marginBottom: 12 },
-  selectChip: {
-    flex: 1,
+  input: {
     backgroundColor: "#f8fafc",
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 10,
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: "#cbd5e1",
-    alignItems: "center",
+    fontSize: 16,
+    color: "#1e293b",
   },
-  selectChipActive: { backgroundColor: "#0284c7", borderColor: "#0284c7" },
-  selectChipTxt: { fontSize: 14, color: "#475569", fontWeight: "600" },
-  selectChipTxtActive: { color: "#fff", fontWeight: "bold" },
-  tasaBanner: {
-    backgroundColor: "#fef3c7",
-    padding: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#fde68a",
-    marginBottom: 12,
+  button: {
+    backgroundColor: "#0284c7",
+    padding: 16,
+    borderRadius: 12,
     alignItems: "center",
+    shadowColor: "#0284c7",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  tasaBannerText: { fontSize: 13, color: "#92400e" },
+  buttonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
   dropdownTrigger: {
     backgroundColor: "#f8fafc",
     paddingHorizontal: 16,
@@ -1051,19 +1057,72 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 12,
   },
-  dropdownTriggerTitle: { fontSize: 15, fontWeight: "bold", color: "#0f172a" },
-  dropdownTriggerSubtitle: { fontSize: 13, color: "#64748b", marginTop: 2 },
-  dropdownTriggerPlaceholder: { fontSize: 15, color: "#94a3b8" },
-  dropdownTriggerIcon: { fontSize: 12, color: "#0284c7", marginLeft: 8 },
-  input: {
+  dropdownTriggerTitle: {
+    fontSize: 15,
+    fontWeight: "bold",
+    color: "#1e293b",
+  },
+  dropdownTriggerSubtitle: {
+    fontSize: 13,
+    color: "#64748b",
+    marginTop: 2,
+  },
+  dropdownTriggerPlaceholder: {
+    fontSize: 15,
+    color: "#94a3b8",
+    flex: 1,
+  },
+  dropdownTriggerIcon: {
+    fontSize: 12,
+    color: "#0c4eab",
+    marginLeft: 8,
+  },
+  rowSelector: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 10,
+  },
+  selectChip: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: "center",
     backgroundColor: "#f8fafc",
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 12,
     borderWidth: 1,
     borderColor: "#cbd5e1",
-    fontSize: 16,
+    borderRadius: 10,
+  },
+  selectChipActive: {
+    backgroundColor: "#e0f2fe",
+    borderColor: "#0284c7",
+  },
+  selectChipTxt: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#475569",
+  },
+  selectChipTxtActive: {
+    color: "#0369a1",
+  },
+  tasaBanner: {
+    backgroundColor: "#f1f5f9",
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  tasaBannerText: {
+    fontSize: 13,
+    color: "#475569",
+    textAlign: "center",
+  },
+  bold: {
+    fontWeight: "bold",
     color: "#1e293b",
+  },
+  boldPrimary: {
+    fontWeight: "bold",
+    color: "#0284c7",
   },
   calcBox: {
     backgroundColor: "#f8fafc",
@@ -1087,65 +1146,74 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 8,
   },
-  calcText: { fontSize: 14, color: "#475569" },
+  calcText: {
+    fontSize: 14,
+    color: "#0e356d",
+  },
   bold: { fontWeight: "bold", color: "#1e293b" },
   boldPrimary: { fontWeight: "bold", color: "#0284c7", fontSize: 15 },
-  button: {
-    backgroundColor: "#10b981",
-    padding: 16,
-    borderRadius: 12,
-    alignItems: "center",
-    elevation: 3,
-  },
-  buttonText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
+
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.5)",
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "center",
     alignItems: "center",
     padding: 16,
   },
   modalContainer: {
-    backgroundColor: "#ffffff",
-    borderRadius: 20,
     width: "100%",
-    maxWidth: 680,
+    maxWidth: 500,
     maxHeight: "80%",
-    padding: 20,
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    overflow: "hidden",
   },
   modalHeader: {
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e2e8f0",
   },
-  modalTitle: { fontSize: 18, fontWeight: "bold", color: "#1e293b" },
-  closeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#f1f5f9",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  closeBtnText: { fontSize: 16, color: "#64748b", fontWeight: "bold" },
-  searchBoxContainer: { marginBottom: 12 },
-  modalSearchInput: {
-    backgroundColor: "#f8fafc",
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 15,
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
     color: "#1e293b",
   },
-  modalList: { maxHeight: 400 },
-  modalListContent: { paddingBottom: 10 },
+  closeBtn: {
+    padding: 4,
+  },
+  closeBtnText: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#64748b",
+  },
+  searchBoxContainer: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e2e8f0",
+    backgroundColor: "#f8fafc",
+  },
+  modalSearchInput: {
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 14,
+  },
+  modalList: {
+    padding: 12,
+  },
+  modalListContent: {
+    paddingBottom: 20,
+  },
   modalClientCard: {
     backgroundColor: "#f8fafc",
-    padding: 14,
-    borderRadius: 12,
+    padding: 12,
+    borderRadius: 10,
     marginBottom: 8,
     borderWidth: 1,
     borderColor: "#e2e8f0",
@@ -1154,51 +1222,66 @@ const styles = StyleSheet.create({
     backgroundColor: "#0284c7",
     borderColor: "#0284c7",
   },
-  modalClientName: { fontSize: 15, fontWeight: "bold", color: "#1e293b" },
-  modalClientCedula: { fontSize: 13, color: "#64748b", marginTop: 2 },
-  textWhite: { color: "#ffffff" },
-  textWhiteSub: { color: "#e0f2fe" },
+  modalClientName: {
+    fontSize: 15,
+    fontWeight: "bold",
+    color: "#1e293b",
+  },
+  modalClientCedula: {
+    fontSize: 13,
+    color: "#64748b",
+    marginTop: 2,
+  },
+  textWhite: {
+    color: "#fff",
+  },
+  textWhiteSub: {
+    color: "#e0f2fe",
+  },
   modalExitoContainer: {
-    backgroundColor: "#ffffff",
-    borderRadius: 20,
-    padding: 24,
     width: "100%",
-    maxWidth: 340,
+    maxWidth: 320,
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 24,
     alignItems: "center",
   },
   successIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#d1fae5",
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "#dcfce7",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 16,
   },
-  errorIconContainer: { backgroundColor: "#fee2e2" },
-  successIconText: { fontSize: 28, color: "#10b981", fontWeight: "bold" },
-  modalExitoTitle: {
-    fontSize: 20,
+  errorIconContainer: {
+    backgroundColor: "#fee2e2",
+  },
+  successIconText: {
+    fontSize: 24,
     fontWeight: "bold",
-    color: "#1e293b",
-    marginBottom: 8,
-    textAlign: "center",
+    color: "#16a34a",
   },
   modalExitoMessage: {
     fontSize: 14,
     color: "#64748b",
     textAlign: "center",
     marginBottom: 20,
-    lineHeight: 20,
   },
   successButton: {
-    backgroundColor: "#10b981",
+    backgroundColor: "#0284c7",
+    borderRadius: 10,
     paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 12,
     width: "100%",
     alignItems: "center",
   },
-  errorButton: { backgroundColor: "#ef4444" },
-  successButtonText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
+  errorButton: {
+    backgroundColor: "#dc2626",
+  },
+  successButtonText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "bold",
+  },
 });

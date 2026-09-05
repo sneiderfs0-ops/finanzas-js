@@ -194,7 +194,14 @@ export default function LoginScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={{ flex: 1 }}
     >
-      <ScrollView contentContainerStyle={globalStyles.scrollContainer}>
+      <ScrollView
+        contentContainerStyle={[
+          globalStyles.scrollContainer,
+          { flexGrow: 1, justifyContent: "center", paddingVertical: 40 },
+        ]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         <View style={globalStyles.card}>
           <View style={localStyles.logoContainer}>
             <Image

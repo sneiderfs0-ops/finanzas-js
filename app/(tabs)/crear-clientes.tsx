@@ -25,7 +25,7 @@ export default function CrearClienteModal({
   onClienteCreado?: () => void;
 }) {
   const router = useRouter();
-  const colorScheme = useColorScheme() ?? "light";
+  const colorScheme = useColorScheme() ?? "dark";
 
   const [nombres, setNombres] = useState("");
   const [apellidos, setApellidos] = useState("");
@@ -210,9 +210,7 @@ export default function CrearClienteModal({
         nestedScrollEnabled={true}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={[styles.title, { color: Colors[colorScheme].text }]}>
-          📝 Registrar Nuevo Cliente
-        </Text>
+        <Text style={styles.title}>📝 Registrar Nuevo Cliente</Text>
 
         {esAdminOSecretaria && (
           <View style={styles.pickerContainer}>
@@ -261,6 +259,7 @@ export default function CrearClienteModal({
           style={styles.input}
           value={nombres}
           onChangeText={(text) => handleSoloLetras(text, setNombres)}
+          placeholderTextColor="#94a3b8"
         />
 
         <Text style={styles.label}>Apellidos</Text>
@@ -268,6 +267,7 @@ export default function CrearClienteModal({
           style={styles.input}
           value={apellidos}
           onChangeText={(text) => handleSoloLetras(text, setApellidos)}
+          placeholderTextColor="#94a3b8"
         />
 
         <Text style={styles.label}>Teléfono</Text>
@@ -276,6 +276,7 @@ export default function CrearClienteModal({
           value={telefono}
           onChangeText={(text) => handleSoloNumeros(text, setTelefono)}
           keyboardType="numeric"
+          placeholderTextColor="#94a3b8"
         />
 
         <Text style={styles.label}>Dirección</Text>
@@ -283,6 +284,7 @@ export default function CrearClienteModal({
           style={styles.input}
           value={direccion}
           onChangeText={setDireccion}
+          placeholderTextColor="#94a3b8"
         />
 
         <TouchableOpacity
@@ -308,21 +310,9 @@ export default function CrearClienteModal({
           visible={successModalVisible}
         >
           <View style={styles.modalOverlay}>
-            <View
-              style={[
-                styles.successModalContent,
-                { backgroundColor: Colors[colorScheme].background },
-              ]}
-            >
+            <View style={styles.successModalContent}>
               <Text style={styles.successIcon}>🎉</Text>
-              <Text
-                style={[
-                  styles.successTitle,
-                  { color: Colors[colorScheme].text },
-                ]}
-              >
-                ¡Cliente Registrado!
-              </Text>
+              <Text style={styles.successTitle}>¡Cliente Registrado!</Text>
               <TouchableOpacity
                 style={styles.btnSuccessOk}
                 onPress={handleCerrarExito}
@@ -340,18 +330,20 @@ export default function CrearClienteModal({
 const styles = StyleSheet.create({
   baseContainer: {
     flex: 1,
+    backgroundColor: "#ffffff", // Fondo blanco general opcional para contraste
   },
   container: {
     padding: 20,
     flexGrow: 1,
     justifyContent: "center",
-    paddingBottom: 60, // Espacio extra de scroll para evitar que el teclado cubra los botones
+    paddingBottom: 60,
   },
   title: {
     fontSize: 20,
     fontWeight: "bold",
     marginBottom: 20,
     textAlign: "center",
+    color: "#000000", // Forzado a negro
   },
   label: {
     fontSize: 14,
@@ -366,6 +358,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     marginBottom: 15,
+    color: "#000000", // Asegura que lo que escribe el usuario sea negro
   },
   pickerContainer: {
     marginBottom: 15,
@@ -391,11 +384,11 @@ const styles = StyleSheet.create({
   },
   infoRutaText: {
     fontSize: 14,
-    color: "#061429",
+    color: "#000000", // Forzado a negro
   },
   boldText: {
     fontWeight: "bold",
-    color: "#0f172a",
+    color: "#000000", // Forzado a negro
   },
   btnGuardar: {
     backgroundColor: "#22c55e",
@@ -431,6 +424,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 24,
     alignItems: "center",
+    backgroundColor: "#ffffff", // Fondo blanco fijo para el modal de éxito
     ...Platform.select({
       web: { boxShadow: "0px 4px 12px rgba(0, 0, 0, 0.15)" },
       default: { elevation: 5 },
@@ -444,6 +438,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
     marginBottom: 20,
+    color: "#000000", // Forzado a negro
   },
   btnSuccessOk: {
     backgroundColor: "#22c55e",

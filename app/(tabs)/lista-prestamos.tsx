@@ -23,10 +23,22 @@ export default function ListaPrestamosScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busqueda, setBusqueda] = useState("");
+
+  // Modal de Detalles e Historial
   const [modalVisible, setModalVisible] = useState(false);
   const [prestamoSeleccionado, setPrestamoSeleccionado] = useState<any>(null);
   const [pagosPrestamo, setPagosPrestamo] = useState<any[]>([]);
   const [cargandoPagos, setCargandoPagos] = useState(false);
+
+  // Estados para el Modal de Edición
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [prestamoAEditar, setPrestamoAEditar] = useState<any>(null);
+  const [editFecha, setEditFecha] = useState("");
+  const [editFrecuencia, setEditFrecuencia] = useState("Diario");
+  const [editPorcentaje, setEditPorcentaje] = useState("");
+  const [editMonto, setEditMonto] = useState("");
+  const [editCuotas, setEditCuotas] = useState("");
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false);
 
   useEffect(() => {
     cargarPrestamos();
@@ -145,6 +157,70 @@ export default function ListaPrestamosScreen() {
       setPagosPrestamo([]);
     } finally {
       setCargandoPagos(false);
+    }
+  };
+
+  const abrirModalEdicion = (item: any) => {
+    setPrestamoAEditar(item);
+    // Formatear la fecha a YYYY-MM-DD si existe
+    let fechaOriginal = "";
+    if (item.fecha_prestamo) {
+      fechaOriginal = item.fecha_prestamo.split("T")[0];
+    }
+    setEditFecha(fechaOriginal);
+    setEditFrecuencia(item.frecuencia || "Diario");
+    setEditPorcentaje(String(item.tasa_interes ?? ""));
+    setEditMonto(String(item.monto_prestado ?? item.monto_total ?? ""));
+    setEditCuotas(String(item.cuotas ?? ""));
+    setEditModalVisible(true);
+  };
+
+  const guardarEdicionPrestamo = async () => {
+    if (!prestamoAEditar) return;
+
+    const montoNum = parseFloat(editMonto);
+    const porcentajeNum = parseFloat(editPorcentaje);
+    const cuotasNum = parseInt(editCuotas) || 1;
+
+    if (isNaN(montoNum) || montoNum <= 0) {
+      Alert.alert("Error", "Ingresa un monto de préstamo válido.");
+      return;
+    }
+    if (isNaN(porcentajeNum) || porcentajeNum < 0) {
+      Alert.alert("Error", "Ingresa un porcentaje de interés válido.");
+      return;
+    }
+
+    setGuardandoEdicion(true);
+    try {
+      // Recalcular monto total basado en el interés simple (Monto + (Monto * Porcentaje / 100))
+      const interesCalculado = (montoNum * porcentajeNum) / 100;
+      const nuevoMontoTotal = montoNum + interesCalculado;
+
+      const { error } = await supabase
+        .from("prestamos")
+        .update({
+          fecha_prestamo: editFecha
+            ? `${editFecha}T00:00:00.000Z`
+            : prestamoAEditar.fecha_prestamo,
+          frecuencia: editFrecuencia,
+          tasa_interes: porcentajeNum,
+          monto_prestado: montoNum,
+          monto_total: nuevoMontoTotal,
+          cuotas: cuotasNum,
+        })
+        .eq("id", prestamoAEditar.id);
+
+      if (error) throw error;
+
+      Alert.alert("Éxito", "Préstamo actualizado correctamente.");
+      setEditModalVisible(false);
+      cargarPrestamos();
+    } catch (err: any) {
+      console.log("Error al actualizar préstamo:", err.message);
+      Alert.alert("Error", "No se pudo actualizar el préstamo: " + err.message);
+    } finally {
+      setGuardandoEdicion(false);
     }
   };
 
@@ -508,14 +584,20 @@ export default function ListaPrestamosScreen() {
                               {estado.toUpperCase()}
                             </Text>
                           </View>
-                          <TouchableOpacity
-                            style={styles.btnVerAccion}
-                            onPress={() => abrirDetalles(item)}
-                          >
-                            <Text style={styles.btnVerAccionText}>
-                              Detalles
-                            </Text>
-                          </TouchableOpacity>
+                          <View style={{ flexDirection: "row", gap: 4 }}>
+                            <TouchableOpacity
+                              style={styles.btnEditarAccion}
+                              onPress={() => abrirModalEdicion(item)}
+                            >
+                              <Text style={styles.btnAccionText}>Editar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={styles.btnVerAccion}
+                              onPress={() => abrirDetalles(item)}
+                            >
+                              <Text style={styles.btnAccionText}>Detalles</Text>
+                            </TouchableOpacity>
+                          </View>
                         </View>
                       </View>
                     );
@@ -705,6 +787,116 @@ export default function ListaPrestamosScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* MODAL DE EDICIÓN DE PRÉSTAMO */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={editModalVisible}
+        onRequestClose={() => setEditModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>Editar Préstamo</Text>
+              <TouchableOpacity
+                onPress={() => setEditModalVisible(false)}
+                style={styles.closeIconBtn}
+              >
+                <Text style={styles.closeIconText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              style={{ maxHeight: 450 }}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>
+                  Fecha de Préstamo (YYYY-MM-DD):
+                </Text>
+                <TextInput
+                  style={styles.inputModal}
+                  value={editFecha}
+                  onChangeText={setEditFecha}
+                  placeholder="Ej: 2026-09-08"
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Frecuencia de Pago:</Text>
+                <View style={styles.frecuenciaRow}>
+                  {["Diario", "Semanal", "Quincenal", "Mensual"].map((freq) => (
+                    <TouchableOpacity
+                      key={freq}
+                      style={[
+                        styles.frecuenciaBtn,
+                        editFrecuencia === freq && styles.frecuenciaBtnActive,
+                      ]}
+                      onPress={() => setEditFrecuencia(freq)}
+                    >
+                      <Text
+                        style={[
+                          styles.frecuenciaBtnText,
+                          editFrecuencia === freq &&
+                            styles.frecuenciaBtnTextActive,
+                        ]}
+                      >
+                        {freq}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>
+                  Porcentaje de Interés (%):
+                </Text>
+                <TextInput
+                  style={styles.inputModal}
+                  value={editPorcentaje}
+                  onChangeText={setEditPorcentaje}
+                  keyboardType="numeric"
+                  placeholder="Ej: 20"
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Monto del Préstamo:</Text>
+                <TextInput
+                  style={styles.inputModal}
+                  value={editMonto}
+                  onChangeText={setEditMonto}
+                  keyboardType="numeric"
+                  placeholder="Ej: 100000"
+                />
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalFooterActions}>
+              <TouchableOpacity
+                style={styles.btnCancelarModal}
+                onPress={() => setEditModalVisible(false)}
+              >
+                <Text style={styles.btnCancelarText}>Cancelar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.btnGuardarModal}
+                onPress={guardarEdicionPrestamo}
+                disabled={guardandoEdicion}
+              >
+                {guardandoEdicion ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.btnGuardarText}>Guardar Cambios</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -772,7 +964,7 @@ const styles = StyleSheet.create({
       : {}),
   },
   horizontalScrollContent: {
-    minWidth: 1250,
+    minWidth: 1300,
     flexGrow: 1,
   },
   tableInnerWrapper: {
@@ -817,7 +1009,7 @@ const styles = StyleSheet.create({
   colPorcentaje: { width: 130 },
   colTotal: { width: 130 },
   colEmpleado: { width: 140 },
-  colAccion: { width: 180, flexDirection: "row", alignItems: "center", gap: 8 },
+  colAccion: { width: 220, flexDirection: "row", alignItems: "center", gap: 6 },
   badgeMoneda: {
     backgroundColor: "#e0f2fe",
     paddingHorizontal: 8,
@@ -831,10 +1023,16 @@ const styles = StyleSheet.create({
   btnVerAccion: {
     backgroundColor: "#4f46e5",
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: 4,
   },
-  btnVerAccionText: { color: "#fff", fontSize: 10, fontWeight: "600" },
+  btnEditarAccion: {
+    backgroundColor: "#0284c7",
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 4,
+  },
+  btnAccionText: { color: "#fff", fontSize: 10, fontWeight: "600" },
   emptyText: { textAlign: "center", padding: 20, color: "#64748b" },
   modalOverlay: {
     flex: 1,
@@ -907,27 +1105,73 @@ const styles = StyleSheet.create({
   },
   historyItemRow: {
     flexDirection: "row",
-    paddingVertical: 6,
+    paddingVertical: 8,
     paddingHorizontal: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "#f8fafc",
+    borderBottomColor: "#f1f5f9",
+    justifyContent: "space-between",
     alignItems: "center",
   },
-  historyCellText: {
-    flex: 1,
-    fontSize: 12,
-    color: "#334155",
-  },
+  historyCellText: { flex: 1, fontSize: 12, color: "#334155" },
   btnCloseModal: {
-    backgroundColor: "#0f172a",
-    marginTop: 15,
-    paddingVertical: 10,
+    backgroundColor: "#64748b",
+    padding: 10,
     borderRadius: 6,
     alignItems: "center",
+    marginTop: 15,
   },
-  btnCloseModalText: {
-    color: "#fff",
+  btnCloseModalText: { color: "#fff", fontWeight: "600" },
+  inputContainer: { marginBottom: 12 },
+  inputLabel: {
+    fontSize: 13,
     fontWeight: "600",
-    fontSize: 14,
+    color: "#334155",
+    marginBottom: 6,
   },
+  inputModal: {
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    borderRadius: 6,
+    padding: 8,
+    backgroundColor: "#f8fafc",
+    fontSize: 13,
+    color: "#1e293b",
+  },
+  frecuenciaRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
+  frecuenciaBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    borderRadius: 6,
+    backgroundColor: "#f8fafc",
+  },
+  frecuenciaBtnActive: {
+    backgroundColor: "#0284c7",
+    borderColor: "#0284c7",
+  },
+  frecuenciaBtnText: { fontSize: 12, color: "#334155" },
+  frecuenciaBtnTextActive: { color: "#fff", fontWeight: "bold" },
+  modalFooterActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 10,
+    marginTop: 15,
+  },
+  btnCancelarModal: {
+    backgroundColor: "#e2e8f0",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+  },
+  btnCancelarText: { color: "#334155", fontWeight: "600" },
+  btnGuardarModal: {
+    backgroundColor: "#0284c7",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+    minWidth: 130,
+    alignItems: "center",
+  },
+  btnGuardarText: { color: "#fff", fontWeight: "600" },
 });

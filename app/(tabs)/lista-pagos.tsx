@@ -9,6 +9,7 @@ import {
   Modal,
   Platform,
   RefreshControl,
+  TextInput, // NUEVO: Importado para el input de edición
 } from "react-native";
 import { supabase } from "../../supabase";
 import { useRouter, useFocusEffect } from "expo-router";
@@ -20,7 +21,7 @@ import * as FileSystem from "expo-file-system";
 interface PagoItem {
   id: string;
   fecha_pago: string;
-  fecha_prestamo?: string; // NUEVO: Fecha en la que se creó el préstamo
+  fecha_prestamo?: string;
   cedula: string;
   monto_prestado: number;
   monto_total: number;
@@ -52,6 +53,13 @@ export default function PagosHabilesScreen() {
   const [pagoSeleccionado, setPagoSeleccionado] = useState<PagoItem | null>(
     null,
   );
+
+  // NUEVOS ESTADOS PARA LA EDICIÓN
+  const [modalEditarVisible, setModalEditarVisible] = useState(false);
+  const [pagoAEditar, setPagoAEditar] = useState<PagoItem | null>(null);
+  const [montoEditado, setMontoEditado] = useState("");
+  const [fechaEditada, setFechaEditada] = useState("");
+
   const [refreshing, setRefreshing] = useState(false);
   const router = useRouter();
 
@@ -259,7 +267,6 @@ export default function PagosHabilesScreen() {
     verificarRolPermitido();
   }, []);
 
-  // 🔄 Recarga automáticamente los datos cada vez que entras a esta pantalla
   useFocusEffect(
     useCallback(() => {
       if (tienePermiso) {
@@ -278,6 +285,53 @@ export default function PagosHabilesScreen() {
   const abrirDetalles = (item: PagoItem) => {
     setPagoSeleccionado(item);
     setModalDetalleVisible(true);
+  };
+
+  // NUEVA FUNCIÓN: Abrir modal de edición
+  const abrirEdicion = (item: PagoItem) => {
+    setPagoAEditar(item);
+    setMontoEditado(item.monto_pagado.toString());
+    // Formatea la fecha actual de la base de datos a formato YYYY-MM-DD para el input
+    const fechaLimpia = item.fecha_pago ? item.fecha_pago.split("T")[0] : "";
+    setFechaEditada(fechaLimpia);
+    setModalEditarVisible(true);
+  };
+
+  // NUEVA FUNCIÓN: Guardar cambios del pago en Supabase
+  const guardarEdicionPago = async () => {
+    if (!pagoAEditar) return;
+
+    const nuevoMonto = parseFloat(montoEditado);
+    if (isNaN(nuevoMonto) || nuevoMonto <= 0) {
+      alert("Por favor ingrese un monto válido.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const { error } = await supabase
+        .from("pagos")
+        .update({
+          monto_pagado: nuevoMonto,
+          fecha_pago: fechaEditada
+            ? new Date(fechaEditada).toISOString()
+            : pagoAEditar.fecha_pago,
+        })
+        .eq("id", pagoAEditar.id);
+
+      if (error) {
+        alert("Error al actualizar el pago: " + error.message);
+        return;
+      }
+
+      alert("Pago actualizado correctamente.");
+      setModalEditarVisible(false);
+      await cargarPagosYFiltrarSemana();
+    } catch (err) {
+      console.log("Error inesperado al editar:", err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const descargarPDF = async () => {
@@ -600,12 +654,31 @@ export default function PagosHabilesScreen() {
                               {estado.toUpperCase()}
                             </Text>
                           </View>
+
+                          {/* BOTONES DE ACCIÓN (DETALLES Y EDITAR) */}
                           <TouchableOpacity
                             style={styles.btnVerAccion}
                             onPress={() => abrirDetalles(item)}
                           >
                             <Text style={styles.btnVerAccionText}>
                               Detalles
+                            </Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={[
+                              styles.btnVerAccion,
+                              { backgroundColor: "#dbeafe" },
+                            ]}
+                            onPress={() => abrirEdicion(item)}
+                          >
+                            <Text
+                              style={[
+                                styles.btnVerAccionText,
+                                { color: "#1e40af" },
+                              ]}
+                            >
+                              Editar
                             </Text>
                           </TouchableOpacity>
                         </View>
@@ -649,7 +722,6 @@ export default function PagosHabilesScreen() {
                     {pagoSeleccionado.clientes?.apellidos}
                   </Text>
                 </View>
-                {/* NUEVA FILA: FECHA DEL PRÉSTAMO */}
                 <View style={styles.modalRow}>
                   <Text style={styles.modalLabel}>Fecha del Préstamo:</Text>
                   <Text style={styles.modalVal}>
@@ -744,6 +816,68 @@ export default function PagosHabilesScreen() {
                 onPress={() => setModalDetalleVisible(false)}
               >
                 <Text style={styles.btnCloseModalText}>Cerrar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* NUEVO MODAL DE EDICIÓN */}
+      <Modal
+        visible={modalEditarVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setModalEditarVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Editar Pago / Abono</Text>
+              <TouchableOpacity
+                onPress={() => setModalEditarVisible(false)}
+                style={styles.closeBtn}
+              >
+                <Text style={styles.closeBtnText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalBody}>
+              <View style={{ marginBottom: 15 }}>
+                <Text style={styles.modalLabel}>Nuevo Monto Abonado:</Text>
+                <TextInput
+                  style={styles.inputEdit}
+                  keyboardType="numeric"
+                  value={montoEditado}
+                  onChangeText={setMontoEditado}
+                  placeholder="Ej: 50000"
+                />
+              </View>
+
+              <View style={{ marginBottom: 15 }}>
+                <Text style={styles.modalLabel}>Nueva Fecha (YYYY-MM-DD):</Text>
+                <TextInput
+                  style={styles.inputEdit}
+                  value={fechaEditada}
+                  onChangeText={setFechaEditada}
+                  placeholder="2026-09-09"
+                />
+              </View>
+            </View>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={[styles.btnCloseModal, { backgroundColor: "#e2e8f0" }]}
+                onPress={() => setModalEditarVisible(false)}
+              >
+                <Text style={[styles.btnCloseModalText, { color: "#334155" }]}>
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.btnCloseModal, { backgroundColor: "#2563eb" }]}
+                onPress={guardarEdicionPago}
+              >
+                <Text style={styles.btnCloseModalText}>Guardar Cambios</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -882,7 +1016,7 @@ const styles = StyleSheet.create({
   colPorcentaje: { width: 130 },
   colTotal: { width: 130 },
   colEmpleado: { width: 140 },
-  colAccion: { width: 180, flexDirection: "row", alignItems: "center", gap: 8 },
+  colAccion: { width: 250, flexDirection: "row", alignItems: "center", gap: 6 }, // Ampliado ligeramente para acomodar ambos botones
   badgeMoneda: {
     backgroundColor: "#e0f2fe",
     paddingHorizontal: 8,
@@ -934,22 +1068,22 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     borderRadius: 12,
     width: "100%",
-    maxWidth: 500,
-    maxHeight: "85%",
-    overflow: "hidden",
+    maxWidth: 450,
+    padding: 20,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.15,
     shadowRadius: 8,
-    elevation: 4,
+    elevation: 5,
   },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: 16,
+    marginBottom: 15,
     borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
+    borderBottomColor: "#f1f5f9",
+    paddingBottom: 10,
   },
   modalTitle: {
     fontSize: 18,
@@ -960,48 +1094,59 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   closeBtnText: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: "bold",
     color: "#64748b",
   },
   modalBody: {
-    padding: 16,
+    maxHeight: 400,
   },
   modalRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
+    borderBottomColor: "#f8fafc",
   },
   modalLabel: {
     fontSize: 14,
     color: "#64748b",
-    fontWeight: "600",
-    flex: 1,
+    fontWeight: "500",
   },
   modalVal: {
     fontSize: 14,
-    color: "#1e293b",
-    fontWeight: "500",
-    flex: 1,
-    textAlign: "right",
+    color: "#0f172a",
+    fontWeight: "600",
   },
   modalFooter: {
-    padding: 12,
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 10,
+    marginTop: 15,
     borderTopWidth: 1,
-    borderTopColor: "#e2e8f0",
-    alignItems: "flex-end",
+    borderTopColor: "#f1f5f9",
+    paddingTop: 10,
   },
   btnCloseModal: {
     backgroundColor: "#0f172a",
     paddingVertical: 8,
     paddingHorizontal: 16,
-    borderRadius: 8,
+    borderRadius: 6,
   },
   btnCloseModalText: {
     color: "#ffffff",
     fontWeight: "bold",
     fontSize: 14,
+  },
+  inputEdit: {
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: "#0f172a",
+    backgroundColor: "#f8fafc",
+    marginTop: 4,
   },
 });

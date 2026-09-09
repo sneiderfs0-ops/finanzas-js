@@ -40,7 +40,11 @@ export default function IndexScreen() {
 
   const [totalGananciaUSD, setTotalGananciaUSD] = useState(0);
   const [totalGananciaCOP, setTotalGananciaCOP] = useState(0);
+  // Aplicando el operador de coalescencia nula para prevenir fallos
+  const valorUSD = gananciasNeta?.USD ?? 0;
+  const formatoSeguro = Number(valorUSD.toFixed(0)).toLocaleString();
 
+  console.log(formatoSeguro);
   const verificarSesionYDatos = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
       setRefreshing(true);
@@ -378,7 +382,15 @@ export default function IndexScreen() {
       console.log("Error en cargarResumenPersonal:", e);
     }
   };
+  const calcularPorcentajes = (prestado: number, recaudado: number) => {
+    const total = prestado + recaudado;
+    if (total === 0) return { porcPren: 0, porcRec: 0 };
 
+    return {
+      porcPren: Number(((prestado / total) * 100).toFixed(1)),
+      porcRec: Number(((recaudado / total) * 100).toFixed(1)),
+    };
+  };
   const cargarCajasYBancos = async () => {
     const { data } = await supabase
       .from("cajas_bancos")
@@ -468,33 +480,11 @@ export default function IndexScreen() {
     }
   };
 
-  useEffect(() => {
-    const intervalo = setInterval(() => {
-      const ahora = new Date();
-      const horaCaracas = ahora.toLocaleString("en-US", {
-        timeZone: "America/Caracas",
-        hour: "numeric",
-        minute: "numeric",
-        hour12: false,
-      });
-
-      if (horaCaracas === "1:00" || horaCaracas === "01:00") {
-        verificarSesionYDatos();
-      }
-    }, 60000);
-
-    return () => clearInterval(intervalo);
-  }, [verificarSesionYDatos]);
-
   useFocusEffect(
     useCallback(() => {
       verificarSesionYDatos();
     }, [verificarSesionYDatos]),
   );
-
-  useEffect(() => {
-    verificarSesionYDatos();
-  }, [verificarSesionYDatos]);
 
   if (loading) {
     return (
@@ -897,7 +887,7 @@ const styles = StyleSheet.create({
   donutCenterText: {
     fontSize: 11,
     color: "#94a3b8",
-    fontWeight: "600",
+    fontWeight: "650",
   },
   donutCenterValue: {
     fontSize: 13,

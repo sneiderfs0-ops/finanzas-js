@@ -14,6 +14,7 @@ import {
   RefreshControl,
 } from "react-native";
 import { supabase } from "../../supabase";
+import { formatearFechaLocal } from "../../utils/fechas";
 
 export default function ListaPrestamosScreen() {
   const { width } = useWindowDimensions();
@@ -39,6 +40,20 @@ export default function ListaPrestamosScreen() {
   const [editMonto, setEditMonto] = useState("");
   const [editCuotas, setEditCuotas] = useState("");
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
+  // Estados para el Modal de Confirmación de Eliminación
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [prestamoAEliminar, setPrestamoAEliminar] = useState<any>(null);
+  // Estados para el Modal de Éxito y Mensajes
+  const [modalExitoVisible, setModalExitoVisible] = useState(false);
+  const [mensajeExito, setMensajeExito] = useState("");
+  // Estado para el modal de error al intentar eliminar un préstamo con pagos
+  const [errorModalVisible, setErrorModalVisible] = useState(false);
+  // Estado para el modal de éxito al eliminar un préstamo
+  const [successModalVisible, setSuccessModalVisible] = useState(false);
+  // Nuevo estado opcional para rastrear el ID que se está eliminando
+  const [idPrestamoBorrando, setIdPrestamoBorrando] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     cargarPrestamos();
@@ -95,7 +110,7 @@ export default function ListaPrestamosScreen() {
               .select("monto_pagado")
               .eq("prestamo_id", p.id);
 
-            const totalPagado = pagosData
+            const monto_pagado = pagosData
               ? pagosData.reduce(
                   (sum: number, pago: any) =>
                     sum + Number(pago.monto_pagado || 0),
@@ -104,7 +119,7 @@ export default function ListaPrestamosScreen() {
               : 0;
 
             const montoTotal = Number(p.monto_total) || 0;
-            const saldoPendienteCalculado = montoTotal - totalPagado;
+            const saldoPendienteCalculado = montoTotal - monto_pagado;
             const empleadoNombre = await obtenerNombreRegistrador(
               p.registrado_por_cedula,
             );
@@ -119,7 +134,7 @@ export default function ListaPrestamosScreen() {
             return {
               ...p,
               clientes: clienteInfo,
-              totalPagado,
+              monto_pagado,
               saldo_pendiente: saldoPendienteCalculado,
               estadoTexto: estadoCalculado,
               empleadoNombre,
@@ -173,6 +188,61 @@ export default function ListaPrestamosScreen() {
     setEditMonto(String(item.monto_prestado ?? item.monto_total ?? ""));
     setEditCuotas(String(item.cuotas ?? ""));
     setEditModalVisible(true);
+  };
+
+  const confirmarEliminarPrestamo = async (item: any) => {
+    try {
+      const { data: pagosRegistrados, error } = await supabase
+        .from("pagos")
+        .select("id, monto_pagado")
+        .eq("prestamo_id", item.id);
+
+      if (error) throw error;
+
+      // Si tiene pagos registrados, abrimos el modal de error personalizado
+      if (pagosRegistrados && pagosRegistrados.length > 0) {
+        setErrorModalVisible(true);
+        return;
+      }
+
+      // Si no tiene pagos, procedemos a abrir el modal de confirmación normal
+      setPrestamoAEliminar(item);
+      setDeleteModalVisible(true);
+    } catch (err) {
+      console.error("Error al verificar pagos del préstamo:", err);
+      setErrorModalVisible(true);
+    }
+  };
+
+  const ejecutarEliminacion = async (item: any) => {
+    try {
+      setIdPrestamoBorrando(item.id); // Guardamos el ID temporalmente
+
+      const { error } = await supabase
+        .from("prestamos")
+        .delete()
+        .eq("id", item.id);
+
+      if (error) throw error;
+
+      // 1. Actualización inmediata en el cliente (Funciona perfecto en Móvil y Web)
+      setPrestamos((prevPrestamos: any[]) =>
+        prevPrestamos.filter((p) => p.id !== item.id),
+      );
+
+      // Cerrar modal de confirmación y abrir modal de éxito
+      setDeleteModalVisible(false);
+      setPrestamoAEliminar(null);
+      setSuccessModalVisible(true);
+    } catch (err) {
+      console.error("Error al eliminar el préstamo:", err);
+      Alert.alert(
+        "Error",
+        "No se pudo eliminar el préstamo de la base de datos.",
+      );
+    } finally {
+      setIdPrestamoBorrando(null);
+    }
   };
 
   const guardarEdicionPrestamo = async () => {
@@ -254,7 +324,7 @@ export default function ListaPrestamosScreen() {
 
       prestamosFiltrados.forEach((item) => {
         const fecha = item.fecha_prestamo
-          ? `"${new Date(item.fecha_prestamo.replace("Z", "")).toLocaleDateString()}"`
+          ? `"${formatearFechaLocal(item.fecha_prestamo)}"`
           : '"N/A"';
         const cliente = item.clientes
           ? `"${item.clientes.nombres} ${item.clientes.apellidos}"`
@@ -346,7 +416,7 @@ export default function ListaPrestamosScreen() {
 
       prestamosFiltrados.forEach((item) => {
         const fecha = item.fecha_prestamo
-          ? new Date(item.fecha_prestamo.replace("Z", "")).toLocaleDateString()
+          ? formatearFechaLocal(item.fecha_prestamo)
           : "N/A";
         const cliente = item.clientes
           ? `${item.clientes.nombres} ${item.clientes.apellidos}`
@@ -502,11 +572,9 @@ export default function ListaPrestamosScreen() {
                 ) : (
                   prestamosFiltrados.map((item, index) => {
                     const nombreCliente = `${item.clientes.nombres} ${item.clientes.apellidos}`;
-                    const fechaFormateada = item.fecha_prestamo
-                      ? new Date(
-                          item.fecha_prestamo.replace("Z", ""),
-                        ).toLocaleDateString()
-                      : "N/A";
+                    const fechaFormateada = formatearFechaLocal(
+                      item.fecha_prestamo,
+                    );
                     const estado = item.estadoTexto;
                     let badgeBg = "#eff6ff";
                     let badgeColor = "#2563eb";
@@ -586,16 +654,27 @@ export default function ListaPrestamosScreen() {
                           </View>
                           <View style={{ flexDirection: "row", gap: 4 }}>
                             <TouchableOpacity
+                              style={styles.btnVerAccion}
+                              onPress={() => abrirDetalles(item)}
+                            >
+                              <Text style={styles.btnAccionText}>Detalles</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
                               style={styles.btnEditarAccion}
                               onPress={() => abrirModalEdicion(item)}
                             >
                               <Text style={styles.btnAccionText}>Editar</Text>
                             </TouchableOpacity>
+
                             <TouchableOpacity
-                              style={styles.btnVerAccion}
-                              onPress={() => abrirDetalles(item)}
+                              style={[
+                                styles.btnEditarAccion,
+                                { backgroundColor: "#dc2626" },
+                              ]}
+                              onPress={() => confirmarEliminarPrestamo(item)}
                             >
-                              <Text style={styles.btnAccionText}>Detalles</Text>
+                              <Text style={styles.btnAccionText}>Eliminar</Text>
                             </TouchableOpacity>
                           </View>
                         </View>
@@ -645,11 +724,7 @@ export default function ListaPrestamosScreen() {
                 <View style={styles.modalRowItem}>
                   <Text style={styles.modalLabel}>Fecha de Préstamo:</Text>
                   <Text style={styles.modalValue}>
-                    {prestamoSeleccionado.fecha_prestamo
-                      ? new Date(
-                          prestamoSeleccionado.fecha_prestamo.replace("Z", ""),
-                        ).toLocaleDateString()
-                      : "N/A"}
+                    {formatearFechaLocal(prestamoSeleccionado.fecha_prestamo)}
                   </Text>
                 </View>
 
@@ -754,11 +829,7 @@ export default function ListaPrestamosScreen() {
                         style={styles.historyItemRow}
                       >
                         <Text style={styles.historyCellText}>
-                          {pago.fecha_pago
-                            ? new Date(
-                                pago.fecha_pago.replace("Z", ""),
-                              ).toLocaleDateString()
-                            : "N/A"}
+                          {formatearFechaLocal(pago.fecha_pago)}
                         </Text>
                         <Text
                           style={[
@@ -897,12 +968,172 @@ export default function ListaPrestamosScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* MODAL DE CONFIRMACIÓN DE ELIMINACIÓN */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={deleteModalVisible}
+        onRequestClose={() => setDeleteModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxWidth: 400 }]}>
+            <Text style={[styles.modalTitle, { color: "#dc2626" }]}>
+              Confirmar Eliminación
+            </Text>
+
+            <Text
+              style={{
+                marginVertical: 15,
+                fontSize: 14,
+                color: "#334155",
+                textAlign: "center",
+              }}
+            >
+              ¿Estás seguro de que deseas eliminar el préstamo de{" "}
+              <Text style={{ fontWeight: "bold" }}>
+                {prestamoAEliminar?.clientes?.nombres}{" "}
+                {prestamoAEliminar?.clientes?.apellidos}
+              </Text>
+              ?{"\n\n"}Esta acción devolverá el monto capital a la caja/banco
+              correspondiente.
+            </Text>
+
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                gap: 10,
+                marginTop: 10,
+              }}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.btnCloseModal,
+                  { backgroundColor: "#64748b", flex: 1, marginTop: 0 },
+                ]}
+                onPress={() => setDeleteModalVisible(false)}
+              >
+                <Text style={styles.btnCloseModalText}>Cancelar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.btnCloseModal,
+                  { backgroundColor: "#dc2626", flex: 1, marginTop: 0 },
+                ]}
+                onPress={async () => {
+                  const itemTemp = prestamoAEliminar;
+                  setDeleteModalVisible(false);
+                  setPrestamoAEliminar(null);
+                  if (itemTemp) {
+                    await ejecutarEliminacion(itemTemp);
+                  }
+                }}
+              >
+                <Text style={styles.btnCloseModalText}>Sí, Eliminar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      {/* MODAL DE ERROR PERSONALIZADO (Préstamo con pagos) */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={errorModalVisible}
+        onRequestClose={() => setErrorModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxWidth: 400 }]}>
+            <Text style={[styles.modalTitle, { color: "#dc2626" }]}>
+              No se puede eliminar
+            </Text>
+
+            <Text
+              style={{
+                marginVertical: 15,
+                fontSize: 14,
+                color: "#334155",
+                textAlign: "center",
+              }}
+            >
+              Este préstamo ya tiene pagos o abonos registrados. No es posible
+              eliminarlo para mantener la integridad de la caja y los registros
+              financieros.
+            </Text>
+
+            <TouchableOpacity
+              style={[
+                styles.btnCloseModal,
+                { backgroundColor: "#3b82f6", marginTop: 10, width: "100%" },
+              ]}
+              onPress={() => setErrorModalVisible(false)}
+            >
+              <Text style={styles.btnCloseModalText}>Entendido</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL DE ÉXITO PERSONALIZADO (Préstamo eliminado) */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={successModalVisible}
+        onRequestClose={() => setSuccessModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxWidth: 400 }]}>
+            <Text style={[styles.modalTitle, { color: "#16a34a" }]}>
+              ¡Eliminado con Éxito!
+            </Text>
+
+            <Text
+              style={{
+                marginVertical: 15,
+                fontSize: 14,
+                color: "#334155",
+                textAlign: "center",
+              }}
+            >
+              El préstamo ha sido eliminado correctamente del sistema.
+            </Text>
+
+            <TouchableOpacity
+              style={[
+                styles.btnCloseModal,
+                { backgroundColor: "#16a34a", marginTop: 10, width: "100%" },
+              ]}
+              onPress={() => {
+                setSuccessModalVisible(false);
+
+                // Llama aquí a tu función de carga de datos original (ej. cargarPrestamos() o onRefresh())
+                // para asegurar que la base de datos y la vista estén 100% sincronizadas.
+                if (typeof cargarPrestamos === "function") {
+                  cargarPrestamos();
+                } else if (typeof onRefresh === "function") {
+                  onRefresh();
+                }
+              }}
+            >
+              <Text style={styles.btnCloseModalText}>Aceptar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f8fafc", padding: 16 },
+  container: {
+    flex: 1,
+    backgroundColor: "#f0f2f5",
+    padding: 12,
+    width: "100%",
+    height: "100%",
+  },
   loaderContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   headerTitleRow: {
     justifyContent: "space-between",
@@ -964,7 +1195,7 @@ const styles = StyleSheet.create({
       : {}),
   },
   horizontalScrollContent: {
-    minWidth: 1300,
+    minWidth: 1000,
     flexGrow: 1,
   },
   tableInnerWrapper: {
@@ -976,7 +1207,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#e2e8f0",
     alignItems: "center",
-    minHeight: 50,
+    minHeight: 56,
   },
   gridHeader: {
     backgroundColor: "#0f172a",
@@ -984,7 +1215,9 @@ const styles = StyleSheet.create({
     borderBottomColor: "#0f172a",
     minHeight: 48,
   },
-  rowAlternate: { backgroundColor: "#f8fafc" },
+  rowAlternate: {
+    backgroundColor: "#fafbfc",
+  },
   gridCell: {
     paddingVertical: 12,
     paddingHorizontal: 14,
@@ -996,11 +1229,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textTransform: "uppercase",
   },
-  cellText: { color: "#334155", fontSize: 13 },
+  cellText: { color: "#14181f", fontSize: 13 },
   cellTextBold: {
+    fontSize: 14,
+    fontWeight: "bold",
     color: "#0f172a",
-    fontWeight: "600",
-    fontSize: 13,
   },
   colFecha: { width: 110 },
   colCliente: { flex: 1, minWidth: 180 },
@@ -1009,7 +1242,7 @@ const styles = StyleSheet.create({
   colPorcentaje: { width: 130 },
   colTotal: { width: 130 },
   colEmpleado: { width: 140 },
-  colAccion: { width: 220, flexDirection: "row", alignItems: "center", gap: 6 },
+  colAccion: { width: 290, flexDirection: "row", alignItems: "center", gap: 6 },
   badgeMoneda: {
     backgroundColor: "#e0f2fe",
     paddingHorizontal: 8,
@@ -1017,9 +1250,20 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     alignSelf: "flex-start",
   },
-  badgeMonedaText: { fontSize: 10, fontWeight: "bold", color: "#334155" },
-  badgeEstado: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  badgeTextEstado: { fontSize: 10, fontWeight: "bold" },
+  badgeMonedaText: {
+    fontSize: 12,
+    fontWeight: "bold",
+    color: "#0369a1",
+  },
+  badgeEstado: {
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  badgeTextEstado: {
+    fontSize: 10,
+    fontWeight: "bold",
+  },
   btnVerAccion: {
     backgroundColor: "#4f46e5",
     paddingHorizontal: 8,
@@ -1027,12 +1271,12 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   btnEditarAccion: {
-    backgroundColor: "#0284c7",
+    backgroundColor: "#269c4b",
     paddingHorizontal: 8,
     paddingVertical: 5,
     borderRadius: 4,
   },
-  btnAccionText: { color: "#fff", fontSize: 10, fontWeight: "600" },
+  btnAccionText: { color: "#fff", fontSize: 12, fontWeight: "600" },
   emptyText: { textAlign: "center", padding: 20, color: "#64748b" },
   modalOverlay: {
     flex: 1,
@@ -1065,8 +1309,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#f1f5f9",
   },
-  modalLabel: { fontSize: 13, color: "#64748b" },
-  modalValue: { fontSize: 13, color: "#1e293b" },
+  modalLabel: { fontSize: 14, color: "#000000" },
+  modalValue: { fontSize: 14, color: "#000000" },
   modalValueBold: { fontSize: 13, fontWeight: "bold", color: "#0f172a" },
   historySectionTitle: {
     fontSize: 15,
@@ -1077,7 +1321,7 @@ const styles = StyleSheet.create({
   },
   emptyHistoryText: {
     fontSize: 12,
-    color: "#64748b",
+    color: "#060a10",
     fontStyle: "italic",
     marginVertical: 6,
   },
@@ -1100,7 +1344,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 11,
     fontWeight: "bold",
-    color: "#475569",
+    color: "#0b0e11",
     textTransform: "uppercase",
   },
   historyItemRow: {
@@ -1112,9 +1356,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  historyCellText: { flex: 1, fontSize: 12, color: "#334155" },
+  historyCellText: { flex: 1, fontSize: 12, color: "#000000" },
   btnCloseModal: {
-    backgroundColor: "#64748b",
+    backgroundColor: "#2563eb",
     padding: 10,
     borderRadius: 6,
     alignItems: "center",
@@ -1166,7 +1410,7 @@ const styles = StyleSheet.create({
   },
   btnCancelarText: { color: "#334155", fontWeight: "600" },
   btnGuardarModal: {
-    backgroundColor: "#0284c7",
+    backgroundColor: "#2563eb",
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 6,
@@ -1174,4 +1418,61 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   btnGuardarText: { color: "#fff", fontWeight: "600" },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalContainer: {
+    backgroundColor: "#ffffff",
+    borderRadius: 20,
+    padding: 24,
+    width: "100%",
+    maxWidth: 340,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  iconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#dcfce7",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  modalTitulo: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#1f2937",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  modalTexto: {
+    fontSize: 14,
+    color: "#4b5563",
+    textAlign: "center",
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  btnModalAceptar: {
+    backgroundColor: "#16a34a",
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    width: "100%",
+    alignItems: "center",
+  },
+  btnModalAceptarText: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
 });

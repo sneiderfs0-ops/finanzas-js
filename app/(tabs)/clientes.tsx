@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   Modal,
   Alert,
+  Platform,
 } from "react-native";
 
 import { supabase } from "../../supabase";
@@ -227,7 +228,7 @@ export default function ClientesScreen() {
 
       {/* Modal para Editar Cliente */}
       <Modal
-        animationType="slide"
+        animationType="fade"
         transparent={true}
         visible={modalVisible}
         onRequestClose={() => setModalVisible(false)}
@@ -237,7 +238,8 @@ export default function ClientesScreen() {
             <Text style={globalStyles.modalTitle}>✏️ Editar Cliente</Text>
 
             <ScrollView
-              contentContainerStyle={{ gap: 12, paddingVertical: 10 }}
+              contentContainerStyle={{ gap: 14, paddingVertical: 5 }}
+              showsVerticalScrollIndicator={false}
             >
               <View>
                 <Text style={styles.inputLabel}>Nombres</Text>
@@ -294,14 +296,14 @@ export default function ClientesScreen() {
                 style={[styles.modalBtn, styles.btnCancel]}
                 onPress={() => setModalVisible(false)}
               >
-                <Text style={styles.modalBtnText}>Cancelar</Text>
+                <Text style={styles.modalBtnCancelText}>Cancelar</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[styles.modalBtn, styles.btnSave]}
                 onPress={guardarCambiosCliente}
               >
-                <Text style={styles.modalBtnText}>Guardar</Text>
+                <Text style={styles.modalBtnSaveText}>Guardar</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -345,6 +347,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
+    ...(Platform.OS === "web"
+      ? { width: "100%", display: "flex", flex: 1 }
+      : {}),
   },
   cardHeader: {
     flexDirection: "row",
@@ -392,47 +397,74 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   modalContainer: {
-    width: "92%",
-    maxWidth: 450,
+    width: "90%",
+    maxWidth: 300,
     padding: 20,
-    borderRadius: 16,
+    maxHeight: "80%",
+    borderRadius: 8,
     backgroundColor: colors.cardBackground,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 5,
   },
   inputLabel: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "600",
-    color: colors.textPrimary,
-    marginBottom: 4,
+    color: colors.textSecondary,
+    marginBottom: 6,
   },
   inputModal: {
     backgroundColor: colors.background,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 10,
-    padding: 12,
+    borderRadius: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     fontSize: 15,
+    padding: 8,
     color: colors.textPrimary,
   },
   modalActionButtons: {
     flexDirection: "row",
-    gap: 10,
-    marginTop: 15,
+    gap: 12,
+    marginTop: 20,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
   modalBtn: {
     flex: 1,
     paddingVertical: 12,
     borderRadius: 10,
     alignItems: "center",
+    justifyContent: "center",
   },
   btnCancel: {
     backgroundColor: colors.border,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    width: "100%",
+    alignItems: "center",
   },
   btnSave: {
-    backgroundColor: colors.accentGreen || "#28a745",
+    backgroundColor: "#16a34a",
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    width: "100%",
+    alignItems: "center",
   },
-  modalBtnText: {
-    fontWeight: "bold",
+  modalBtnCancelText: {
+    fontWeight: "600",
     color: colors.textPrimary,
-    fontSize: 14,
+    fontSize: 15,
+  },
+  modalBtnSaveText: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "600",
   },
 });

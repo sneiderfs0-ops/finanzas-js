@@ -10,6 +10,8 @@ import {
   Alert,
   useWindowDimensions,
   RefreshControl,
+  Modal,
+  TextInput,
 } from "react-native";
 import { supabase } from "../../supabase";
 import { globalStyles } from "@/constants/globalStyles";
@@ -29,8 +31,24 @@ export default function CajaScreen() {
 
   const [resumenData, setResumenData] = useState<ResumenFinanciero[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false); // Estado para el pull-to-refresh
+  const [refreshing, setRefreshing] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
+
+  // Estados para el modal de edición de caja/banco
+  const [modalEditarVisible, setModalEditarVisible] = useState(false);
+  const [editEfectivoUSD, setEditEfectivoUSD] = useState("");
+  const [editEfectivoCOP, setEditEfectivoCOP] = useState("");
+  const [editBancosUSD, setEditBancosUSD] = useState("");
+  const [editBancosCOP, setEditBancosCOP] = useState("");
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false);
+
+  // Mapeo de IDs de la tabla cajas_bancos
+  const [idsCajas, setIdsCajas] = useState({
+    efectivoUSDId: "",
+    efectivoCOPId: "",
+    bancosUSDId: "",
+    bancosCOPId: "",
+  });
 
   const [totalesPDF, setTotalesPDF] = useState({
     efectivoUSD: 0,
@@ -81,7 +99,6 @@ export default function CajaScreen() {
 
       await cargarDatosCaja();
 
-      // Configurar suscripción en tiempo real para actualizar la data automáticamente
       const channelName = `rt-caja-screen-${session.user.id}-${Date.now()}`;
       const channelRealtime = supabase
         .channel(channelName)
@@ -135,7 +152,6 @@ export default function CajaScreen() {
 
   const cargarDatosCaja = async () => {
     try {
-      // 1. Cargar cajas y bancos
       const { data: cajasData, error: cajasError } = await supabase
         .from("cajas_bancos")
         .select("id, nombre, moneda, saldo_actual");
@@ -145,6 +161,11 @@ export default function CajaScreen() {
       let locBancosUSD = 0;
       let locBancosCOP = 0;
       let listaCajasRender: ResumenFinanciero[] = [];
+
+      let idEfUSD = "";
+      let idEfCOP = "";
+      let idBaUSD = "";
+      let idBaCOP = "";
 
       if (!cajasError && cajasData) {
         cajasData.forEach((caja) => {
@@ -158,8 +179,10 @@ export default function CajaScreen() {
               nombreLower.includes("transferencia")
             ) {
               locBancosUSD += saldo;
+              idBaUSD = caja.id;
             } else {
               locEfectivoUSD += saldo;
+              idEfUSD = caja.id;
             }
           } else {
             if (
@@ -168,8 +191,10 @@ export default function CajaScreen() {
               nombreLower.includes("transferencia")
             ) {
               locBancosCOP += saldo;
+              idBaCOP = caja.id;
             } else {
               locEfectivoCOP += saldo;
+              idEfCOP = caja.id;
             }
           }
 
@@ -180,9 +205,21 @@ export default function CajaScreen() {
             tipo: "caja",
           });
         });
+
+        setIdsCajas({
+          efectivoUSDId: idEfUSD,
+          efectivoCOPId: idEfCOP,
+          bancosUSDId: idBaUSD,
+          bancosCOPId: idBaCOP,
+        });
+
+        // Actualizar valores para los inputs del modal
+        setEditEfectivoUSD(locEfectivoUSD.toString());
+        setEditEfectivoCOP(locEfectivoCOP.toString());
+        setEditBancosUSD(locBancosUSD.toString());
+        setEditBancosCOP(locBancosCOP.toString());
       }
 
-      // 2. Cargar Dinero en la Calle (Préstamos con estado activo)
       const { data: prestamosData, error: prestamosError } = await supabase
         .from("prestamos")
         .select("saldo_pendiente, estado, moneda");
@@ -205,7 +242,6 @@ export default function CajaScreen() {
         });
       }
 
-      // 3. Consultar directamente tu vista de ganancias y gastos totales
       const { data: vistaData, error: vistaError } = await supabase
         .from("vista_ganancias_totales")
         .select("moneda, gastos, ganancia_neta");
@@ -290,7 +326,61 @@ export default function CajaScreen() {
     }
   };
 
-  // Función para manejar el gesto de deslizar hacia abajo (Pull-to-refresh)
+  const handleGuardarCambiosCajas = async () => {
+    try {
+      setGuardandoEdicion(true);
+
+      const actualizaciones = [];
+
+      if (idsCajas.efectivoUSDId) {
+        actualizaciones.push(
+          supabase
+            .from("cajas_bancos")
+            .update({ saldo_actual: parseFloat(editEfectivoUSD) || 0 })
+            .eq("id", idsCajas.efectivoUSDId),
+        );
+      }
+      if (idsCajas.efectivoCOPId) {
+        actualizaciones.push(
+          supabase
+            .from("cajas_bancos")
+            .update({ saldo_actual: parseFloat(editEfectivoCOP) || 0 })
+            .eq("id", idsCajas.efectivoCOPId),
+        );
+      }
+      if (idsCajas.bancosUSDId) {
+        actualizaciones.push(
+          supabase
+            .from("cajas_bancos")
+            .update({ saldo_actual: parseFloat(editBancosUSD) || 0 })
+            .eq("id", idsCajas.bancosUSDId),
+        );
+      }
+      if (idsCajas.bancosCOPId) {
+        actualizaciones.push(
+          supabase
+            .from("cajas_bancos")
+            .update({ saldo_actual: parseFloat(editBancosCOP) || 0 })
+            .eq("id", idsCajas.bancosCOPId),
+        );
+      }
+
+      await Promise.all(actualizaciones);
+
+      Alert.alert(
+        "Éxito",
+        "Saldos de caja y bancos actualizados correctamente.",
+      );
+      setModalEditarVisible(false);
+      await cargarDatosCaja();
+    } catch (error) {
+      console.error("Error al actualizar cajas y bancos:", error);
+      Alert.alert("Error", "No se pudieron actualizar los saldos.");
+    } finally {
+      setGuardandoEdicion(false);
+    }
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
     await cargarDatosCaja();
@@ -419,17 +509,30 @@ export default function CajaScreen() {
           </Text>
         </View>
 
-        <TouchableOpacity
-          style={[styles.pdfButton, isMobile && styles.pdfButtonMobile]}
-          onPress={handleDownloadPDF}
-          disabled={generatingPdf}
-        >
-          {generatingPdf ? (
-            <ActivityIndicator size="small" color="#ffffff" />
-          ) : (
-            <Text style={styles.pdfButtonText}>📥 Descargar PDF</Text>
-          )}
-        </TouchableOpacity>
+        {/* Botones de acción alineados */}
+        <View style={styles.headerButtonsContainer}>
+          <TouchableOpacity
+            style={[
+              styles.editCajaButton,
+              isMobile && styles.editCajaButtonMobile,
+            ]}
+            onPress={() => setModalEditarVisible(true)}
+          >
+            <Text style={styles.editCajaButtonText}>✏️ Caja/Banco</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.pdfButton, isMobile && styles.pdfButtonMobile]}
+            onPress={handleDownloadPDF}
+            disabled={generatingPdf}
+          >
+            {generatingPdf ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : (
+              <Text style={styles.pdfButtonText}>📥 Descargar PDF</Text>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.gridContainer}>
@@ -485,6 +588,85 @@ export default function CajaScreen() {
           );
         })}
       </View>
+
+      {/* Modal para Editar Caja/Banco */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={modalEditarVisible}
+        onRequestClose={() => setModalEditarVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View
+            style={[styles.modalContent, isMobile && styles.modalContentMobile]}
+          >
+            <Text style={styles.modalTitle}>
+              Editar Saldos de Caja y Bancos
+            </Text>
+            <Text style={styles.modalSubtitle}>
+              Modifique directamente los valores de efectivo y bancos en la base
+              de datos.
+            </Text>
+
+            <Text style={styles.inputLabel}>Efectivo USD</Text>
+            <TextInput
+              style={styles.input}
+              keyboardType="numeric"
+              value={editEfectivoUSD}
+              onChangeText={setEditEfectivoUSD}
+              placeholder="0.00"
+            />
+
+            <Text style={styles.inputLabel}>Efectivo COP</Text>
+            <TextInput
+              style={styles.input}
+              keyboardType="numeric"
+              value={editEfectivoCOP}
+              onChangeText={setEditEfectivoCOP}
+              placeholder="0.00"
+            />
+
+            <Text style={styles.inputLabel}>Bancos / Transferencia USD</Text>
+            <TextInput
+              style={styles.input}
+              keyboardType="numeric"
+              value={editBancosUSD}
+              onChangeText={setEditBancosUSD}
+              placeholder="0.00"
+            />
+
+            <Text style={styles.inputLabel}>Bancos / Transferencia COP</Text>
+            <TextInput
+              style={styles.input}
+              keyboardType="numeric"
+              value={editBancosCOP}
+              onChangeText={setEditBancosCOP}
+              placeholder="0.00"
+            />
+
+            <View style={styles.modalButtonsRow}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setModalEditarVisible(false)}
+              >
+                <Text style={styles.cancelButtonText}>Cancelar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.saveButton}
+                onPress={handleGuardarCambiosCajas}
+                disabled={guardandoEdicion}
+              >
+                {guardandoEdicion ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Text style={styles.saveButtonText}>Guardar Cambios</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -502,6 +684,11 @@ const styles = StyleSheet.create({
   },
   topHeaderRowMobile: { flexDirection: "column", alignItems: "stretch" } as any,
   headerContainer: { flex: 1 },
+  headerButtonsContainer: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+  },
   headerTitle: {
     fontSize: 24,
     fontWeight: "800",
@@ -509,6 +696,21 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
   subtitle: { fontSize: 14, color: "#64748b", marginTop: 4 },
+  editCajaButton: {
+    backgroundColor: "#11135f",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#101141",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  editCajaButtonMobile: { alignSelf: "flex-end" },
+  editCajaButtonText: { color: "#ffffff", fontWeight: "bold", fontSize: 14 },
   pdfButton: {
     backgroundColor: "#0284c7",
     paddingHorizontal: 16,
@@ -624,4 +826,69 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     overflow: "hidden",
   },
+  // Estilos del Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 16,
+  },
+  modalContent: {
+    backgroundColor: "#ffffff",
+    borderRadius: 20,
+    padding: 24,
+    width: "100%",
+    maxWidth: 450,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  modalContentMobile: { width: "100%" },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#0f172a",
+    marginBottom: 4,
+  },
+  modalSubtitle: { fontSize: 13, color: "#64748b", marginBottom: 20 },
+  inputLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#334155",
+    marginBottom: 6,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: "#0f172a",
+    marginBottom: 14,
+    backgroundColor: "#f8fafc",
+  },
+  modalButtonsRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 10,
+    marginTop: 10,
+  },
+  cancelButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    backgroundColor: "#e2e8f0",
+  },
+  cancelButtonText: { color: "#334155", fontWeight: "600", fontSize: 14 },
+  saveButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    backgroundColor: "#2563eb",
+  },
+  saveButtonText: { color: "#ffffff", fontWeight: "600", fontSize: 14 },
 });

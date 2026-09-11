@@ -14,19 +14,6 @@ import {
 import { supabase } from "../../supabase";
 import { colors } from "@/constants/globalStyles";
 
-// Tu función de utilidad para formatear la fecha localmente
-export const formatearFechaLocal = (
-  fechaStr: string | undefined | null,
-): string => {
-  if (!fechaStr) return "N/A";
-  const soloFecha = fechaStr.split("T")[0];
-  const [anio, mes, dia] = soloFecha.split("-");
-
-  if (!anio || !mes || !dia) return fechaStr;
-
-  return `${parseInt(dia)}/${parseInt(mes)}/${anio}`;
-};
-
 interface CajaOption {
   id: string;
   nombre: string;
@@ -36,7 +23,6 @@ interface CajaOption {
 interface GastoItem {
   id: string;
   fecha: string;
-  fechaOriginal: string; // Útil para búsquedas y filtros exactos en formato YYYY-MM-DD
   descripcion: string;
   monto: number;
   moneda: string;
@@ -176,21 +162,11 @@ export default function GastosScreen() {
               }
             }
           }
-
-          // Ajuste de fecha a la zona horaria de Venezuela (America/Caracas)
-          let fechaIsoLocal = new Date().toISOString();
-          if (g.created_at) {
-            const fechaObj = new Date(g.created_at);
-            // 'en-CA' devuelve formato YYYY-MM-DD estándar
-            fechaIsoLocal = fechaObj.toLocaleDateString("en-CA", {
-              timeZone: "America/Caracas",
-            });
-          }
-
           return {
             ...g,
-            fechaOriginal: fechaIsoLocal,
-            fecha: formatearFechaLocal(fechaIsoLocal),
+            fecha: g.created_at
+              ? g.created_at.split("T")[0]
+              : new Date().toISOString().split("T")[0],
             nombreResponsable: nombreCompleto,
           };
         }),
@@ -384,11 +360,8 @@ export default function GastosScreen() {
     }
   };
 
-  // Filtrado optimizado evaluando tanto la fecha formateada como la original
-  const gastosFiltrados = gastos.filter(
-    (g) =>
-      g.fecha.includes(busquedaFecha.trim()) ||
-      g.fechaOriginal.includes(busquedaFecha.trim()),
+  const gastosFiltrados = gastos.filter((g) =>
+    g.fecha.includes(busquedaFecha.trim()),
   );
 
   const esAdminSecretaria =

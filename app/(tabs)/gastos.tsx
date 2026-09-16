@@ -161,9 +161,30 @@ export default function GastosScreen() {
               }
             }
           }
+
+          // Formatear correctamente la fecha de creación (created_at) de Supabase
+          let fechaFormateada = "N/A";
+          if (g.created_at) {
+            try {
+              // Si tienes una función específica para Venezuela, puedes usarla aquí,
+              // o formatearla de manera estándar legible:
+              const fechaObj = new Date(g.created_at.replace("Z", ""));
+              fechaFormateada = fechaObj.toLocaleString("es-VE", {
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: true,
+              });
+            } catch (e) {
+              fechaFormateada = g.created_at;
+            }
+          }
+
           return {
             ...g,
-            fecha: obtenerFechaHoraExactaVenezuela(),
+            fecha: fechaFormateada,
             nombreResponsable: nombreCompleto,
           };
         }),
@@ -796,7 +817,7 @@ const styles = StyleSheet.create({
   },
   tableContainer: {
     width: "100%",
-    minWidth: 1420,
+    minWidth: 1450,
     marginBottom: 10,
   },
   tableHeader: {

@@ -431,16 +431,22 @@ export default function PagosHabilesScreen() {
                   .map(
                     (item) => `
                   <tr>
-                    <td>{formatearFechaLocal(item.fecha_pago)}</td>
+                    <td>${
+                      item.fecha_pago
+                        ? new Date(
+                            item.fecha_pago.replace("Z", ""),
+                          ).toLocaleDateString()
+                        : "N/A"
+                    }</td>
                     <td>${item.clientes ? `${item.clientes.nombres} ${item.clientes.apellidos}` : "Desconocido"} (${item.cedula})</td>
-                    <td>${Number(item.monto_prestado).toFixed(2)}</td>
-                    <td>${item.moneda_pago}</td>
-                    <td>${item.tasa_interes}%</td>
-                    <td>${Number(item.monto_total).toFixed(2)}</td>
-                    <td>${Number(item.saldo_pendiente).toFixed(2)}</td>
-                    <td>${Number(item.monto_pagado).toFixed(2)}</td>
-                    <td>${item.metodo_pago}</td>
-                    <td>${item.registrado_por_cedula}</td>
+                    <td>${Number(item.monto_prestado || 0).toFixed(2)}</td>
+                    <td>${item.moneda_pago || ""}</td>
+                    <td>${item.tasa_interes || 0}%</td>
+                    <td>${Number(item.monto_total || 0).toFixed(2)}</td>
+                    <td>${Number(item.saldo_pendiente || 0).toFixed(2)}</td>
+                    <td>${Number(item.monto_pagado || 0).toFixed(2)}</td>
+                    <td>${item.metodo_pago || ""}</td>
+                    <td>${item.registrado_por_cedula || ""}</td>
                     <td>${(item.estadoTexto || "activo").toUpperCase()}</td>
                   </tr>
                 `,

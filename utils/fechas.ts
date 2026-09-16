@@ -5,8 +5,6 @@
 export const obtenerFechaHoraExactaVenezuela = (): string => {
   const ahora = new Date();
 
-  // Obtener los componentes de fecha y hora en la zona de Venezuela (UTC-4)
-  // Usamos toLocaleString para forzar la lectura correcta en America/Caracas
   const opciones: Intl.DateTimeFormatOptions = {
     timeZone: "America/Caracas",
     year: "numeric",
@@ -31,6 +29,28 @@ export const obtenerFechaHoraExactaVenezuela = (): string => {
   const minuto = getParte("minute");
   const segundo = getParte("second");
 
-  // Devolvemos en formato ISO con el offset fijo de Venezuela (-04:00)
   return `${anio}-${mes}-${dia}T${hora}:${minuto}:${segundo}-04:00`;
+};
+
+/**
+ * Recibe una fecha de Supabase (como fecha_prestamo o created_at) y la formatea
+ * para mostrarla en la interfaz con fecha, hora y formato de 12 horas (a. m. / p. m.).
+ */
+export const formatearFechaVenezuela = (fechaStr: string | null): string => {
+  if (!fechaStr) return "N/A";
+  try {
+    const fechaObj = new Date(fechaStr.replace("Z", ""));
+
+    return fechaObj.toLocaleString("es-VE", {
+      timeZone: "America/Caracas",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true, // Formato a. m. / p. m. igual que tus gastos
+    });
+  } catch (e) {
+    return fechaStr;
+  }
 };

@@ -494,19 +494,11 @@ export default function ListaPrestamosScreen() {
         <View style={styles.searchRow}>
           <TextInput
             style={styles.searchInput}
-            placeholder="Buscar por nombres, apellidos o monto del préstamo..."
+            placeholder="🔍 Buscar por nombres, apellidos o monto del préstamo..."
             value={busqueda}
             onChangeText={setBusqueda}
             placeholderTextColor="#94a3b8"
           />
-          {busqueda.length > 0 && (
-            <TouchableOpacity
-              style={styles.btnLimpiar}
-              onPress={() => setBusqueda("")}
-            >
-              <Text style={styles.btnLimpiarText}>Limpiar</Text>
-            </TouchableOpacity>
-          )}
         </View>
       </View>
 
@@ -1162,22 +1154,17 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     elevation: 2,
   },
-  searchRow: { flexDirection: "row", gap: 10, alignItems: "center" },
+  searchRow: { marginBottom: 15 },
   searchInput: {
-    flex: 1,
+    backgroundColor: "#ffffff",
     borderWidth: 1,
     borderColor: "#cbd5e1",
-    borderRadius: 6,
-    padding: 8,
-    backgroundColor: "#f8fafc",
+    borderRadius: 8,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: "#0f172a",
   },
-  btnLimpiar: {
-    backgroundColor: "#e2e8f0",
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 6,
-  },
-  btnLimpiarText: { color: "#334155", fontWeight: "600" },
   tableFullContainer: {
     flex: 1,
     backgroundColor: "#ffffff",
@@ -1229,7 +1216,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textTransform: "uppercase",
   },
-  cellText: { color: "#14181f", fontSize: 13 },
+  cellText: { color: "#14181f", fontSize: 14 },
   cellTextBold: {
     fontSize: 14,
     fontWeight: "bold",

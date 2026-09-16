@@ -796,7 +796,7 @@ const styles = StyleSheet.create({
   },
   tableContainer: {
     width: "100%",
-    minWidth: 1650,
+    minWidth: 1500,
     marginBottom: 10,
   },
   tableHeader: {

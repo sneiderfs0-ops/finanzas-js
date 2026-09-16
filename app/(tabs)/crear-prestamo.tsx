@@ -14,6 +14,7 @@ import {
   KeyboardAvoidingView,
 } from "react-native";
 import { supabase } from "../../supabase";
+import { obtenerFechaHoraExactaVenezuela } from "../../utils/fechas";
 
 interface CajaOption {
   id: string;
@@ -365,17 +366,14 @@ export default function CrearPrestamoScreen({ route }: any) {
         valor_cuota: valorCuota,
         caja_id: cajaSeleccionada.id,
         registrado_por_cedula: usuarioActual.cedula,
+        // ✅ Aquí faltaba la clave "fecha_prestamo:"
+        fecha_prestamo:
+          usarFechaManual &&
+          usuarioActual.tipo === "Administrador" &&
+          fechaManual
+            ? `${fechaManual}T00:00:00`
+            : obtenerFechaHoraExactaVenezuela(),
       };
-
-      // Si es admin y activó la fecha manual, se la agregamos a la consulta
-      if (
-        usuarioActual.tipo === "Administrador" &&
-        usarFechaManual &&
-        fechaManual
-      ) {
-        // Añadimos la hora actual para conservar el formato timestamptz correctamente
-        objetoPrestamo.fecha_prestamo = `${fechaManual}T${new Date().toTimeString().split(" ")[0]}`;
-      }
 
       const { error: errorPrestamo } = await supabase
         .from("prestamos")

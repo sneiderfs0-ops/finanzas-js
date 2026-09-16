@@ -13,6 +13,7 @@ import {
   Platform,
 } from "react-native";
 import { supabase } from "../../supabase";
+import { obtenerFechaHoraExactaVenezuela } from "../../utils/fechas";
 
 interface CajaOption {
   id: string;
@@ -375,11 +376,11 @@ export default function CrearPagoScreen({ route }: any) {
       moneda_pago: monedaPagoActual,
       tasa_cambio: tasaActual,
       registrado_por_cedula: cedulaUsuarioActual,
+      fecha_pago:
+        usarFechaManual && usuarioActual.tipo === "Administrador"
+          ? `${fechaManual}T00:00:00`
+          : obtenerFechaHoraExactaVenezuela(),
     };
-
-    if (usarFechaManual && usuarioActual.tipo === "Administrador") {
-      datosPago.fecha_pago = `${fechaManual}T00:00:00`;
-    }
 
     setMontoFisico("");
     setClienteSeleccionado(null);

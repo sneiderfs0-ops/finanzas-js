@@ -14,7 +14,7 @@ import {
   RefreshControl,
 } from "react-native";
 import { supabase } from "../../supabase";
-import { formatearFechaLocal } from "../../utils/fechas";
+import { formatearFechaLocal } from "../../utils/fechass";
 
 export default function ListaPrestamosScreen() {
   const { width } = useWindowDimensions();

@@ -18,7 +18,7 @@ import * as Sharing from "expo-sharing";
 import * as XLSX from "xlsx";
 import * as FileSystem from "expo-file-system";
 import { Ionicons } from "@expo/vector-icons";
-import { formatearFechaLocal } from "../../utils/fechas";
+import { formatearFechaLocal } from "../../utils/fechass";
 
 interface PagoItem {
   id: string;

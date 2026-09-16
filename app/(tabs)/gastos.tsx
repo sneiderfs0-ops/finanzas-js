@@ -13,13 +13,13 @@ import {
 } from "react-native";
 import { supabase } from "../../supabase";
 import { colors } from "@/constants/globalStyles";
+import { obtenerFechaHoraExactaVenezuela } from "../../utils/fechas";
 
 interface CajaOption {
   id: string;
   nombre: string;
   moneda: string;
 }
-
 interface GastoItem {
   id: string;
   fecha: string;
@@ -30,7 +30,6 @@ interface GastoItem {
   registrado_por_cedula: string;
   nombreResponsable?: string;
 }
-
 export default function GastosScreen() {
   const [cajas, setCajas] = useState<CajaOption[]>([]);
   const [categoria, setCategoria] = useState("nomina_empleado");
@@ -164,9 +163,7 @@ export default function GastosScreen() {
           }
           return {
             ...g,
-            fecha: g.created_at
-              ? g.created_at.split("T")[0]
-              : new Date().toISOString().split("T")[0],
+            fecha: obtenerFechaHoraExactaVenezuela(),
             nombreResponsable: nombreCompleto,
           };
         }),
@@ -799,7 +796,7 @@ const styles = StyleSheet.create({
   },
   tableContainer: {
     width: "100%",
-    minWidth: 1480,
+    minWidth: 1650,
     marginBottom: 10,
   },
   tableHeader: {

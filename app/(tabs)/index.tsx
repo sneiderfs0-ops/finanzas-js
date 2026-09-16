@@ -27,24 +27,33 @@ export default function IndexScreen() {
     activos: 0,
   });
 
-  const [totalCajasUSD, setTotalCajasUSD] = useState(0);
-  const [totalCajasCOP, setTotalCajasCOP] = useState(0);
+  const [listaEmpleadosEstadisticas, setListaEmpleadosEstadisticas] = useState<
+    any[]
+  >([]);
+  const [
+    listaAdministradoresEstadisticas,
+    setListaAdministradoresEstadisticas,
+  ] = useState<any[]>([]);
+
+  const [totalCajasUSD, setTotalCajasUSD] = useState({ USD: 0, COP: 0 });
+  const [totalCajasCOP, setTotalCajasCOP] = useState({ USD: 0, COP: 0 });
   const [totalClientes, setTotalClientes] = useState(0);
   const [totalEmpleados, setTotalEmpleados] = useState(0);
   const [totalGastosNomina, setTotalGastosNomina] = useState({
     USD: 0,
     COP: 0,
   });
+  const [totalPrestamos, setTtotalPrestamos] = useState({ USD: 0, COP: 0 });
   const [totalCobros, setTotalCobros] = useState({ USD: 0, COP: 0 });
   const [gananciasNeta, setGananciasNeta] = useState({ USD: 0, COP: 0 });
 
   const [totalGananciaUSD, setTotalGananciaUSD] = useState(0);
   const [totalGananciaCOP, setTotalGananciaCOP] = useState(0);
-  // Aplicando el operador de coalescencia nula para prevenir fallos
   const valorUSD = gananciasNeta?.USD ?? 0;
   const formatoSeguro = Number(valorUSD.toFixed(0)).toLocaleString();
 
   console.log(formatoSeguro);
+
   const verificarSesionYDatos = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
       setRefreshing(true);
@@ -78,6 +87,9 @@ export default function IndexScreen() {
           cargarClientesYEmpleados(),
           cargarGastosYNomina(),
           cargarCobrosYGanancias(),
+          cargarEstadisticasEmpleadosHoy(),
+          cargarEstadisticasAdministradoresHoy(),
+          cargarTotalHistoricoPrestamos(),
         ]);
 
         const channelName = `rt-admin-global-${session.user.id}-${Date.now()}`;
@@ -89,6 +101,9 @@ export default function IndexScreen() {
             () => {
               cargarResumenGeneral();
               cargarCajasYBancos();
+              cargarEstadisticasEmpleadosHoy();
+              cargarEstadisticasAdministradoresHoy();
+              cargarTotalHistoricoPrestamos();
             },
           )
           .on(
@@ -98,6 +113,8 @@ export default function IndexScreen() {
               cargarResumenGeneral();
               cargarGastosYNomina();
               cargarCajasYBancos();
+              cargarEstadisticasEmpleadosHoy();
+              cargarEstadisticasAdministradoresHoy();
             },
           )
           .on(
@@ -107,6 +124,8 @@ export default function IndexScreen() {
               cargarResumenGeneral();
               cargarCobrosYGanancias();
               cargarCajasYBancos();
+              cargarEstadisticasEmpleadosHoy();
+              cargarEstadisticasAdministradoresHoy();
             },
           )
           .on(
@@ -114,6 +133,14 @@ export default function IndexScreen() {
             { event: "*", schema: "public", table: "empleados" },
             () => {
               cargarClientesYEmpleados();
+              cargarEstadisticasEmpleadosHoy();
+            },
+          )
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "administradores" },
+            () => {
+              cargarEstadisticasAdministradoresHoy();
             },
           )
           .on(
@@ -169,6 +196,8 @@ export default function IndexScreen() {
           cargarClientesYEmpleados(),
           cargarGastosYNomina(),
           cargarCobrosYGanancias(),
+          cargarEstadisticasEmpleadosHoy(),
+          cargarEstadisticasAdministradoresHoy(),
         ]);
 
         const channelName = `rt-secretaria-global-${session.user.id}-${Date.now()}`;
@@ -180,6 +209,9 @@ export default function IndexScreen() {
             () => {
               cargarResumenGeneral();
               cargarCajasYBancos();
+              cargarEstadisticasEmpleadosHoy();
+              cargarEstadisticasAdministradoresHoy();
+              cargarTotalHistoricoPrestamos();
             },
           )
           .on(
@@ -189,6 +221,8 @@ export default function IndexScreen() {
               cargarResumenGeneral();
               cargarCobrosYGanancias();
               cargarCajasYBancos();
+              cargarEstadisticasEmpleadosHoy();
+              cargarEstadisticasAdministradoresHoy();
             },
           )
           .on(
@@ -198,6 +232,8 @@ export default function IndexScreen() {
               cargarResumenGeneral();
               cargarGastosYNomina();
               cargarCajasYBancos();
+              cargarEstadisticasEmpleadosHoy();
+              cargarEstadisticasAdministradoresHoy();
             },
           )
           .subscribe();
@@ -268,6 +304,7 @@ export default function IndexScreen() {
 
   const cargarResumenGeneral = async () => {
     try {
+      // 1. Llamamos a la función RPC general del día
       const { data, error } = await supabase.rpc("obtener_resumen_diario");
 
       if (error) {
@@ -282,20 +319,23 @@ export default function IndexScreen() {
       let gastosUSD = 0;
       let gastosCOP = 0;
 
+      // 2. Sumamos los valores devueltos por la RPC
       data?.forEach((item: any) => {
         const moneda = (item.moneda || "").toUpperCase();
 
         if (moneda === "USD") {
-          prestadoUSD = Number(item.total_prestado || 0);
-          recaudadoUSD = Number(item.total_recaudado || 0);
-          gastosUSD = Number(item.total_gastos || 0);
+          prestadoUSD += Number(item.total_prestado || 0);
+          recaudadoUSD += Number(item.total_recaudado || 0);
+          gastosUSD += Number(item.total_gastos || 0);
         } else if (moneda === "COP") {
-          prestadoCOP = Number(item.total_prestado || 0);
-          recaudadoCOP = Number(item.total_recaudado || 0);
-          gastosCOP = Number(item.total_gastos || 0);
+          prestadoCOP += Number(item.total_prestado || 0);
+          recaudadoCOP += Number(item.total_recaudado || 0);
+          gastosCOP += Number(item.total_gastos || 0);
         }
       });
 
+      // 3. Cálculo exacto del flujo neto de caja
+      // Dinero que ingresó (recaudos) menos lo que salió (gastos y préstamos realizados)
       const netoUSD = recaudadoUSD - gastosUSD - prestadoUSD;
       const netoCOP = recaudadoCOP - gastosCOP - prestadoCOP;
 
@@ -308,10 +348,14 @@ export default function IndexScreen() {
         prestadoHoy: { USD: prestadoUSD, COP: prestadoCOP },
         recaudadoHoy: { USD: recaudadoUSD, COP: recaudadoCOP },
         gastosHoy: { USD: gastosUSD, COP: gastosCOP },
+        // Total a Recibir / Efectivo en Caja a entregar:
+        // Si el neto es positivo, es lo que debe entregarse o hay en caja. Si es negativo, es 0.
         totalEntregar: {
-          USD: Math.max(0, netoUSD),
-          COP: Math.max(0, netoCOP),
+          USD: netoUSD > 0 ? netoUSD : 0,
+          COP: netoCOP > 0 ? netoCOP : 0,
         },
+        // Excedente de Caja:
+        // Si el dinero gastado/prestado supera al recaudado, se refleja como excedente/déficit (valor absoluto).
         excedenteCaja: {
           USD: netoUSD < 0 ? Math.abs(netoUSD) : 0,
           COP: netoCOP < 0 ? Math.abs(netoCOP) : 0,
@@ -320,6 +364,143 @@ export default function IndexScreen() {
       });
     } catch (e) {
       console.log("Error en cargarResumenGeneral:", e);
+    }
+  };
+
+  const cargarEstadisticasAdministradoresHoy = async () => {
+    try {
+      const { data: adminsList, error: adminError } = await supabase
+        .from("administradores")
+        .select("cedula, nombres, apellidos");
+
+      if (adminError || !adminsList) return;
+
+      const resultadosPromises = adminsList.map(async (adm) => {
+        if (!adm.cedula) return null;
+        const { data, error } = await supabase.rpc("obtener_resumen_personal", {
+          p_cedula: adm.cedula,
+        });
+
+        let prestadoUSD = 0;
+        let prestadoCOP = 0;
+        let recaudadoUSD = 0;
+        let recaudadoCOP = 0;
+        let gastosUSD = 0;
+        let gastosCOP = 0;
+
+        if (!error && data) {
+          data.forEach((item: any) => {
+            const moneda = (item.moneda || "").toUpperCase();
+            const prestado = Number(item.total_prestado || 0);
+            const recaudado = Number(item.total_recaudado || 0);
+            const gastos = Number(item.total_gastos || 0);
+
+            if (moneda === "USD") {
+              prestadoUSD = prestado;
+              recaudadoUSD = recaudado;
+              gastosUSD = gastos;
+            } else if (moneda === "COP") {
+              prestadoCOP = prestado;
+              recaudadoCOP = recaudado;
+              gastosCOP = gastos;
+            }
+          });
+        }
+
+        const netoUSD = recaudadoUSD - gastosUSD - prestadoUSD;
+        const netoCOP = recaudadoCOP - gastosCOP - prestadoCOP;
+
+        return {
+          cedula: adm.cedula,
+          nombres: adm.nombres || "Administrador",
+          apellidos: adm.apellidos || "",
+          prestado: { USD: prestadoUSD, COP: prestadoCOP },
+          recaudado: { USD: recaudadoUSD, COP: recaudadoCOP },
+          gastos: { USD: gastosUSD, COP: gastosCOP },
+          totalEntregar: {
+            USD: Math.max(0, netoUSD),
+            COP: Math.max(0, netoCOP),
+          },
+          excedenteCaja: {
+            USD: netoUSD < 0 ? Math.abs(netoUSD) : 0,
+            COP: netoCOP < 0 ? Math.abs(netoCOP) : 0,
+          },
+        };
+      });
+
+      const adminsConDatos = (await Promise.all(resultadosPromises)).filter(
+        Boolean,
+      );
+      setListaAdministradoresEstadisticas(adminsConDatos);
+    } catch (e) {
+      console.log("Error en cargarEstadisticasAdministradoresHoy:", e);
+    }
+  };
+
+  const cargarEstadisticasEmpleadosHoy = async () => {
+    try {
+      const { data: empleadosList, error: empError } = await supabase
+        .from("empleados")
+        .select("cedula, nombres, apellidos");
+
+      if (empError || !empleadosList) return;
+
+      const resultadosPromises = empleadosList.map(async (emp) => {
+        const { data, error } = await supabase.rpc("obtener_resumen_personal", {
+          p_cedula: emp.cedula,
+        });
+
+        let prestadoUSD = 0;
+        let prestadoCOP = 0;
+        let recaudadoUSD = 0;
+        let recaudadoCOP = 0;
+        let gastosUSD = 0;
+        let gastosCOP = 0;
+
+        if (!error && data) {
+          data.forEach((item: any) => {
+            const moneda = (item.moneda || "").toUpperCase();
+            const prestado = Number(item.total_prestado || 0);
+            const recaudado = Number(item.total_recaudado || 0);
+            const gastos = Number(item.total_gastos || 0);
+
+            if (moneda === "USD") {
+              prestadoUSD = prestado;
+              recaudadoUSD = recaudado;
+              gastosUSD = gastos;
+            } else if (moneda === "COP") {
+              prestadoCOP = prestado;
+              recaudadoCOP = recaudado;
+              gastosCOP = gastos;
+            }
+          });
+        }
+
+        const netoUSD = recaudadoUSD - gastosUSD - prestadoUSD;
+        const netoCOP = recaudadoCOP - gastosCOP - prestadoCOP;
+
+        return {
+          cedula: emp.cedula,
+          nombres: emp.nombres,
+          apellidos: emp.apellidos,
+          prestado: { USD: prestadoUSD, COP: prestadoCOP },
+          recaudado: { USD: recaudadoUSD, COP: recaudadoCOP },
+          gastos: { USD: gastosUSD, COP: gastosCOP },
+          totalEntregar: {
+            USD: Math.max(0, netoUSD),
+            COP: Math.max(0, netoCOP),
+          },
+          excedenteCaja: {
+            USD: netoUSD < 0 ? Math.abs(netoUSD) : 0,
+            COP: netoCOP < 0 ? Math.abs(netoCOP) : 0,
+          },
+        };
+      });
+
+      const empleadosConDatos = await Promise.all(resultadosPromises);
+      setListaEmpleadosEstadisticas(empleadosConDatos);
+    } catch (e) {
+      console.log("Error en cargarEstadisticasEmpleadosHoy:", e);
     }
   };
 
@@ -382,15 +563,6 @@ export default function IndexScreen() {
       console.log("Error en cargarResumenPersonal:", e);
     }
   };
-  const calcularPorcentajes = (prestado: number, recaudado: number) => {
-    const total = prestado + recaudado;
-    if (total === 0) return { porcPren: 0, porcRec: 0 };
-
-    return {
-      porcPren: Number(((prestado / total) * 100).toFixed(1)),
-      porcRec: Number(((recaudado / total) * 100).toFixed(1)),
-    };
-  };
   const cargarCajasYBancos = async () => {
     const { data } = await supabase
       .from("cajas_bancos")
@@ -430,6 +602,34 @@ export default function IndexScreen() {
       if (item.moneda === "COP") cop += Number(item.monto || 0);
     });
     setTotalGastosNomina({ USD: usd, COP: cop });
+  };
+
+  const cargarTotalHistoricoPrestamos = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("prestamos")
+        .select("monto_total, moneda");
+
+      if (error) {
+        console.log("Error al cargar histórico de préstamos:", error);
+        return;
+      }
+
+      let usd = 0;
+      let cop = 0;
+
+      data?.forEach((item: any) => {
+        const moneda = (item.moneda || "").toUpperCase();
+        const monto = Number(item.monto_total || 0);
+
+        if (moneda === "USD") usd += monto;
+        else if (moneda === "COP") cop += monto;
+      });
+
+      setTtotalPrestamos({ USD: usd, COP: cop });
+    } catch (e) {
+      console.log("Error en cargarTotalHistoricoPrestamos:", e);
+    }
   };
 
   const cargarCobrosYGanancias = async () => {
@@ -661,11 +861,220 @@ export default function IndexScreen() {
           </View>
         </View>
 
+        {/* --- ESTADÍSTICA DE ADMINISTRADORES DE HOY --- */}
+        {(userRole === "administrador" || userRole === "secretaria") && (
+          <>
+            <Text style={styles.sectionTitle}>
+              👑 Estadística de Administradores de Hoy
+            </Text>
+            {listaAdministradoresEstadisticas.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyText}>
+                  No hay administradores con actividad hoy.
+                </Text>
+              </View>
+            ) : (
+              listaAdministradoresEstadisticas.map((adm) => (
+                <View key={adm.cedula} style={styles.employeeRowCard}>
+                  <View style={styles.employeeHeaderRow}>
+                    <Text style={styles.employeeNameText}>
+                      🛡️ {adm.nombres} {adm.apellidos}
+                    </Text>
+                  </View>
+
+                  <View style={styles.employeeStatsGrid}>
+                    <View style={styles.employeeStatItem}>
+                      <Text style={styles.empLabel}>Préstamos</Text>
+                      <Text style={[styles.empVal, { color: "#38bdf8" }]}>
+                        COP: ${adm.prestado.COP.toLocaleString()}
+                      </Text>
+                      <Text style={[styles.empSubVal, { color: "#38bdf8" }]}>
+                        USD: ${adm.prestado.USD.toLocaleString()}
+                      </Text>
+                    </View>
+
+                    <View style={styles.employeeStatItem}>
+                      <Text style={styles.empLabel}>Recaudos</Text>
+                      <Text style={[styles.empVal, { color: "#4ade80" }]}>
+                        COP: ${adm.recaudado.COP.toLocaleString()}
+                      </Text>
+                      <Text style={[styles.empSubVal, { color: "#4ade80" }]}>
+                        USD: ${adm.recaudado.USD.toLocaleString()}
+                      </Text>
+                    </View>
+
+                    <View style={styles.employeeStatItem}>
+                      <Text style={styles.empLabel}>Gastos</Text>
+                      <Text style={[styles.empVal, { color: "#fbbf24" }]}>
+                        COP: ${adm.gastos.COP.toLocaleString()}
+                      </Text>
+                      <Text style={[styles.empSubVal, { color: "#fbbf24" }]}>
+                        USD: ${adm.gastos.USD.toLocaleString()}
+                      </Text>
+                    </View>
+
+                    <View style={styles.employeeStatItem}>
+                      <Text style={styles.empLabel}>A Entregar</Text>
+                      <Text style={[styles.empVal, { color: "#10b981" }]}>
+                        COP: ${adm.totalEntregar.COP.toLocaleString()}
+                      </Text>
+                      <Text style={[styles.empSubVal, { color: "#10b981" }]}>
+                        USD: ${adm.totalEntregar.USD.toLocaleString()}
+                      </Text>
+                    </View>
+
+                    {(adm.excedenteCaja.COP > 0 ||
+                      adm.excedenteCaja.USD > 0) && (
+                      <View
+                        style={[
+                          styles.employeeStatItem,
+                          {
+                            backgroundColor: "#4c0519",
+                            borderColor: "#f43f5e",
+                            borderWidth: 1,
+                          },
+                        ]}
+                      >
+                        <Text style={[styles.empLabel, { color: "#fda4af" }]}>
+                          ⚠️ Excedente
+                        </Text>
+                        <Text style={[styles.empVal, { color: "#fb7185" }]}>
+                          COP: ${adm.excedenteCaja.COP.toLocaleString()}
+                        </Text>
+                        <Text style={[styles.empSubVal, { color: "#fb7185" }]}>
+                          USD: ${adm.excedenteCaja.USD.toLocaleString()}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              ))
+            )}
+          </>
+        )}
+
+        {/* --- ESTADÍSTICA DE EMPLEADO DE HOY (Filas en Tarjetas) --- */}
+        {(userRole === "administrador" || userRole === "secretaria") && (
+          <>
+            <Text style={styles.sectionTitle}>
+              👨‍💼 Estadística de Empleados de Hoy
+            </Text>
+            {listaEmpleadosEstadisticas.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyText}>
+                  No hay empleados registrados o actividad hoy.
+                </Text>
+              </View>
+            ) : (
+              listaEmpleadosEstadisticas.map((emp) => (
+                <View key={emp.cedula} style={styles.employeeRowCard}>
+                  <View style={styles.employeeHeaderRow}>
+                    <Text style={styles.employeeNameText}>
+                      👤 {emp.nombres} {emp.apellidos}
+                    </Text>
+                  </View>
+
+                  <View style={styles.employeeStatsGrid}>
+                    <View style={styles.employeeStatItem}>
+                      <Text style={styles.empLabel}>Préstamos</Text>
+                      <Text style={[styles.empVal, { color: "#38bdf8" }]}>
+                        COP: ${emp.prestado.COP.toLocaleString()}
+                      </Text>
+                      <Text style={[styles.empSubVal, { color: "#38bdf8" }]}>
+                        USD: ${emp.prestado.USD.toLocaleString()}
+                      </Text>
+                    </View>
+
+                    <View style={styles.employeeStatItem}>
+                      <Text style={styles.empLabel}>Recaudos</Text>
+                      <Text style={[styles.empVal, { color: "#4ade80" }]}>
+                        COP: ${emp.recaudado.COP.toLocaleString()}
+                      </Text>
+                      <Text style={[styles.empSubVal, { color: "#4ade80" }]}>
+                        USD: ${emp.recaudado.USD.toLocaleString()}
+                      </Text>
+                    </View>
+
+                    <View style={styles.employeeStatItem}>
+                      <Text style={styles.empLabel}>Gastos</Text>
+                      <Text style={[styles.empVal, { color: "#fbbf24" }]}>
+                        COP: ${emp.gastos.COP.toLocaleString()}
+                      </Text>
+                      <Text style={[styles.empSubVal, { color: "#fbbf24" }]}>
+                        USD: ${emp.gastos.USD.toLocaleString()}
+                      </Text>
+                    </View>
+
+                    <View style={styles.employeeStatItem}>
+                      <Text style={styles.empLabel}>A Entregar</Text>
+                      <Text style={[styles.empVal, { color: "#10b981" }]}>
+                        COP: ${emp.totalEntregar.COP.toLocaleString()}
+                      </Text>
+                      <Text style={[styles.empSubVal, { color: "#10b981" }]}>
+                        USD: ${emp.totalEntregar.USD.toLocaleString()}
+                      </Text>
+                    </View>
+
+                    {(emp.excedenteCaja.COP > 0 ||
+                      emp.excedenteCaja.USD > 0) && (
+                      <View
+                        style={[
+                          styles.employeeStatItem,
+                          {
+                            backgroundColor: "#4c0519",
+                            borderColor: "#f43f5e",
+                            borderWidth: 1,
+                          },
+                        ]}
+                      >
+                        <Text style={[styles.empLabel, { color: "#fda4af" }]}>
+                          ⚠️ Excedente
+                        </Text>
+                        <Text style={[styles.empVal, { color: "#fb7185" }]}>
+                          COP: ${emp.excedenteCaja.COP.toLocaleString()}
+                        </Text>
+                        <Text style={[styles.empSubVal, { color: "#fb7185" }]}>
+                          USD: ${emp.excedenteCaja.USD.toLocaleString()}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              ))
+            )}
+          </>
+        )}
+
         {(userRole === "administrador" || userRole === "secretaria") && (
           <>
             <Text style={styles.sectionTitle}>Módulos y Saldos</Text>
 
             <View style={styles.menuGrid}>
+              <TouchableOpacity
+                style={[styles.menuCard, { borderLeftColor: "#4ade80" }]}
+                onPress={() => router.push("/(tabs)/caja" as any)}
+              >
+                <Text style={styles.menuEmoji}>💰</Text>
+                <Text style={styles.menuTitle}>Caja / Bancos</Text>
+                <View style={styles.saldosContainer}>
+                  <Text style={styles.saldoText}>
+                    COP:{" "}
+                    <Text style={styles.boldSaldo}>
+                      ${totalCajasCOP.toLocaleString()}
+                    </Text>
+                  </Text>
+                  <Text style={styles.saldoText}>
+                    USD:{" "}
+                    <Text style={styles.boldSaldo}>
+                      ${totalCajasUSD.toLocaleString()}
+                    </Text>
+                  </Text>
+                </View>
+                <Text style={styles.menuDesc}>
+                  Saldos totales en efectivo y bancos
+                </Text>
+              </TouchableOpacity>
+
               <TouchableOpacity
                 style={[styles.menuCard, { borderLeftColor: "#a855f7" }]}
                 onPress={() => router.push("/(tabs)/clientes" as any)}
@@ -682,49 +1091,52 @@ export default function IndexScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.menuCard, { borderLeftColor: "#f43f5e" }]}
-                onPress={() => router.push("/(tabs)/lista-prestamos" as any)}
+                style={[styles.menuCard, { borderLeftColor: "#3b82f6" }]}
+                onPress={() =>
+                  router.router?.push("/(tabs)/lista-prestamos" as any) ||
+                  router.push("/(tabs)/prestamos" as any)
+                }
               >
-                <Text style={styles.menuEmoji}>💸</Text>
-                <Text style={styles.menuTitle}>Cobros</Text>
+                <Text style={styles.menuEmoji}>💳</Text>
+                <Text style={styles.menuTitle}>Total Préstamos</Text>
+
+                <Text style={styles.saldoText}>
+                  COP:{" "}
+                  <Text style={styles.boldSaldo}>
+                    ${totalPrestamos.COP.toLocaleString()}
+                  </Text>
+                </Text>
                 <Text style={styles.saldoText}>
                   USD:{" "}
                   <Text style={styles.boldSaldo}>
-                    ${totalCobros.USD.toLocaleString()}
+                    ${totalPrestamos.USD.toLocaleString()}
                   </Text>
                 </Text>
+                <Text style={styles.menuDesc}>
+                  Monto histórico total de créditos
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.menuCard, { borderLeftColor: "#f43f5e" }]}
+                onPress={() => router.push("/(tabs)/lista-pagos" as any)}
+              >
+                <Text style={styles.menuEmoji}>💸</Text>
+                <Text style={styles.menuTitle}>Cobros</Text>
                 <Text style={styles.saldoText}>
                   COP:{" "}
                   <Text style={styles.boldSaldo}>
                     ${totalCobros.COP.toLocaleString()}
                   </Text>
                 </Text>
-                <Text style={styles.menuDesc}>Gestionar abonos y cuotas</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.menuCard, { borderLeftColor: "#4ade80" }]}
-                onPress={() => router.push("/(tabs)/caja" as any)}
-              >
-                <Text style={styles.menuEmoji}>💰</Text>
-                <Text style={styles.menuTitle}>Caja / Bancos</Text>
-                <View style={styles.saldosContainer}>
-                  <Text style={styles.saldoText}>
-                    USD:{" "}
-                    <Text style={styles.boldSaldo}>
-                      ${totalCajasUSD.toLocaleString()}
-                    </Text>
+                <Text style={styles.saldoText}>
+                  USD:{" "}
+                  <Text style={styles.boldSaldo}>
+                    ${totalCobros.USD.toLocaleString()}
                   </Text>
-                  <Text style={styles.saldoText}>
-                    COP:{" "}
-                    <Text style={styles.boldSaldo}>
-                      ${totalCajasCOP.toLocaleString()}
-                    </Text>
-                  </Text>
-                </View>
-                <Text style={styles.menuDesc}>
-                  Saldos totales en efectivo y bancos
                 </Text>
+
+                <Text style={styles.menuDesc}>Gestionar abonos y cuotas</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -733,23 +1145,48 @@ export default function IndexScreen() {
               >
                 <Text style={styles.menuEmoji}>📑</Text>
                 <Text style={styles.menuTitle}>Gastos & Nómina</Text>
-                <Text style={styles.saldoText}>
-                  USD:{" "}
-                  <Text style={styles.boldSaldo}>
-                    ${totalGastosNomina.USD.toLocaleString()}
-                  </Text>
-                </Text>
+
                 <Text style={styles.saldoText}>
                   COP:{" "}
                   <Text style={styles.boldSaldo}>
                     ${totalGastosNomina.COP.toLocaleString()}
                   </Text>
                 </Text>
+                <Text style={styles.saldoText}>
+                  USD:{" "}
+                  <Text style={styles.boldSaldo}>
+                    ${totalGastosNomina.USD.toLocaleString()}
+                  </Text>
+                </Text>
+
                 <Text style={styles.menuDesc}>
                   Pagos de empleados y egresos
                 </Text>
               </TouchableOpacity>
 
+              <TouchableOpacity
+                onPress={() => router.push("/(tabs)/caja" as any)}
+                style={[styles.menuCard, { borderLeftColor: "#10b981" }]}
+              >
+                <Text style={styles.menuEmoji}>📈</Text>
+                <Text style={styles.menuTitle}>Ganancias</Text>
+
+                <Text style={styles.saldoText}>
+                  COP:{" "}
+                  <Text style={styles.boldGanancia}>
+                    ${Number(gananciasNeta.COP.toFixed(0)).toLocaleString()}
+                  </Text>
+                </Text>
+                <Text style={styles.saldoText}>
+                  USD:{" "}
+                  <Text style={styles.boldGanancia}>
+                    ${Number(gananciasNeta.USD.toFixed(0)).toLocaleString()}
+                  </Text>
+                </Text>
+                <Text style={styles.menuDesc}>
+                  Utilidades netas registradas
+                </Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.menuCard, { borderLeftColor: "#6366f1" }]}
                 onPress={() => router.push("/(tabs)/empleados" as any)}
@@ -761,29 +1198,6 @@ export default function IndexScreen() {
                   <Text style={styles.boldSaldo}>{totalEmpleados}</Text>
                 </Text>
                 <Text style={styles.menuDesc}>Autorizaciones y personal</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => router.push("/(tabs)/caja" as any)}
-                style={[styles.menuCard, { borderLeftColor: "#10b981" }]}
-              >
-                <Text style={styles.menuEmoji}>📈</Text>
-                <Text style={styles.menuTitle}>Ganancias</Text>
-                <Text style={styles.saldoText}>
-                  USD:{" "}
-                  <Text style={styles.boldGanancia}>
-                    ${Number(gananciasNeta.USD.toFixed(0)).toLocaleString()}
-                  </Text>
-                </Text>
-                <Text style={styles.saldoText}>
-                  COP:{" "}
-                  <Text style={styles.boldGanancia}>
-                    ${Number(gananciasNeta.COP.toFixed(0)).toLocaleString()}
-                  </Text>
-                </Text>
-                <Text style={styles.menuDesc}>
-                  Utilidades netas registradas
-                </Text>
               </TouchableOpacity>
             </View>
           </>
@@ -928,6 +1342,70 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#f8fafc",
     marginBottom: 16,
+  },
+  employeeRowCard: {
+    backgroundColor: "#1e293b",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#334155",
+  },
+  employeeHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#334155",
+    paddingBottom: 8,
+  },
+  employeeNameText: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#f8fafc",
+  },
+  employeeCedulaText: {
+    fontSize: 12,
+    color: "#94a3b8",
+  },
+  employeeStatsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+  employeeStatItem: {
+    width: "48%",
+    backgroundColor: "#0f172a",
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  empLabel: {
+    fontSize: 11,
+    color: "#94a3b8",
+    fontWeight: "600",
+    marginBottom: 4,
+  },
+  empVal: {
+    fontSize: 13,
+    fontWeight: "bold",
+  },
+  empSubVal: {
+    fontSize: 12,
+    fontWeight: "bold",
+    marginTop: 2,
+  },
+  emptyCard: {
+    backgroundColor: "#1e293b",
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 24,
+    alignItems: "center",
+  },
+  emptyText: {
+    color: "#94a3b8",
+    fontSize: 13,
   },
   menuGrid: {
     flexDirection: "row",

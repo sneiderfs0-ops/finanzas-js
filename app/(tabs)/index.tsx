@@ -1092,10 +1092,7 @@ export default function IndexScreen() {
 
               <TouchableOpacity
                 style={[styles.menuCard, { borderLeftColor: "#3b82f6" }]}
-                onPress={() =>
-                  router.router?.push("/(tabs)/lista-prestamos" as any) ||
-                  router.push("/(tabs)/prestamos" as any)
-                }
+                onPress={() => router.push("/(tabs)/lista-prestamos" as any)}
               >
                 <Text style={styles.menuEmoji}>💳</Text>
                 <Text style={styles.menuTitle}>Total Préstamos</Text>

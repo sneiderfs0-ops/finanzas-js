@@ -36,28 +36,25 @@ function CustomDrawerContent(props: any) {
 
       const email = session.user.email.trim().toLowerCase();
 
-      // Verificar si es administrador
-      const { data: adminData } = await supabase
-        .from("administradores")
-        .select("*")
-        .eq("correo", email)
-        .maybeSingle();
+      // Optimización: Consultar ambas tablas en paralelo para evitar bloqueos
+      const [adminRes, secretariaRes] = await Promise.all([
+        supabase
+          .from("administradores")
+          .select("*")
+          .eq("correo", email)
+          .maybeSingle(),
+        supabase
+          .from("secretaria")
+          .select("*")
+          .eq("correo", email)
+          .eq("aprobado", "aprobado")
+          .maybeSingle(),
+      ]);
 
-      if (adminData) {
+      if (adminRes.data) {
         setIsAdmin(true);
         setCanAccessPrivileged(true);
-        return;
-      }
-
-      // Verificar si es secretaria
-      const { data: secretariaData } = await supabase
-        .from("secretaria")
-        .select("*")
-        .eq("correo", email)
-        .eq("aprobado", "aprobado")
-        .maybeSingle();
-
-      if (secretariaData) {
+      } else if (secretariaRes.data) {
         setCanAccessPrivileged(true);
       }
     } catch (error) {
@@ -68,7 +65,6 @@ function CustomDrawerContent(props: any) {
   const handleSignOut = async () => {
     try {
       await AsyncStorage.clear();
-
       const { error } = await supabase.auth.signOut({ scope: "local" });
       if (error) {
         console.log("Error al cerrar sesión:", error.message);
@@ -110,7 +106,6 @@ function CustomDrawerContent(props: any) {
           <Text style={localStyles.navText}>🗺️ Rutas de Cobro</Text>
         </Pressable>
 
-        {/* 👇 Restringido: visible solo para Administrador y Secretaria */}
         {canAccessPrivileged && (
           <Pressable
             style={localStyles.navItem}
@@ -129,7 +124,6 @@ function CustomDrawerContent(props: any) {
           </Pressable>
         )}
 
-        {/* Solo se muestra a administradores, oculto para empleados y secretarias */}
         {isAdmin && (
           <Pressable
             style={localStyles.navItem}
@@ -239,27 +233,17 @@ function NotificacionesEmpleadosHeader() {
 
   const cargarSolicitudesPendientes = async () => {
     try {
-      const { data: empPendientes, error: errEmp } = await supabase
-        .from("empleados")
-        .select("*")
-        .eq("aprobado", "pendiente");
+      // Optimización: Ejecutar ambas consultas simultáneamente con Promise.all
+      const [empRes, secRes] = await Promise.all([
+        supabase.from("empleados").select("*").eq("aprobado", "pendiente"),
+        supabase.from("secretaria").select("*").eq("aprobado", "pendiente"),
+      ]);
 
-      if (errEmp)
-        console.error("Error cargando empleados pendientes:", errEmp.message);
-
-      const { data: secPendientes, error: errSec } = await supabase
-        .from("secretaria")
-        .select("*")
-        .eq("aprobado", "pendiente");
-
-      if (errSec)
-        console.error("Error cargando secretarias pendientes:", errSec.message);
-
-      const listaEmpleados = (empPendientes || []).map((item) => ({
+      const listaEmpleados = (empRes.data || []).map((item) => ({
         ...item,
         tablaDestino: "empleados",
       }));
-      const listaSecretarias = (secPendientes || []).map((item) => ({
+      const listaSecretarias = (secRes.data || []).map((item) => ({
         ...item,
         tablaDestino: "secretaria",
       }));
@@ -440,38 +424,7 @@ export default function TabLayout() {
     <View style={localStyles.headerRightContainer}>
       <NotificacionesEmpleadosHeader />
 
-      <Pressable
-        onPress={() => router.push("/modal")}
-        style={localStyles.iconButton}
-      >
-        {({ pressed }) => (
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 8,
-              opacity: pressed ? 0.5 : 1,
-            }}
-          >
-            <SymbolView
-              name={
-                Platform.OS === "ios" ? "rectangle.stack.badge.plus" : "copy"
-              }
-              size={20}
-              tintColor={colors.textPrimary}
-            />
-            <SymbolView
-              name={Platform.OS === "ios" ? "info.circle.fill" : "info"}
-              size={20}
-              tintColor={colors.textPrimary}
-            />
-            <Text style={{ color: colors.textPrimary, fontWeight: "600" }}>
-              Información
-            </Text>
-          </View>
-        )}
-      </Pressable>
-
+      {/* Se eliminó el botón duplicado que causaba re-renderizados innecesarios y se conservó el enlace limpio */}
       <Link href="/modal" asChild>
         <Pressable style={localStyles.iconButton}>
           {({ pressed }) => (
@@ -733,7 +686,8 @@ const localStyles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 13,
     fontWeight: "bold",
-    textAlign: "center",
+    textAlign: "center5",
+    textAlignVertical: "center",
   },
   closeButton: {
     backgroundColor: colors.border,

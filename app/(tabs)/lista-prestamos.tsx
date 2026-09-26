@@ -11,6 +11,7 @@ import {
   ScrollView,
   useWindowDimensions,
   Platform,
+  FlatList,
   RefreshControl,
 } from "react-native";
 import { supabase } from "../../supabase";
@@ -514,169 +515,173 @@ export default function ListaPrestamosScreen() {
             showsHorizontalScrollIndicator={true}
             contentContainerStyle={styles.horizontalScrollContent}
           >
-            <ScrollView
-              showsVerticalScrollIndicator={true}
-              style={{ width: "100%" }}
-              refreshControl={
-                <RefreshControl
-                  refreshing={refreshing}
-                  onRefresh={() => cargarPrestamos(true)}
-                  colors={["#4f46e5"]}
-                  tintColor="#4f46e5"
-                />
-              }
-            >
-              <View style={styles.tableInnerWrapper}>
-                <View style={[styles.gridRow, styles.gridHeader]}>
-                  <View style={[styles.gridCell, styles.colFecha]}>
-                    <Text style={styles.headerText}>Fecha</Text>
-                  </View>
-                  <View style={[styles.gridCell, styles.colCliente]}>
-                    <Text style={styles.headerText}>Cliente</Text>
-                  </View>
-                  <View style={[styles.gridCell, styles.colMonto]}>
-                    <Text style={styles.headerText}>Monto Prestado</Text>
-                  </View>
-                  <View style={[styles.gridCell, styles.colMoneda]}>
-                    <Text style={styles.headerText}>Moneda</Text>
-                  </View>
-                  <View style={[styles.gridCell, styles.colPorcentaje]}>
-                    <Text style={styles.headerText}>Porcentaje</Text>
-                  </View>
-                  <View style={[styles.gridCell, styles.colTotal]}>
-                    <Text style={styles.headerText}>Total a Pagar</Text>
-                  </View>
-                  <View style={[styles.gridCell, styles.colTotal]}>
-                    <Text style={styles.headerText}>Saldo Pendiente</Text>
-                  </View>
-                  <View style={[styles.gridCell, styles.colEmpleado]}>
-                    <Text style={styles.headerText}>Registrado por</Text>
-                  </View>
-                  <View style={[styles.gridCell, styles.colAccion]}>
-                    <Text style={styles.headerText}>Estado / Acción</Text>
-                  </View>
+            <View style={{ width: "100%" }}>
+              {/* Cabecera de la tabla (permanece fija arriba) */}
+              <View style={[styles.gridRow, styles.gridHeader]}>
+                <View style={[styles.gridCell, styles.colFecha]}>
+                  <Text style={styles.headerText}>Fecha</Text>
                 </View>
+                <View style={[styles.gridCell, styles.colCliente]}>
+                  <Text style={styles.headerText}>Cliente</Text>
+                </View>
+                <View style={[styles.gridCell, styles.colMonto]}>
+                  <Text style={styles.headerText}>Monto Prestado</Text>
+                </View>
+                <View style={[styles.gridCell, styles.colMoneda]}>
+                  <Text style={styles.headerText}>Moneda</Text>
+                </View>
+                <View style={[styles.gridCell, styles.colPorcentaje]}>
+                  <Text style={styles.headerText}>Porcentaje</Text>
+                </View>
+                <View style={[styles.gridCell, styles.colTotal]}>
+                  <Text style={styles.headerText}>Total a Pagar</Text>
+                </View>
+                <View style={[styles.gridCell, styles.colTotal]}>
+                  <Text style={styles.headerText}>Saldo Pendiente</Text>
+                </View>
+                <View style={[styles.gridCell, styles.colEmpleado]}>
+                  <Text style={styles.headerText}>Registrado por</Text>
+                </View>
+                <View style={[styles.gridCell, styles.colAccion]}>
+                  <Text style={styles.headerText}>Estado / Acción</Text>
+                </View>
+              </View>
 
-                {prestamosFiltrados.length === 0 ? (
+              {/* FlatList reemplazando al ScrollView vertical y al .map() */}
+              <FlatList
+                data={prestamosFiltrados}
+                keyExtractor={(item, index) => item.id || index.toString()}
+                ListEmptyComponent={
                   <Text style={styles.emptyText}>
                     No se encontraron préstamos registrados.
                   </Text>
-                ) : (
-                  prestamosFiltrados.map((item, index) => {
-                    const nombreCliente = `${item.clientes.nombres} ${item.clientes.apellidos}`;
-                    const fechaFormateada = formatearFechaLocal(
-                      item.fecha_prestamo,
-                    );
-                    const estado = item.estadoTexto;
-                    let badgeBg = "#eff6ff";
-                    let badgeColor = "#2563eb";
-                    if (estado === "pagado") {
-                      badgeBg = "#f0fdf4";
-                      badgeColor = "#16a34a";
-                    } else if (estado === "atrasado") {
-                      badgeBg = "#fef2f2";
-                      badgeColor = "#dc2626";
-                    }
+                }
+                refreshControl={
+                  <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={() => cargarPrestamos(true)}
+                    colors={["#4f46e5"]}
+                    tintColor="#4f46e5"
+                  />
+                }
+                // Propiedades clave de rendimiento para evitar congelamientos:
+                initialNumToRender={10}
+                maxToRenderPerBatch={10}
+                windowSize={5}
+                removeClippedSubviews={true}
+                renderItem={({ item, index }) => {
+                  const nombreCliente = `${item.clientes?.nombres || ""} ${item.clientes?.apellidos || ""}`;
+                  const fechaFormateada = formatearFechaLocal(
+                    item.fecha_prestamo,
+                  );
+                  const estado = item.estadoTexto;
+                  let badgeBg = "#eff6ff";
+                  let badgeColor = "#2563eb";
+                  if (estado === "pagado") {
+                    badgeBg = "#f0fdf4";
+                    badgeColor = "#16a34a";
+                  } else if (estado === "atrasado") {
+                    badgeBg = "#fef2f2";
+                    badgeColor = "#dc2626";
+                  }
 
-                    return (
-                      <View
-                        key={item.id || index}
-                        style={[
-                          styles.gridRow,
-                          index % 2 === 1 ? styles.rowAlternate : null,
-                        ]}
-                      >
-                        <View style={[styles.gridCell, styles.colFecha]}>
-                          <Text style={styles.cellText}>{fechaFormateada}</Text>
-                        </View>
-                        <View style={[styles.gridCell, styles.colCliente]}>
-                          <Text style={styles.cellTextBold} numberOfLines={1}>
-                            {nombreCliente}
+                  return (
+                    <View
+                      style={[
+                        styles.gridRow,
+                        index % 2 === 1 ? styles.rowAlternate : null,
+                      ]}
+                    >
+                      <View style={[styles.gridCell, styles.colFecha]}>
+                        <Text style={styles.cellText}>{fechaFormateada}</Text>
+                      </View>
+                      <View style={[styles.gridCell, styles.colCliente]}>
+                        <Text style={styles.cellTextBold} numberOfLines={1}>
+                          {nombreCliente}
+                        </Text>
+                      </View>
+                      <View style={[styles.gridCell, styles.colMonto]}>
+                        <Text style={styles.cellText}>
+                          {Number(item.monto_prestado || 0).toFixed(2)}
+                        </Text>
+                      </View>
+                      <View style={[styles.gridCell, styles.colMoneda]}>
+                        <View style={styles.badgeMoneda}>
+                          <Text style={styles.badgeMonedaText}>
+                            {item.moneda || "COP"}
                           </Text>
-                        </View>
-                        <View style={[styles.gridCell, styles.colMonto]}>
-                          <Text style={styles.cellText}>
-                            {Number(item.monto_prestado || 0).toFixed(2)}
-                          </Text>
-                        </View>
-                        <View style={[styles.gridCell, styles.colMoneda]}>
-                          <View style={styles.badgeMoneda}>
-                            <Text style={styles.badgeMonedaText}>
-                              {item.moneda || "COP"}
-                            </Text>
-                          </View>
-                        </View>
-                        <View style={[styles.gridCell, styles.colPorcentaje]}>
-                          <Text style={styles.cellText}>
-                            {item.tasa_interes}%
-                          </Text>
-                        </View>
-                        <View style={[styles.gridCell, styles.colTotal]}>
-                          <Text style={styles.cellTextBold}>
-                            {Number(item.monto_total || 0).toFixed(2)}
-                          </Text>
-                        </View>
-                        <View style={[styles.gridCell, styles.colTotal]}>
-                          <Text
-                            style={[styles.cellTextBold, { color: "#dc2626" }]}
-                          >
-                            {Number(item.saldo_pendiente || 0).toFixed(2)}
-                          </Text>
-                        </View>
-                        <View style={[styles.gridCell, styles.colEmpleado]}>
-                          <Text style={styles.cellText} numberOfLines={1}>
-                            {item.empleadoNombre}
-                          </Text>
-                        </View>
-                        <View style={[styles.gridCell, styles.colAccion]}>
-                          <View
-                            style={[
-                              styles.badgeEstado,
-                              { backgroundColor: badgeBg },
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.badgeTextEstado,
-                                { color: badgeColor },
-                              ]}
-                            >
-                              {estado.toUpperCase()}
-                            </Text>
-                          </View>
-                          <View style={{ flexDirection: "row", gap: 4 }}>
-                            <TouchableOpacity
-                              style={styles.btnVerAccion}
-                              onPress={() => abrirDetalles(item)}
-                            >
-                              <Text style={styles.btnAccionText}>Detalles</Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                              style={styles.btnEditarAccion}
-                              onPress={() => abrirModalEdicion(item)}
-                            >
-                              <Text style={styles.btnAccionText}>Editar</Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                              style={[
-                                styles.btnEditarAccion,
-                                { backgroundColor: "#dc2626" },
-                              ]}
-                              onPress={() => confirmarEliminarPrestamo(item)}
-                            >
-                              <Text style={styles.btnAccionText}>Eliminar</Text>
-                            </TouchableOpacity>
-                          </View>
                         </View>
                       </View>
-                    );
-                  })
-                )}
-                <View style={{ height: 60 }} />
-              </View>
-            </ScrollView>
+                      <View style={[styles.gridCell, styles.colPorcentaje]}>
+                        <Text style={styles.cellText}>
+                          {item.tasa_interes}%
+                        </Text>
+                      </View>
+                      <View style={[styles.gridCell, styles.colTotal]}>
+                        <Text style={styles.cellTextBold}>
+                          {Number(item.monto_total || 0).toFixed(2)}
+                        </Text>
+                      </View>
+                      <View style={[styles.gridCell, styles.colTotal]}>
+                        <Text
+                          style={[styles.cellTextBold, { color: "#dc2626" }]}
+                        >
+                          {Number(item.saldo_pendiente || 0).toFixed(2)}
+                        </Text>
+                      </View>
+                      <View style={[styles.gridCell, styles.colEmpleado]}>
+                        <Text style={styles.cellText} numberOfLines={1}>
+                          {item.empleadoNombre}
+                        </Text>
+                      </View>
+                      <View style={[styles.gridCell, styles.colAccion]}>
+                        <View
+                          style={[
+                            styles.badgeEstado,
+                            { backgroundColor: badgeBg },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.badgeTextEstado,
+                              { color: badgeColor },
+                            ]}
+                          >
+                            {estado.toUpperCase()}
+                          </Text>
+                        </View>
+                        <View style={{ flexDirection: "row", gap: 4 }}>
+                          <TouchableOpacity
+                            style={styles.btnVerAccion}
+                            onPress={() => abrirDetalles(item)}
+                          >
+                            <Text style={styles.btnAccionText}>Detalles</Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={styles.btnEditarAccion}
+                            onPress={() => abrirModalEdicion(item)}
+                          >
+                            <Text style={styles.btnAccionText}>Editar</Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={[
+                              styles.btnEditarAccion,
+                              { backgroundColor: "#dc2626" },
+                            ]}
+                            onPress={() => confirmarEliminarPrestamo(item)}
+                          >
+                            <Text style={styles.btnAccionText}>Eliminar</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </View>
+                  );
+                }}
+              />
+              <View style={{ height: 60 }} />
+            </View>
           </ScrollView>
         </View>
       )}

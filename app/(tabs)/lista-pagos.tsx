@@ -10,6 +10,7 @@ import {
   Platform,
   RefreshControl,
   TextInput, // NUEVO: Importado para el input de edición
+  FlatList,
 } from "react-native";
 import { supabase } from "../../supabase";
 import { useRouter, useFocusEffect } from "expo-router";
@@ -580,185 +581,186 @@ export default function PagosHabilesScreen() {
             showsHorizontalScrollIndicator={true}
             contentContainerStyle={styles.horizontalScrollContent}
           >
-            <ScrollView
-              showsVerticalScrollIndicator={true}
-              style={{ width: "100%" }}
-              contentContainerStyle={{ flexGrow: 1 }}
-              refreshControl={
-                <RefreshControl
-                  refreshing={refreshing}
-                  onRefresh={onRefresh}
-                  colors={["#0f172a"]}
-                />
-              }
-            >
-              <View style={styles.tableInnerWrapper}>
-                <View style={[styles.gridRow, styles.gridHeader]}>
-                  <View style={[styles.gridCell, styles.colFecha]}>
-                    <Text style={styles.headerText}>FECHA</Text>
-                  </View>
-                  <View style={[styles.gridCell, styles.colCliente]}>
-                    <Text style={styles.headerText}>CLIENTE</Text>
-                  </View>
-                  <View style={[styles.gridCell, styles.colMonto]}>
-                    <Text style={styles.headerText}>MONTO PRESTADO</Text>
-                  </View>
-                  <View style={[styles.gridCell, styles.colMoneda]}>
-                    <Text style={styles.headerText}>MONEDA</Text>
-                  </View>
-                  <View style={[styles.gridCell, styles.colPorcentaje]}>
-                    <Text style={styles.headerText}>INTERÉS</Text>
-                  </View>
-                  <View style={[styles.gridCell, styles.colTotal]}>
-                    <Text style={styles.headerText}>TOTAL PRÉSTAMO</Text>
-                  </View>
-                  <View style={[styles.gridCell, styles.colTotal]}>
-                    <Text style={styles.headerText}>SALDO PENDIENTE</Text>
-                  </View>
-                  <View style={[styles.gridCell, styles.colTotal]}>
-                    <Text style={styles.headerText}>PAGO ABONADO</Text>
-                  </View>
-                  <View style={[styles.gridCell, styles.colEmpleado]}>
-                    <Text style={styles.headerText}>REGISTRADO POR</Text>
-                  </View>
-                  <View style={[styles.gridCell, styles.colAccion]}>
-                    <Text style={styles.headerText}>ESTADO / ACCIÓN</Text>
-                  </View>
+            <View style={{ width: "100%" }}>
+              {/* Cabecera de la tabla (permanece fija arriba) */}
+              <View style={[styles.gridRow, styles.gridHeader]}>
+                <View style={[styles.gridCell, styles.colFecha]}>
+                  <Text style={styles.headerText}>FECHA</Text>
                 </View>
+                <View style={[styles.gridCell, styles.colCliente]}>
+                  <Text style={styles.headerText}>CLIENTE</Text>
+                </View>
+                <View style={[styles.gridCell, styles.colMonto]}>
+                  <Text style={styles.headerText}>MONTO PRESTADO</Text>
+                </View>
+                <View style={[styles.gridCell, styles.colMoneda]}>
+                  <Text style={styles.headerText}>MONEDA</Text>
+                </View>
+                <View style={[styles.gridCell, styles.colPorcentaje]}>
+                  <Text style={styles.headerText}>INTERÉS</Text>
+                </View>
+                <View style={[styles.gridCell, styles.colTotal]}>
+                  <Text style={styles.headerText}>TOTAL PRÉSTAMO</Text>
+                </View>
+                <View style={[styles.gridCell, styles.colTotal]}>
+                  <Text style={styles.headerText}>SALDO PENDIENTE</Text>
+                </View>
+                <View style={[styles.gridCell, styles.colTotal]}>
+                  <Text style={styles.headerText}>PAGO ABONADO</Text>
+                </View>
+                <View style={[styles.gridCell, styles.colEmpleado]}>
+                  <Text style={styles.headerText}>REGISTRADO POR</Text>
+                </View>
+                <View style={[styles.gridCell, styles.colAccion]}>
+                  <Text style={styles.headerText}>ESTADO / ACCIÓN</Text>
+                </View>
+              </View>
 
-                {pagosHabilesFiltrados.length === 0 ? (
+              {/* FlatList reemplazando al ScrollView vertical y al .map() */}
+              <FlatList
+                data={pagosHabilesFiltrados}
+                keyExtractor={(item, index) =>
+                  item.id?.toString() || index.toString()
+                }
+                ListEmptyComponent={
                   <View style={styles.emptyContainer}>
                     <Text style={styles.emptyText}>
                       No se encontraron pagos con los criterios de búsqueda.
                     </Text>
                   </View>
-                ) : (
-                  pagosHabilesFiltrados.map((item, index) => {
-                    const nombreCliente = item.clientes
-                      ? `${item.clientes.nombres} ${item.clientes.apellidos}`
-                      : "Cliente desconocido";
+                }
+                refreshControl={
+                  <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={onRefresh}
+                    colors={["#0f172a"]}
+                  />
+                }
+                // Propiedades clave de rendimiento para evitar congelamientos en el APK:
+                initialNumToRender={10}
+                maxToRenderPerBatch={10}
+                windowSize={5}
+                removeClippedSubviews={true}
+                renderItem={({ item, index }) => {
+                  const nombreCliente = item.clientes
+                    ? `${item.clientes.nombres} ${item.clientes.apellidos}`
+                    : "Cliente desconocido";
 
-                    const fechaFormateada = formatearFechaLocal(
-                      item.fecha_pago,
-                    );
-                    const estado = item.estadoTexto || "activo";
+                  const fechaFormateada = formatearFechaLocal(item.fecha_pago);
+                  const estado = item.estadoTexto || "activo";
 
-                    let badgeBg = "#eff6ff";
-                    let badgeColor = "#2563eb";
-                    if (estado === "pagado") {
-                      badgeBg = "#f0fdf4";
-                      badgeColor = "#16a34a";
-                    } else if (estado === "atrasado") {
-                      badgeBg = "#fef2f2";
-                      badgeColor = "#dc2626";
-                    }
+                  let badgeBg = "#eff6ff";
+                  let badgeColor = "#2563eb";
+                  if (estado === "pagado") {
+                    badgeBg = "#f0fdf4";
+                    badgeColor = "#16a34a";
+                  } else if (estado === "atrasado") {
+                    badgeBg = "#fef2f2";
+                    badgeColor = "#dc2626";
+                  }
 
-                    return (
-                      <View
-                        key={item.id?.toString() || index}
-                        style={[
-                          styles.gridRow,
-                          index % 2 === 1 ? styles.rowAlternate : null,
-                        ]}
-                      >
-                        <View style={[styles.gridCell, styles.colFecha]}>
-                          <Text style={styles.cellText}>{fechaFormateada}</Text>
-                        </View>
-                        <View style={[styles.gridCell, styles.colCliente]}>
-                          <Text style={styles.cellTextBold} numberOfLines={1}>
-                            {nombreCliente}
+                  return (
+                    <View
+                      style={[
+                        styles.gridRow,
+                        index % 2 === 1 ? styles.rowAlternate : null,
+                      ]}
+                    >
+                      <View style={[styles.gridCell, styles.colFecha]}>
+                        <Text style={styles.cellText}>{fechaFormateada}</Text>
+                      </View>
+                      <View style={[styles.gridCell, styles.colCliente]}>
+                        <Text style={styles.cellTextBold} numberOfLines={1}>
+                          {nombreCliente}
+                        </Text>
+                      </View>
+                      <View style={[styles.gridCell, styles.colMonto]}>
+                        <Text style={styles.cellText}>
+                          {Number(item.monto_prestado).toFixed(2)}
+                        </Text>
+                      </View>
+                      <View style={[styles.gridCell, styles.colMoneda]}>
+                        <View style={styles.badgeMoneda}>
+                          <Text style={styles.badgeMonedaText}>
+                            {item.moneda_pago}
                           </Text>
-                        </View>
-                        <View style={[styles.gridCell, styles.colMonto]}>
-                          <Text style={styles.cellText}>
-                            {Number(item.monto_prestado).toFixed(2)}
-                          </Text>
-                        </View>
-                        <View style={[styles.gridCell, styles.colMoneda]}>
-                          <View style={styles.badgeMoneda}>
-                            <Text style={styles.badgeMonedaText}>
-                              {item.moneda_pago}
-                            </Text>
-                          </View>
-                        </View>
-                        <View style={[styles.gridCell, styles.colPorcentaje]}>
-                          <Text style={styles.cellText}>
-                            {item.tasa_interes}%
-                          </Text>
-                        </View>
-                        <View style={[styles.gridCell, styles.colTotal]}>
-                          <Text style={styles.cellTextBold}>
-                            {Number(item.monto_total).toFixed(2)}
-                          </Text>
-                        </View>
-                        <View style={[styles.gridCell, styles.colTotal]}>
-                          <Text
-                            style={[styles.cellTextBold, { color: "#dc2626" }]}
-                          >
-                            {Number(item.saldo_pendiente).toFixed(2)}
-                          </Text>
-                        </View>
-                        <View style={[styles.gridCell, styles.colTotal]}>
-                          <Text
-                            style={[styles.cellTextBold, { color: "#16a34a" }]}
-                          >
-                            {Number(item.monto_pagado).toFixed(2)}
-                          </Text>
-                        </View>
-                        <View style={[styles.gridCell, styles.colEmpleado]}>
-                          <Text style={styles.cellText} numberOfLines={1}>
-                            {item.registrado_por_cedula || "Sistema"}
-                          </Text>
-                        </View>
-                        <View style={[styles.gridCell, styles.colAccion]}>
-                          <View
-                            style={[
-                              styles.badgeEstado,
-                              { backgroundColor: badgeBg },
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.badgeTextEstado,
-                                { color: badgeColor },
-                              ]}
-                            >
-                              {estado.toUpperCase()}
-                            </Text>
-                          </View>
-
-                          <TouchableOpacity
-                            style={styles.btnVerAccion}
-                            onPress={() => abrirDetalles(item)}
-                          >
-                            <Text style={styles.btnVerAccionText}>
-                              Detalles
-                            </Text>
-                          </TouchableOpacity>
-
-                          <TouchableOpacity
-                            style={[
-                              styles.btnVerAccion,
-                              { backgroundColor: "#269c4b" },
-                            ]}
-                            onPress={() => abrirEdicion(item)}
-                          >
-                            <Text
-                              style={[
-                                styles.btnVerAccionText,
-                                { color: "#0e1c12" },
-                              ]}
-                            >
-                              Editar
-                            </Text>
-                          </TouchableOpacity>
                         </View>
                       </View>
-                    );
-                  })
-                )}
-              </View>
-            </ScrollView>
+                      <View style={[styles.gridCell, styles.colPorcentaje]}>
+                        <Text style={styles.cellText}>
+                          {item.tasa_interes}%
+                        </Text>
+                      </View>
+                      <View style={[styles.gridCell, styles.colTotal]}>
+                        <Text style={styles.cellTextBold}>
+                          {Number(item.monto_total).toFixed(2)}
+                        </Text>
+                      </View>
+                      <View style={[styles.gridCell, styles.colTotal]}>
+                        <Text
+                          style={[styles.cellTextBold, { color: "#dc2626" }]}
+                        >
+                          {Number(item.saldo_pendiente).toFixed(2)}
+                        </Text>
+                      </View>
+                      <View style={[styles.gridCell, styles.colTotal]}>
+                        <Text
+                          style={[styles.cellTextBold, { color: "#16a34a" }]}
+                        >
+                          {Number(item.monto_pagado).toFixed(2)}
+                        </Text>
+                      </View>
+                      <View style={[styles.gridCell, styles.colEmpleado]}>
+                        <Text style={styles.cellText} numberOfLines={1}>
+                          {item.registrado_por_cedula || "Sistema"}
+                        </Text>
+                      </View>
+                      <View style={[styles.gridCell, styles.colAccion]}>
+                        <View
+                          style={[
+                            styles.badgeEstado,
+                            { backgroundColor: badgeBg },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.badgeTextEstado,
+                              { color: badgeColor },
+                            ]}
+                          >
+                            {estado.toUpperCase()}
+                          </Text>
+                        </View>
+
+                        <TouchableOpacity
+                          style={styles.btnVerAccion}
+                          onPress={() => abrirDetalles(item)}
+                        >
+                          <Text style={styles.btnVerAccionText}>Detalles</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.btnVerAccion,
+                            { backgroundColor: "#269c4b" },
+                          ]}
+                          onPress={() => abrirEdicion(item)}
+                        >
+                          <Text
+                            style={[
+                              styles.btnVerAccionText,
+                              { color: "#0e1c12" },
+                            ]}
+                          >
+                            Editar
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                }}
+              />
+            </View>
           </ScrollView>
         </View>
       )}

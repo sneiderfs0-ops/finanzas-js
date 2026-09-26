@@ -22,7 +22,7 @@ export default function ListaPrestamosScreen() {
   const esPantallaPequena = width < 768;
 
   const [prestamos, setPrestamos] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // Cambiado a false para que no bloquee la pantalla de inicio
   const [refreshing, setRefreshing] = useState(false);
   const [busqueda, setBusqueda] = useState("");
 
@@ -178,7 +178,6 @@ export default function ListaPrestamosScreen() {
 
   const abrirModalEdicion = (item: any) => {
     setPrestamoAEditar(item);
-    // Formatear la fecha a YYYY-MM-DD si existe
     let fechaOriginal = "";
     if (item.fecha_prestamo) {
       fechaOriginal = item.fecha_prestamo.split("T")[0];
@@ -200,13 +199,11 @@ export default function ListaPrestamosScreen() {
 
       if (error) throw error;
 
-      // Si tiene pagos registrados, abrimos el modal de error personalizado
       if (pagosRegistrados && pagosRegistrados.length > 0) {
         setErrorModalVisible(true);
         return;
       }
 
-      // Si no tiene pagos, procedemos a abrir el modal de confirmación normal
       setPrestamoAEliminar(item);
       setDeleteModalVisible(true);
     } catch (err) {
@@ -217,7 +214,7 @@ export default function ListaPrestamosScreen() {
 
   const ejecutarEliminacion = async (item: any) => {
     try {
-      setIdPrestamoBorrando(item.id); // Guardamos el ID temporalmente
+      setIdPrestamoBorrando(item.id);
 
       const { error } = await supabase
         .from("prestamos")
@@ -226,12 +223,10 @@ export default function ListaPrestamosScreen() {
 
       if (error) throw error;
 
-      // 1. Actualización inmediata en el cliente (Funciona perfecto en Móvil y Web)
       setPrestamos((prevPrestamos: any[]) =>
         prevPrestamos.filter((p) => p.id !== item.id),
       );
 
-      // Cerrar modal de confirmación y abrir modal de éxito
       setDeleteModalVisible(false);
       setPrestamoAEliminar(null);
       setSuccessModalVisible(true);
@@ -264,7 +259,6 @@ export default function ListaPrestamosScreen() {
 
     setGuardandoEdicion(true);
     try {
-      // Recalcular monto total basado en el interés simple (Monto + (Monto * Porcentaje / 100))
       const interesCalculado = (montoNum * porcentajeNum) / 100;
       const nuevoMontoTotal = montoNum + interesCalculado;
 
@@ -503,188 +497,186 @@ export default function ListaPrestamosScreen() {
         </View>
       </View>
 
-      {loading ? (
-        <View style={styles.loaderContainer}>
-          <ActivityIndicator size="large" color="#4f46e5" />
-          <Text style={{ marginTop: 10 }}>Cargando préstamos...</Text>
-        </View>
-      ) : (
-        <View style={styles.tableFullContainer}>
-          <ScrollView
-            horizontal={true}
-            showsHorizontalScrollIndicator={true}
-            contentContainerStyle={styles.horizontalScrollContent}
-          >
-            <View style={{ width: "100%" }}>
-              {/* Cabecera de la tabla (permanece fija arriba) */}
-              <View style={[styles.gridRow, styles.gridHeader]}>
-                <View style={[styles.gridCell, styles.colFecha]}>
-                  <Text style={styles.headerText}>Fecha</Text>
-                </View>
-                <View style={[styles.gridCell, styles.colCliente]}>
-                  <Text style={styles.headerText}>Cliente</Text>
-                </View>
-                <View style={[styles.gridCell, styles.colMonto]}>
-                  <Text style={styles.headerText}>Monto Prestado</Text>
-                </View>
-                <View style={[styles.gridCell, styles.colMoneda]}>
-                  <Text style={styles.headerText}>Moneda</Text>
-                </View>
-                <View style={[styles.gridCell, styles.colPorcentaje]}>
-                  <Text style={styles.headerText}>Porcentaje</Text>
-                </View>
-                <View style={[styles.gridCell, styles.colTotal]}>
-                  <Text style={styles.headerText}>Total a Pagar</Text>
-                </View>
-                <View style={[styles.gridCell, styles.colTotal]}>
-                  <Text style={styles.headerText}>Saldo Pendiente</Text>
-                </View>
-                <View style={[styles.gridCell, styles.colEmpleado]}>
-                  <Text style={styles.headerText}>Registrado por</Text>
-                </View>
-                <View style={[styles.gridCell, styles.colAccion]}>
-                  <Text style={styles.headerText}>Estado / Acción</Text>
-                </View>
+      {/* Se quitó el bloqueo de pantalla completa por 'loading', la estructura carga de inmediato */}
+      <View style={styles.tableFullContainer}>
+        <ScrollView
+          horizontal={true}
+          showsHorizontalScrollIndicator={true}
+          contentContainerStyle={styles.horizontalScrollContent}
+        >
+          <View style={{ width: "100%" }}>
+            {/* Cabecera de la tabla (permanece fija arriba) */}
+            <View style={[styles.gridRow, styles.gridHeader]}>
+              <View style={[styles.gridCell, styles.colFecha]}>
+                <Text style={styles.headerText}>Fecha</Text>
               </View>
+              <View style={[styles.gridCell, styles.colCliente]}>
+                <Text style={styles.headerText}>Cliente</Text>
+              </View>
+              <View style={[styles.gridCell, styles.colMonto]}>
+                <Text style={styles.headerText}>Monto Prestado</Text>
+              </View>
+              <View style={[styles.gridCell, styles.colMoneda]}>
+                <Text style={styles.headerText}>Moneda</Text>
+              </View>
+              <View style={[styles.gridCell, styles.colPorcentaje]}>
+                <Text style={styles.headerText}>Porcentaje</Text>
+              </View>
+              <View style={[styles.gridCell, styles.colTotal]}>
+                <Text style={styles.headerText}>Total a Pagar</Text>
+              </View>
+              <View style={[styles.gridCell, styles.colTotal]}>
+                <Text style={styles.headerText}>Saldo Pendiente</Text>
+              </View>
+              <View style={[styles.gridCell, styles.colEmpleado]}>
+                <Text style={styles.headerText}>Registrado por</Text>
+              </View>
+              <View style={[styles.gridCell, styles.colAccion]}>
+                <Text style={styles.headerText}>Estado / Acción</Text>
+              </View>
+            </View>
 
-              {/* FlatList reemplazando al ScrollView vertical y al .map() */}
-              <FlatList
-                data={prestamosFiltrados}
-                keyExtractor={(item, index) => item.id || index.toString()}
-                ListEmptyComponent={
+            {/* FlatList */}
+            <FlatList
+              data={prestamosFiltrados}
+              keyExtractor={(item, index) => item.id || index.toString()}
+              ListEmptyComponent={
+                loading ? (
+                  <View style={{ padding: 20, alignItems: "center" }}>
+                    <ActivityIndicator size="small" color="#4f46e5" />
+                    <Text style={{ marginTop: 8, color: "#64748b" }}>
+                      Cargando préstamos...
+                    </Text>
+                  </View>
+                ) : (
                   <Text style={styles.emptyText}>
                     No se encontraron préstamos registrados.
                   </Text>
+                )
+              }
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={() => cargarPrestamos(true)}
+                  colors={["#4f46e5"]}
+                  tintColor="#4f46e5"
+                />
+              }
+              initialNumToRender={10}
+              maxToRenderPerBatch={10}
+              windowSize={5}
+              removeClippedSubviews={true}
+              renderItem={({ item, index }) => {
+                const nombreCliente = `${item.clientes?.nombres || ""} ${item.clientes?.apellidos || ""}`;
+                const fechaFormateada = formatearFechaLocal(
+                  item.fecha_prestamo,
+                );
+                const estado = item.estadoTexto;
+                let badgeBg = "#eff6ff";
+                let badgeColor = "#2563eb";
+                if (estado === "pagado") {
+                  badgeBg = "#f0fdf4";
+                  badgeColor = "#16a34a";
+                } else if (estado === "atrasado") {
+                  badgeBg = "#fef2f2";
+                  badgeColor = "#dc2626";
                 }
-                refreshControl={
-                  <RefreshControl
-                    refreshing={refreshing}
-                    onRefresh={() => cargarPrestamos(true)}
-                    colors={["#4f46e5"]}
-                    tintColor="#4f46e5"
-                  />
-                }
-                // Propiedades clave de rendimiento para evitar congelamientos:
-                initialNumToRender={10}
-                maxToRenderPerBatch={10}
-                windowSize={5}
-                removeClippedSubviews={true}
-                renderItem={({ item, index }) => {
-                  const nombreCliente = `${item.clientes?.nombres || ""} ${item.clientes?.apellidos || ""}`;
-                  const fechaFormateada = formatearFechaLocal(
-                    item.fecha_prestamo,
-                  );
-                  const estado = item.estadoTexto;
-                  let badgeBg = "#eff6ff";
-                  let badgeColor = "#2563eb";
-                  if (estado === "pagado") {
-                    badgeBg = "#f0fdf4";
-                    badgeColor = "#16a34a";
-                  } else if (estado === "atrasado") {
-                    badgeBg = "#fef2f2";
-                    badgeColor = "#dc2626";
-                  }
 
-                  return (
-                    <View
-                      style={[
-                        styles.gridRow,
-                        index % 2 === 1 ? styles.rowAlternate : null,
-                      ]}
-                    >
-                      <View style={[styles.gridCell, styles.colFecha]}>
-                        <Text style={styles.cellText}>{fechaFormateada}</Text>
-                      </View>
-                      <View style={[styles.gridCell, styles.colCliente]}>
-                        <Text style={styles.cellTextBold} numberOfLines={1}>
-                          {nombreCliente}
+                return (
+                  <View
+                    style={[
+                      styles.gridRow,
+                      index % 2 === 1 ? styles.rowAlternate : null,
+                    ]}
+                  >
+                    <View style={[styles.gridCell, styles.colFecha]}>
+                      <Text style={styles.cellText}>{fechaFormateada}</Text>
+                    </View>
+                    <View style={[styles.gridCell, styles.colCliente]}>
+                      <Text style={styles.cellTextBold} numberOfLines={1}>
+                        {nombreCliente}
+                      </Text>
+                    </View>
+                    <View style={[styles.gridCell, styles.colMonto]}>
+                      <Text style={styles.cellText}>
+                        {Number(item.monto_prestado || 0).toFixed(2)}
+                      </Text>
+                    </View>
+                    <View style={[styles.gridCell, styles.colMoneda]}>
+                      <View style={styles.badgeMoneda}>
+                        <Text style={styles.badgeMonedaText}>
+                          {item.moneda || "COP"}
                         </Text>
-                      </View>
-                      <View style={[styles.gridCell, styles.colMonto]}>
-                        <Text style={styles.cellText}>
-                          {Number(item.monto_prestado || 0).toFixed(2)}
-                        </Text>
-                      </View>
-                      <View style={[styles.gridCell, styles.colMoneda]}>
-                        <View style={styles.badgeMoneda}>
-                          <Text style={styles.badgeMonedaText}>
-                            {item.moneda || "COP"}
-                          </Text>
-                        </View>
-                      </View>
-                      <View style={[styles.gridCell, styles.colPorcentaje]}>
-                        <Text style={styles.cellText}>
-                          {item.tasa_interes}%
-                        </Text>
-                      </View>
-                      <View style={[styles.gridCell, styles.colTotal]}>
-                        <Text style={styles.cellTextBold}>
-                          {Number(item.monto_total || 0).toFixed(2)}
-                        </Text>
-                      </View>
-                      <View style={[styles.gridCell, styles.colTotal]}>
-                        <Text
-                          style={[styles.cellTextBold, { color: "#dc2626" }]}
-                        >
-                          {Number(item.saldo_pendiente || 0).toFixed(2)}
-                        </Text>
-                      </View>
-                      <View style={[styles.gridCell, styles.colEmpleado]}>
-                        <Text style={styles.cellText} numberOfLines={1}>
-                          {item.empleadoNombre}
-                        </Text>
-                      </View>
-                      <View style={[styles.gridCell, styles.colAccion]}>
-                        <View
-                          style={[
-                            styles.badgeEstado,
-                            { backgroundColor: badgeBg },
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.badgeTextEstado,
-                              { color: badgeColor },
-                            ]}
-                          >
-                            {estado.toUpperCase()}
-                          </Text>
-                        </View>
-                        <View style={{ flexDirection: "row", gap: 4 }}>
-                          <TouchableOpacity
-                            style={styles.btnVerAccion}
-                            onPress={() => abrirDetalles(item)}
-                          >
-                            <Text style={styles.btnAccionText}>Detalles</Text>
-                          </TouchableOpacity>
-
-                          <TouchableOpacity
-                            style={styles.btnEditarAccion}
-                            onPress={() => abrirModalEdicion(item)}
-                          >
-                            <Text style={styles.btnAccionText}>Editar</Text>
-                          </TouchableOpacity>
-
-                          <TouchableOpacity
-                            style={[
-                              styles.btnEditarAccion,
-                              { backgroundColor: "#dc2626" },
-                            ]}
-                            onPress={() => confirmarEliminarPrestamo(item)}
-                          >
-                            <Text style={styles.btnAccionText}>Eliminar</Text>
-                          </TouchableOpacity>
-                        </View>
                       </View>
                     </View>
-                  );
-                }}
-              />
-              <View style={{ height: 60 }} />
-            </View>
-          </ScrollView>
-        </View>
-      )}
+                    <View style={[styles.gridCell, styles.colPorcentaje]}>
+                      <Text style={styles.cellText}>{item.tasa_interes}%</Text>
+                    </View>
+                    <View style={[styles.gridCell, styles.colTotal]}>
+                      <Text style={styles.cellTextBold}>
+                        {Number(item.monto_total || 0).toFixed(2)}
+                      </Text>
+                    </View>
+                    <View style={[styles.gridCell, styles.colTotal]}>
+                      <Text style={[styles.cellTextBold, { color: "#dc2626" }]}>
+                        {Number(item.saldo_pendiente || 0).toFixed(2)}
+                      </Text>
+                    </View>
+                    <View style={[styles.gridCell, styles.colEmpleado]}>
+                      <Text style={styles.cellText} numberOfLines={1}>
+                        {item.empleadoNombre}
+                      </Text>
+                    </View>
+                    <View style={[styles.gridCell, styles.colAccion]}>
+                      <View
+                        style={[
+                          styles.badgeEstado,
+                          { backgroundColor: badgeBg },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.badgeTextEstado,
+                            { color: badgeColor },
+                          ]}
+                        >
+                          {estado.toUpperCase()}
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: "row", gap: 4 }}>
+                        <TouchableOpacity
+                          style={styles.btnVerAccion}
+                          onPress={() => abrirDetalles(item)}
+                        >
+                          <Text style={styles.btnAccionText}>Detalles</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.btnEditarAccion}
+                          onPress={() => abrirModalEdicion(item)}
+                        >
+                          <Text style={styles.btnAccionText}>Editar</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.btnEditarAccion,
+                            { backgroundColor: "#dc2626" },
+                          ]}
+                          onPress={() => confirmarEliminarPrestamo(item)}
+                        >
+                          <Text style={styles.btnAccionText}>Eliminar</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                );
+              }}
+            />
+            <View style={{ height: 60 }} />
+          </View>
+        </ScrollView>
+      </View>
 
       {/* MODAL DE DETALLES E HISTORIAL DE PAGOS */}
       <Modal
@@ -851,270 +843,6 @@ export default function ListaPrestamosScreen() {
               onPress={() => setModalVisible(false)}
             >
               <Text style={styles.btnCloseModalText}>Cerrar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* MODAL DE EDICIÓN DE PRÉSTAMO */}
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={editModalVisible}
-        onRequestClose={() => setEditModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>Editar Préstamo</Text>
-              <TouchableOpacity
-                onPress={() => setEditModalVisible(false)}
-                style={styles.closeIconBtn}
-              >
-                <Text style={styles.closeIconText}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView
-              style={{ maxHeight: 450 }}
-              showsVerticalScrollIndicator={false}
-            >
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>
-                  Fecha de Préstamo (YYYY-MM-DD):
-                </Text>
-                <TextInput
-                  style={styles.inputModal}
-                  value={editFecha}
-                  onChangeText={setEditFecha}
-                  placeholder="Ej: 2026-09-08"
-                />
-              </View>
-
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Frecuencia de Pago:</Text>
-                <View style={styles.frecuenciaRow}>
-                  {["Diario", "Semanal", "Quincenal", "Mensual"].map((freq) => (
-                    <TouchableOpacity
-                      key={freq}
-                      style={[
-                        styles.frecuenciaBtn,
-                        editFrecuencia === freq && styles.frecuenciaBtnActive,
-                      ]}
-                      onPress={() => setEditFrecuencia(freq)}
-                    >
-                      <Text
-                        style={[
-                          styles.frecuenciaBtnText,
-                          editFrecuencia === freq &&
-                            styles.frecuenciaBtnTextActive,
-                        ]}
-                      >
-                        {freq}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>
-                  Porcentaje de Interés (%):
-                </Text>
-                <TextInput
-                  style={styles.inputModal}
-                  value={editPorcentaje}
-                  onChangeText={setEditPorcentaje}
-                  keyboardType="numeric"
-                  placeholder="Ej: 20"
-                />
-              </View>
-
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Monto del Préstamo:</Text>
-                <TextInput
-                  style={styles.inputModal}
-                  value={editMonto}
-                  onChangeText={setEditMonto}
-                  keyboardType="numeric"
-                  placeholder="Ej: 100000"
-                />
-              </View>
-            </ScrollView>
-
-            <View style={styles.modalFooterActions}>
-              <TouchableOpacity
-                style={styles.btnCancelarModal}
-                onPress={() => setEditModalVisible(false)}
-              >
-                <Text style={styles.btnCancelarText}>Cancelar</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.btnGuardarModal}
-                onPress={guardarEdicionPrestamo}
-                disabled={guardandoEdicion}
-              >
-                {guardandoEdicion ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Text style={styles.btnGuardarText}>Guardar Cambios</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* MODAL DE CONFIRMACIÓN DE ELIMINACIÓN */}
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={deleteModalVisible}
-        onRequestClose={() => setDeleteModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { maxWidth: 400 }]}>
-            <Text style={[styles.modalTitle, { color: "#dc2626" }]}>
-              Confirmar Eliminación
-            </Text>
-
-            <Text
-              style={{
-                marginVertical: 15,
-                fontSize: 14,
-                color: "#334155",
-                textAlign: "center",
-              }}
-            >
-              ¿Estás seguro de que deseas eliminar el préstamo de{" "}
-              <Text style={{ fontWeight: "bold" }}>
-                {prestamoAEliminar?.clientes?.nombres}{" "}
-                {prestamoAEliminar?.clientes?.apellidos}
-              </Text>
-              ?{"\n\n"}Esta acción devolverá el monto capital a la caja/banco
-              correspondiente.
-            </Text>
-
-            <View
-              style={{
-                flexDirection: "row",
-                justifyContent: "space-between",
-                gap: 10,
-                marginTop: 10,
-              }}
-            >
-              <TouchableOpacity
-                style={[
-                  styles.btnCloseModal,
-                  { backgroundColor: "#64748b", flex: 1, marginTop: 0 },
-                ]}
-                onPress={() => setDeleteModalVisible(false)}
-              >
-                <Text style={styles.btnCloseModalText}>Cancelar</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.btnCloseModal,
-                  { backgroundColor: "#dc2626", flex: 1, marginTop: 0 },
-                ]}
-                onPress={async () => {
-                  const itemTemp = prestamoAEliminar;
-                  setDeleteModalVisible(false);
-                  setPrestamoAEliminar(null);
-                  if (itemTemp) {
-                    await ejecutarEliminacion(itemTemp);
-                  }
-                }}
-              >
-                <Text style={styles.btnCloseModalText}>Sí, Eliminar</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-      {/* MODAL DE ERROR PERSONALIZADO (Préstamo con pagos) */}
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={errorModalVisible}
-        onRequestClose={() => setErrorModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { maxWidth: 400 }]}>
-            <Text style={[styles.modalTitle, { color: "#dc2626" }]}>
-              No se puede eliminar
-            </Text>
-
-            <Text
-              style={{
-                marginVertical: 15,
-                fontSize: 14,
-                color: "#334155",
-                textAlign: "center",
-              }}
-            >
-              Este préstamo ya tiene pagos o abonos registrados. No es posible
-              eliminarlo para mantener la integridad de la caja y los registros
-              financieros.
-            </Text>
-
-            <TouchableOpacity
-              style={[
-                styles.btnCloseModal,
-                { backgroundColor: "#3b82f6", marginTop: 10, width: "100%" },
-              ]}
-              onPress={() => setErrorModalVisible(false)}
-            >
-              <Text style={styles.btnCloseModalText}>Entendido</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* MODAL DE ÉXITO PERSONALIZADO (Préstamo eliminado) */}
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={successModalVisible}
-        onRequestClose={() => setSuccessModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { maxWidth: 400 }]}>
-            <Text style={[styles.modalTitle, { color: "#16a34a" }]}>
-              ¡Eliminado con Éxito!
-            </Text>
-
-            <Text
-              style={{
-                marginVertical: 15,
-                fontSize: 14,
-                color: "#334155",
-                textAlign: "center",
-              }}
-            >
-              El préstamo ha sido eliminado correctamente del sistema.
-            </Text>
-
-            <TouchableOpacity
-              style={[
-                styles.btnCloseModal,
-                { backgroundColor: "#16a34a", marginTop: 10, width: "100%" },
-              ]}
-              onPress={() => {
-                setSuccessModalVisible(false);
-
-                // Llama aquí a tu función de carga de datos original (ej. cargarPrestamos() o onRefresh())
-                // para asegurar que la base de datos y la vista estén 100% sincronizadas.
-                if (typeof cargarPrestamos === "function") {
-                  cargarPrestamos();
-                } else if (typeof onRefresh === "function") {
-                  onRefresh();
-                }
-              }}
-            >
-              <Text style={styles.btnCloseModalText}>Aceptar</Text>
             </TouchableOpacity>
           </View>
         </View>

@@ -30,6 +30,15 @@ interface Cliente {
   ruta_id?: string;
 }
 
+interface PrestamoActivo {
+  id: string;
+  cedula: string;
+  monto_total: number;
+  saldo_pendiente: number;
+  moneda: string;
+  fecha_prestamo: string;
+}
+
 export default function CrearPrestamoScreen({ route }: any) {
   const clienteCedulaParam = route?.params?.clienteCedula || null;
   const { width } = useWindowDimensions();
@@ -65,11 +74,20 @@ export default function CrearPrestamoScreen({ route }: any) {
   const [cuotas, setCuotas] = useState("24");
   const [loading, setLoading] = useState(false);
 
-  // NUEVOS ESTADOS PARA FECHA MANUAL DE ADMINISTRADOR
+  // ESTADOS PARA FECHA MANUAL DE ADMINISTRADOR
   const [usarFechaManual, setUsarFechaManual] = useState(false);
   const [fechaManual, setFechaManual] = useState(
     new Date().toISOString().split("T")[0],
   );
+
+  // NUEVOS ESTADOS PARA LA RENOVACIÓN DE PRÉSTAMOS
+  const [esRenovacion, setEsRenovacion] = useState(false);
+  const [prestamosActivosCliente, setPrestamosActivosCliente] = useState<
+    PrestamoActivo[]
+  >([]);
+  const [prestamoPadreSeleccionado, setPrestamoPadreSeleccionado] = useState<
+    string | null
+  >(null);
 
   const [usuarioActual, setUsuarioActual] = useState<{
     id: string;
@@ -81,6 +99,33 @@ export default function CrearPrestamoScreen({ route }: any) {
   useEffect(() => {
     obtenerUsuarioLogueadoYCargarDatos();
   }, []);
+
+  // Cargar préstamos activos cuando el usuario selecciona un cliente y marca renovación
+  useEffect(() => {
+    if (esRenovacion && clienteSeleccionado) {
+      cargarPrestamosActivosCliente(clienteSeleccionado);
+    } else {
+      setPrestamosActivosCliente([]);
+      setPrestamoPadreSeleccionado(null);
+    }
+  }, [esRenovacion, clienteSeleccionado]);
+
+  const cargarPrestamosActivosCliente = async (cedulaCliente: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("prestamos")
+        .select(
+          "id, cedula, monto_total, saldo_pendiente, moneda, fecha_prestamo",
+        )
+        .eq("cedula", cedulaCliente)
+        .gt("saldo_pendiente", 0);
+
+      if (error) throw error;
+      if (data) setPrestamosActivosCliente(data);
+    } catch (err) {
+      console.log("Error cargando préstamos activos para renovación:", err);
+    }
+  };
 
   const obtenerUsuarioLogueadoYCargarDatos = async () => {
     try {
@@ -321,6 +366,14 @@ export default function CrearPrestamoScreen({ route }: any) {
       return;
     }
 
+    if (esRenovacion && !prestamoPadreSeleccionado) {
+      mostrarMensaje(
+        "error",
+        "Has marcado renovación, por favor selecciona cuál préstamo activo deseas renovar.",
+      );
+      return;
+    }
+
     const cajaSeleccionada = obtenerCajaIdAutomatica();
     if (!cajaSeleccionada) {
       mostrarMensaje(
@@ -352,7 +405,7 @@ export default function CrearPrestamoScreen({ route }: any) {
         return;
       }
 
-      // Estructura de datos a insertar
+      // Estructura de datos a insertar con el soporte opcional de prestamo_padre_id
       const objetoPrestamo: any = {
         cedula: clienteSeleccionado,
         moneda: moneda,
@@ -366,7 +419,6 @@ export default function CrearPrestamoScreen({ route }: any) {
         valor_cuota: valorCuota,
         caja_id: cajaSeleccionada.id,
         registrado_por_cedula: usuarioActual.cedula,
-        // ✅ Aquí faltaba la clave "fecha_prestamo:"
         fecha_prestamo:
           usarFechaManual &&
           usuarioActual.tipo === "Administrador" &&
@@ -375,22 +427,31 @@ export default function CrearPrestamoScreen({ route }: any) {
             : obtenerFechaHoraExactaVenezuela(),
       };
 
+      if (esRenovacion && prestamoPadreSeleccionado) {
+        objetoPrestamo.prestamo_padre_id = prestamoPadreSeleccionado;
+      }
+
       const { error: errorPrestamo } = await supabase
         .from("prestamos")
         .insert([objetoPrestamo]);
 
       if (errorPrestamo) throw errorPrestamo;
 
-      // Reiniciar formulario y ocultar / resetear el checkbox de fecha manual
+      // Reiniciar formulario y campos de renovación
       setMonto("");
       setClienteSeleccionado(null);
       setNombreBusqueda("");
       setUsarFechaManual(false);
       setFechaManual(new Date().toISOString().split("T")[0]);
+      setEsRenovacion(false);
+      setPrestamoPadreSeleccionado(null);
+      setPrestamosActivosCliente([]);
 
       mostrarMensaje(
         "exito",
-        "El préstamo se ha registrado satisfactoriamente y la caja ha sido actualizada.",
+        esRenovacion
+          ? "¡Préstamo renovado exitosamente! El crédito anterior ha sido cerrado y la caja actualizada."
+          : "El préstamo se ha registrado satisfactoriamente y la caja ha sido actualizada.",
       );
     } catch (err: any) {
       console.log("Error al guardar préstamo:", err.message);
@@ -399,7 +460,7 @@ export default function CrearPrestamoScreen({ route }: any) {
         err.message ||
         "Ocurrió un error inesperado al intentar guardar el préstamo.";
       if (mensajeErrorFinal.toLowerCase().includes("numeric field overflow")) {
-        mensajeErrorFinal = `⚠️ El monto ingresado ($ ${formatearSinDecimales(montoNum)} ${moneda}) es demasiado grande y excede el límite permitido por la base de datos.`;
+        mensajeErrorFinal = `⚠️ El monto ingresado ($ ${formatearSinDecimales(montoNum)} ${moneda}) is demasiado grande y excede el límite permitido por la base de datos.`;
       }
 
       mostrarMensaje("error", mensajeErrorFinal);
@@ -516,6 +577,90 @@ export default function CrearPrestamoScreen({ route }: any) {
             )}
             <Text style={styles.dropdownTriggerIcon}>▼</Text>
           </TouchableOpacity>
+
+          {/* ======================================================== */}
+          {/* BLOQUE DE CHECKBOX DE RENOVACIÓN DE PRÉSTAMO            */}
+          {/* ======================================================== */}
+          <View style={styles.adminDateContainer}>
+            <TouchableOpacity
+              style={styles.checkboxRow}
+              onPress={() => setEsRenovacion(!esRenovacion)}
+              activeOpacity={0.8}
+            >
+              <View
+                style={[
+                  styles.checkboxBox,
+                  esRenovacion && styles.checkboxBoxActive,
+                ]}
+              >
+                {esRenovacion && <Text style={styles.checkboxCheck}>✓</Text>}
+              </View>
+              <Text style={styles.checkboxLabel}>
+                🔄 ¿Renovación del préstamo?
+              </Text>
+            </TouchableOpacity>
+
+            {esRenovacion && (
+              <View style={styles.datePickerWrapper}>
+                <Text style={styles.subLabel}>
+                  Seleccione el préstamo activo a renovar:
+                </Text>
+                {clienteSeleccionado ? (
+                  prestamosActivosCliente.length > 0 ? (
+                    prestamosActivosCliente.map((p) => {
+                      const isSelected = prestamoPadreSeleccionado === p.id;
+                      return (
+                        <TouchableOpacity
+                          key={p.id}
+                          style={[
+                            styles.selectChip,
+                            { marginBottom: 6, alignItems: "flex-start" },
+                            isSelected && styles.selectChipActive,
+                          ]}
+                          onPress={() => setPrestamoPadreSeleccionado(p.id)}
+                        >
+                          <Text
+                            style={[
+                              styles.selectChipTxt,
+                              isSelected && styles.selectChipTxtActive,
+                            ]}
+                          >
+                            Monto Total del prestamo: ${" "}
+                            {formatearSinDecimales(p.monto_total)} {p.moneda} |
+                            Saldo Pendiente: ${" "}
+                            {formatearSinDecimales(p.saldo_pendiente)}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })
+                  ) : (
+                    <Text
+                      style={{
+                        color: "#b45309",
+                        fontSize: 13,
+                        fontStyle: "italic",
+                      }}
+                    >
+                      Este cliente no tiene préstamos activos pendientes por
+                      cobrar.
+                    </Text>
+                  )
+                ) : (
+                  <Text
+                    style={{
+                      color: "#b45309",
+                      fontSize: 13,
+                      fontStyle: "italic",
+                    }}
+                  >
+                    Primero seleccione un cliente arriba para ver sus créditos
+                    activos.
+                  </Text>
+                )}
+              </View>
+            )}
+          </View>
+          {/* ======================================================== */}
 
           <Text style={styles.label}>4. Frecuencia de Pago</Text>
           <View style={styles.rowSelector}>
@@ -669,7 +814,9 @@ export default function CrearPrestamoScreen({ route }: any) {
             {loading ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.buttonText}>Registrar Préstamo</Text>
+              <Text style={styles.buttonText}>
+                {esRenovacion ? "Registrar Renovación" : "Registrar Préstamo"}
+              </Text>
             )}
           </TouchableOpacity>
         </View>
@@ -779,9 +926,7 @@ export default function CrearPrestamoScreen({ route }: any) {
                 </Text>
               </View>
               <Text style={styles.modalExitoTitle}>
-                {tipoResultado === "exito"
-                  ? "¡Préstamo Registrado!"
-                  : "Atención"}
+                {tipoResultado === "exito" ? "¡Operación Exitosa!" : "Atención"}
               </Text>
               <Text style={styles.modalExitoMessage}>{mensajeResultado}</Text>
               <TouchableOpacity
@@ -914,11 +1059,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#0f172a",
   },
-  dropdownTriggerSubtitle: {
-    fontSize: 13,
-    color: "#64748b",
-    marginTop: 2,
-  },
   dropdownTriggerPlaceholder: {
     fontSize: 15,
     color: "#94a3b8",
@@ -967,7 +1107,6 @@ const styles = StyleSheet.create({
   bold: { fontWeight: "bold", color: "#1e293b" },
   boldPrimary: { fontWeight: "bold", color: "#0284c7", fontSize: 15 },
 
-  // ESTILOS NUEVOS PARA EL CHECKBOX Y FECHA MANUAL
   adminDateContainer: {
     backgroundColor: "#fffbeb",
     borderWidth: 1,
@@ -1071,11 +1210,7 @@ const styles = StyleSheet.create({
   closeBtn: {
     padding: 6,
     backgroundColor: "#f1f5f9",
-    borderRadius: 20,
-    width: 32,
-    height: 32,
-    alignItems: "center",
-    justifyContent: "center",
+    borderRadius: 8,
   },
   closeBtnText: {
     fontSize: 14,
@@ -1083,17 +1218,17 @@ const styles = StyleSheet.create({
     color: "#64748b",
   },
   searchBoxContainer: {
-    marginBottom: 16,
+    marginBottom: 12,
   },
   modalSearchInput: {
     backgroundColor: "#f8fafc",
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 12,
     borderWidth: 1,
     borderColor: "#cbd5e1",
-    fontSize: 16,
-    color: "#0f172a",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    height: 46,
+    fontSize: 15,
+    color: "#1e293b",
   },
   modalList: {
     flex: 1,
@@ -1102,41 +1237,32 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   modalClientCard: {
-    backgroundColor: "#f8fafc",
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
     flexDirection: "row",
     alignItems: "center",
-    justifyModel: "space-between",
+    padding: 14,
+    borderRadius: 10,
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    marginBottom: 8,
   },
   modalClientCardSelected: {
     backgroundColor: "#0284c7",
     borderColor: "#0284c7",
   },
   modalClientName: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#0f172a",
-  },
-  modalClientCedula: {
-    fontSize: 13,
-    color: "#64748b",
-    marginTop: 2,
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#1e293b",
   },
   textWhite: {
     color: "#ffffff",
   },
-  textWhiteSub: {
-    color: "#e0f2fe",
-  },
   badgeSelected: {
     backgroundColor: "rgba(255, 255, 255, 0.2)",
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
   badgeSelectedText: {
     color: "#ffffff",
@@ -1144,18 +1270,19 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   emptyContainer: {
-    padding: 20,
+    padding: 24,
     alignItems: "center",
   },
   emptyText: {
     color: "#64748b",
     fontSize: 14,
+    textAlign: "center",
   },
   modalExitoContainer: {
     backgroundColor: "#ffffff",
     borderRadius: 20,
     width: "100%",
-    maxWidth: 380,
+    maxWidth: 400,
     padding: 24,
     alignItems: "center",
     shadowColor: "#000",
@@ -1165,21 +1292,21 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   successIconContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "#d1fae5",
-    alignItems: "center",
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "#dcfce7",
     justifyContent: "center",
+    alignItems: "center",
     marginBottom: 16,
   },
   errorIconContainer: {
     backgroundColor: "#fee2e2",
   },
   successIconText: {
-    fontSize: 28,
-    color: "#10b981",
+    fontSize: 24,
     fontWeight: "bold",
+    color: "#16a34a",
   },
   modalExitoTitle: {
     fontSize: 18,
@@ -1196,18 +1323,19 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   successButton: {
-    backgroundColor: "#0284c7",
+    backgroundColor: "#16a34a",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 10,
     width: "100%",
-    paddingVertical: 14,
-    borderRadius: 12,
     alignItems: "center",
   },
   errorButton: {
-    backgroundColor: "#ef4444",
+    backgroundColor: "#dc2626",
   },
   successButtonText: {
     color: "#ffffff",
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "bold",
   },
 });

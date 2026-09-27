@@ -9,7 +9,8 @@ import {
   Modal,
   Platform,
   RefreshControl,
-  TextInput, // NUEVO: Importado para el input de edición
+  Alert,
+  TextInput,
   FlatList,
 } from "react-native";
 import { supabase } from "../../supabase";
@@ -45,14 +46,13 @@ interface PagoItem {
 }
 
 export default function PagosHabilesScreen() {
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // Cambiado a false para que la pantalla no se quede bloqueada
   const [verificandoAcceso, setVerificandoAcceso] = useState(true);
   const [tienePermiso, setTienePermiso] = useState(false);
   const [pagosHabilesFiltrados, setPagosHabilesFiltrados] = useState<
     PagoItem[]
   >([]);
 
-  // NUEVO ESTADO PARA EL FILTRO DE BÚSQUEDA
   const [busqueda, setBusqueda] = useState("");
   const [todosLosPagos, setTodosLosPagos] = useState<PagoItem[]>([]);
 
@@ -61,21 +61,22 @@ export default function PagosHabilesScreen() {
     null,
   );
 
-  // NUEVOS ESTADOS PARA LA EDICIÓN
   const [modalEditarVisible, setModalEditarVisible] = useState(false);
   const [pagoAEditar, setPagoAEditar] = useState<PagoItem | null>(null);
   const [montoEditado, setMontoEditado] = useState("");
   const [fechaEditada, setFechaEditada] = useState("");
 
   const [modalExitoVisible, setModalExitoVisible] = useState(false);
-
   const [refreshing, setRefreshing] = useState(false);
   const router = useRouter();
 
-  const cargarPagosYFiltrarSemana = async () => {
-    try {
+  const cargarPagosYFiltrarSemana = async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
       setLoading(true);
-
+    }
+    try {
       const { data, error } = await supabase
         .from("pagos")
         .select(
@@ -106,7 +107,6 @@ export default function PagosHabilesScreen() {
         )
       `,
         )
-        // ORDENAMIENTO CLAVE: Ordena por fecha descendente y luego por ID descendente para asegurar el último registro exacto del día
         .order("fecha_pago", { ascending: false })
         .order("id", { ascending: false });
 
@@ -220,10 +220,10 @@ export default function PagosHabilesScreen() {
       console.log("Error inesperado:", err);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  // EFECTO PARA FILTRAR EN TIEMPO REAL SEGÚN EL INPUT DE BÚSQUEDA
   useEffect(() => {
     if (!busqueda.trim()) {
       setPagosHabilesFiltrados(todosLosPagos);
@@ -313,9 +313,7 @@ export default function PagosHabilesScreen() {
   );
 
   const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await cargarPagosYFiltrarSemana();
-    setRefreshing(false);
+    await cargarPagosYFiltrarSemana(true);
   }, []);
 
   const abrirDetalles = (item: PagoItem) => {
@@ -339,7 +337,6 @@ export default function PagosHabilesScreen() {
     maximoPermitido: 0,
   });
 
-  // Reemplaza el alert dentro de guardarEdicionPago por esto:
   const guardarEdicionPago = async () => {
     if (!pagoAEditar) return;
 
@@ -484,6 +481,11 @@ export default function PagosHabilesScreen() {
   };
 
   const descargarExcel = async () => {
+    if (!pagosHabilesFiltrados || pagosHabilesFiltrados.length === 0) {
+      Alert.alert("Aviso", "No hay datos disponibles para exportar.");
+      return;
+    }
+
     try {
       const dataMapeada = pagosHabilesFiltrados.map((item) => ({
         "Fecha Pago": item.fecha_pago
@@ -492,14 +494,14 @@ export default function PagosHabilesScreen() {
         Cliente: item.clientes
           ? `${item.clientes.nombres} ${item.clientes.apellidos}`
           : "Desconocido",
-        "Monto Prestado": Number(item.monto_prestado),
-        "Moneda Pago": item.moneda_pago,
-        "Interés (%)": item.tasa_interes,
-        "Total a Pagar": Number(item.monto_total),
-        "Saldo Pendiente": Number(item.saldo_pendiente),
-        "Monto Abonado (Pago)": Number(item.monto_pagado),
-        "Método Pago": item.metodo_pago,
-        "Registrado Por": item.registrado_por_cedula,
+        "Monto Prestado": Number(item.monto_prestado || 0),
+        "Moneda Pago": item.moneda_pago || "N/A",
+        "Interés (%)": Number(item.tasa_interes || 0),
+        "Total a Pagar": Number(item.monto_total || 0),
+        "Saldo Pendiente": Number(item.saldo_pendiente || 0),
+        "Monto Abonado (Pago)": Number(item.monto_pagado || 0),
+        "Método Pago": item.metodo_pago || "N/A",
+        "Registrado Por": item.registrado_por_cedula || "N/A",
         Estado: (item.estadoTexto || "activo").toUpperCase(),
       }));
 
@@ -507,25 +509,39 @@ export default function PagosHabilesScreen() {
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Pagos");
 
-      const excelBuffer = XLSX.write(workbook, {
-        bookType: "xlsx",
-        type: "base64",
-      });
+      const nombreArchivo = `Reporte_Pagos_Activos_${new Date().toISOString().slice(0, 10)}.xlsx`;
 
       if (Platform.OS === "web") {
-        XLSX.writeFile(workbook, "Reporte_Pagos_Activos.xlsx");
+        XLSX.writeFile(workbook, nombreArchivo);
       } else {
-        const fileUri = `${FileSystem.documentDirectory}Reporte_Pagos_Activos.xlsx`;
+        const excelBuffer = XLSX.write(workbook, {
+          bookType: "xlsx",
+          type: "base64",
+        });
+
+        const fileUri = `${FileSystem.cacheDirectory}${nombreArchivo}`;
+
         await FileSystem.writeAsStringAsync(fileUri, excelBuffer, {
           encoding: FileSystem.EncodingType.Base64,
         });
-        await Sharing.shareAsync(fileUri, {
-          mimeType:
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        });
+
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType:
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            dialogTitle: "Exportar Reporte de Pagos",
+            UTI: "com.microsoft.excel.xlsx",
+          });
+        } else {
+          Alert.alert("Éxito", `Archivo guardado en: ${fileUri}`);
+        }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.log("Error al exportar Excel:", error);
+      Alert.alert(
+        "Error",
+        "No se pudo generar el archivo Excel: " + (error.message || error),
+      );
     }
   };
 
@@ -559,7 +575,6 @@ export default function PagosHabilesScreen() {
         </View>
       </View>
 
-      {/* NUEVO INPUT DE BÚSQUEDA */}
       <View style={styles.searchContainer}>
         <TextInput
           style={styles.searchInput}
@@ -570,471 +585,197 @@ export default function PagosHabilesScreen() {
         />
       </View>
 
-      {loading ? (
-        <View style={styles.loaderContainer}>
-          <ActivityIndicator size="large" color="#0f172a" />
-        </View>
-      ) : (
-        <View style={styles.tableFullContainer}>
-          <ScrollView
-            horizontal={true}
-            showsHorizontalScrollIndicator={true}
-            contentContainerStyle={styles.horizontalScrollContent}
-          >
-            <View style={{ width: "100%" }}>
-              {/* Cabecera de la tabla (permanece fija arriba) */}
-              <View style={[styles.gridRow, styles.gridHeader]}>
-                <View style={[styles.gridCell, styles.colFecha]}>
-                  <Text style={styles.headerText}>FECHA</Text>
-                </View>
-                <View style={[styles.gridCell, styles.colCliente]}>
-                  <Text style={styles.headerText}>CLIENTE</Text>
-                </View>
-                <View style={[styles.gridCell, styles.colMonto]}>
-                  <Text style={styles.headerText}>MONTO PRESTADO</Text>
-                </View>
-                <View style={[styles.gridCell, styles.colMoneda]}>
-                  <Text style={styles.headerText}>MONEDA</Text>
-                </View>
-                <View style={[styles.gridCell, styles.colPorcentaje]}>
-                  <Text style={styles.headerText}>INTERÉS</Text>
-                </View>
-                <View style={[styles.gridCell, styles.colTotal]}>
-                  <Text style={styles.headerText}>TOTAL PRÉSTAMO</Text>
-                </View>
-                <View style={[styles.gridCell, styles.colTotal]}>
-                  <Text style={styles.headerText}>SALDO PENDIENTE</Text>
-                </View>
-                <View style={[styles.gridCell, styles.colTotal]}>
-                  <Text style={styles.headerText}>PAGO ABONADO</Text>
-                </View>
-                <View style={[styles.gridCell, styles.colEmpleado]}>
-                  <Text style={styles.headerText}>REGISTRADO POR</Text>
-                </View>
-                <View style={[styles.gridCell, styles.colAccion]}>
-                  <Text style={styles.headerText}>ESTADO / ACCIÓN</Text>
-                </View>
+      {/* Se eliminó el bloqueo de pantalla con 'loading'. La tabla y cabeceras cargan inmediatamente */}
+      <View style={styles.tableFullContainer}>
+        <ScrollView
+          horizontal={true}
+          showsHorizontalScrollIndicator={true}
+          contentContainerStyle={styles.horizontalScrollContent}
+        >
+          <View style={{ width: "100%" }}>
+            {/* Cabecera de la tabla (fija arriba) */}
+            <View style={[styles.gridRow, styles.gridHeader]}>
+              <View style={[styles.gridCell, styles.colFecha]}>
+                <Text style={styles.headerText}>FECHA</Text>
               </View>
+              <View style={[styles.gridCell, styles.colCliente]}>
+                <Text style={styles.headerText}>CLIENTE</Text>
+              </View>
+              <View style={[styles.gridCell, styles.colMonto]}>
+                <Text style={styles.headerText}>MONTO PRESTADO</Text>
+              </View>
+              <View style={[styles.gridCell, styles.colMoneda]}>
+                <Text style={styles.headerText}>MONEDA</Text>
+              </View>
+              <View style={[styles.gridCell, styles.colPorcentaje]}>
+                <Text style={styles.headerText}>INTERÉS</Text>
+              </View>
+              <View style={[styles.gridCell, styles.colTotal]}>
+                <Text style={styles.headerText}>TOTAL PRÉSTAMO</Text>
+              </View>
+              <View style={[styles.gridCell, styles.colTotal]}>
+                <Text style={styles.headerText}>SALDO PENDIENTE</Text>
+              </View>
+              <View style={[styles.gridCell, styles.colTotal]}>
+                <Text style={styles.headerText}>PAGO ABONADO</Text>
+              </View>
+              <View style={[styles.gridCell, styles.colEmpleado]}>
+                <Text style={styles.headerText}>REGISTRADO POR</Text>
+              </View>
+              <View style={[styles.gridCell, styles.colAccion]}>
+                <Text style={styles.headerText}>ESTADO / ACCIÓN</Text>
+              </View>
+            </View>
 
-              {/* FlatList reemplazando al ScrollView vertical y al .map() */}
-              <FlatList
-                data={pagosHabilesFiltrados}
-                keyExtractor={(item, index) =>
-                  item.id?.toString() || index.toString()
-                }
-                ListEmptyComponent={
+            {/* FlatList con indicador de carga interno si está buscando/cargando */}
+            <FlatList
+              data={pagosHabilesFiltrados}
+              keyExtractor={(item, index) =>
+                item.id?.toString() || index.toString()
+              }
+              ListEmptyComponent={
+                loading ? (
+                  <View style={{ padding: 30, alignItems: "center" }}>
+                    <ActivityIndicator size="small" color="#0f172a" />
+                    <Text style={{ marginTop: 8, color: "#64748b" }}>
+                      Cargando pagos...
+                    </Text>
+                  </View>
+                ) : (
                   <View style={styles.emptyContainer}>
                     <Text style={styles.emptyText}>
                       No se encontraron pagos con los criterios de búsqueda.
                     </Text>
                   </View>
+                )
+              }
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                  colors={["#0f172a"]}
+                />
+              }
+              initialNumToRender={10}
+              maxToRenderPerBatch={10}
+              windowSize={5}
+              removeClippedSubviews={true}
+              renderItem={({ item, index }) => {
+                const nombreCliente = item.clientes
+                  ? `${item.clientes.nombres} ${item.clientes.apellidos}`
+                  : "Cliente desconocido";
+
+                const fechaFormateada = formatearFechaLocal(item.fecha_pago);
+                const estado = item.estadoTexto || "activo";
+
+                let badgeBg = "#eff6ff";
+                let badgeColor = "#2563eb";
+                if (estado === "pagado") {
+                  badgeBg = "#f0fdf4";
+                  badgeColor = "#16a34a";
+                } else if (estado === "atrasado") {
+                  badgeBg = "#fef2f2";
+                  badgeColor = "#dc2626";
                 }
-                refreshControl={
-                  <RefreshControl
-                    refreshing={refreshing}
-                    onRefresh={onRefresh}
-                    colors={["#0f172a"]}
-                  />
-                }
-                // Propiedades clave de rendimiento para evitar congelamientos en el APK:
-                initialNumToRender={10}
-                maxToRenderPerBatch={10}
-                windowSize={5}
-                removeClippedSubviews={true}
-                renderItem={({ item, index }) => {
-                  const nombreCliente = item.clientes
-                    ? `${item.clientes.nombres} ${item.clientes.apellidos}`
-                    : "Cliente desconocido";
 
-                  const fechaFormateada = formatearFechaLocal(item.fecha_pago);
-                  const estado = item.estadoTexto || "activo";
-
-                  let badgeBg = "#eff6ff";
-                  let badgeColor = "#2563eb";
-                  if (estado === "pagado") {
-                    badgeBg = "#f0fdf4";
-                    badgeColor = "#16a34a";
-                  } else if (estado === "atrasado") {
-                    badgeBg = "#fef2f2";
-                    badgeColor = "#dc2626";
-                  }
-
-                  return (
-                    <View
-                      style={[
-                        styles.gridRow,
-                        index % 2 === 1 ? styles.rowAlternate : null,
-                      ]}
-                    >
-                      <View style={[styles.gridCell, styles.colFecha]}>
-                        <Text style={styles.cellText}>{fechaFormateada}</Text>
-                      </View>
-                      <View style={[styles.gridCell, styles.colCliente]}>
-                        <Text style={styles.cellTextBold} numberOfLines={1}>
-                          {nombreCliente}
-                        </Text>
-                      </View>
-                      <View style={[styles.gridCell, styles.colMonto]}>
-                        <Text style={styles.cellText}>
-                          {Number(item.monto_prestado).toFixed(2)}
-                        </Text>
-                      </View>
-                      <View style={[styles.gridCell, styles.colMoneda]}>
-                        <View style={styles.badgeMoneda}>
-                          <Text style={styles.badgeMonedaText}>
-                            {item.moneda_pago}
-                          </Text>
-                        </View>
-                      </View>
-                      <View style={[styles.gridCell, styles.colPorcentaje]}>
-                        <Text style={styles.cellText}>
-                          {item.tasa_interes}%
-                        </Text>
-                      </View>
-                      <View style={[styles.gridCell, styles.colTotal]}>
-                        <Text style={styles.cellTextBold}>
-                          {Number(item.monto_total).toFixed(2)}
-                        </Text>
-                      </View>
-                      <View style={[styles.gridCell, styles.colTotal]}>
-                        <Text
-                          style={[styles.cellTextBold, { color: "#dc2626" }]}
-                        >
-                          {Number(item.saldo_pendiente).toFixed(2)}
-                        </Text>
-                      </View>
-                      <View style={[styles.gridCell, styles.colTotal]}>
-                        <Text
-                          style={[styles.cellTextBold, { color: "#16a34a" }]}
-                        >
-                          {Number(item.monto_pagado).toFixed(2)}
-                        </Text>
-                      </View>
-                      <View style={[styles.gridCell, styles.colEmpleado]}>
-                        <Text style={styles.cellText} numberOfLines={1}>
-                          {item.registrado_por_cedula || "Sistema"}
-                        </Text>
-                      </View>
-                      <View style={[styles.gridCell, styles.colAccion]}>
-                        <View
-                          style={[
-                            styles.badgeEstado,
-                            { backgroundColor: badgeBg },
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.badgeTextEstado,
-                              { color: badgeColor },
-                            ]}
-                          >
-                            {estado.toUpperCase()}
-                          </Text>
-                        </View>
-
-                        <TouchableOpacity
-                          style={styles.btnVerAccion}
-                          onPress={() => abrirDetalles(item)}
-                        >
-                          <Text style={styles.btnVerAccionText}>Detalles</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={[
-                            styles.btnVerAccion,
-                            { backgroundColor: "#269c4b" },
-                          ]}
-                          onPress={() => abrirEdicion(item)}
-                        >
-                          <Text
-                            style={[
-                              styles.btnVerAccionText,
-                              { color: "#0e1c12" },
-                            ]}
-                          >
-                            Editar
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  );
-                }}
-              />
-            </View>
-          </ScrollView>
-        </View>
-      )}
-
-      {/* MODAL DE DETALLES */}
-      <Modal
-        visible={modalDetalleVisible}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => setModalDetalleVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                Detalles del Cobro Registrado
-              </Text>
-              <TouchableOpacity
-                onPress={() => setModalDetalleVisible(false)}
-                style={styles.closeBtn}
-              >
-                <Text style={styles.closeBtnText}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            {pagoSeleccionado && (
-              <ScrollView contentContainerStyle={styles.modalBody}>
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Cliente:</Text>
-                  <Text style={styles.modalVal}>
-                    {pagoSeleccionado.clientes?.nombres}{" "}
-                    {pagoSeleccionado.clientes?.apellidos}
-                  </Text>
-                </View>
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Fecha del Préstamo:</Text>
-                  <Text style={styles.modalVal}>
-                    {formatearFechaLocal(pagoSeleccionado.fecha_prestamo)}
-                  </Text>
-                </View>
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Fecha de Pago:</Text>
-                  <Text style={styles.modalVal}>
-                    {formatearFechaLocal(pagoSeleccionado.fecha_pago)}
-                  </Text>
-                </View>
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Monto Prestado:</Text>
-                  <Text style={styles.modalVal}>
-                    {Number(pagoSeleccionado.monto_prestado).toFixed(2)}
-                  </Text>
-                </View>
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Moneda de Pago:</Text>
-                  <Text style={styles.modalVal}>
-                    {pagoSeleccionado.moneda_pago}
-                  </Text>
-                </View>
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Tasa de Interés:</Text>
-                  <Text style={styles.modalVal}>
-                    {pagoSeleccionado.tasa_interes}%
-                  </Text>
-                </View>
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Total del Préstamo:</Text>
-                  <Text style={styles.modalVal}>
-                    {Number(pagoSeleccionado.monto_total).toFixed(2)}
-                  </Text>
-                </View>
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Saldo Pendiente:</Text>
-                  <Text style={[styles.modalVal, { color: "#dc2626" }]}>
-                    {Number(pagoSeleccionado.saldo_pendiente).toFixed(2)}
-                  </Text>
-                </View>
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>
-                    Monto Abonado (Esta Cuota):
-                  </Text>
-                  <Text style={[styles.modalVal, { color: "#2563eb" }]}>
-                    {Number(pagoSeleccionado.monto_pagado).toFixed(2)}
-                  </Text>
-                </View>
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Total Acumulado Pagado:</Text>
-                  <Text
+                return (
+                  <View
                     style={[
-                      styles.modalVal,
-                      { color: "#16a34a", fontWeight: "bold" },
+                      styles.gridRow,
+                      index % 2 === 1 ? styles.rowAlternate : null,
                     ]}
                   >
-                    {Number(pagoSeleccionado.total_pagado_acumulado).toFixed(2)}
-                  </Text>
-                </View>
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Método de Pago:</Text>
-                  <Text style={styles.modalVal}>
-                    {pagoSeleccionado.metodo_pago}
-                  </Text>
-                </View>
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Registrado Por:</Text>
-                  <Text style={styles.modalVal}>
-                    {pagoSeleccionado.registrado_por_cedula}
-                  </Text>
-                </View>
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Estado del Préstamo:</Text>
-                  <Text style={styles.modalVal}>
-                    {(pagoSeleccionado.estadoTexto || "activo").toUpperCase()}
-                  </Text>
-                </View>
-              </ScrollView>
-            )}
+                    <View style={[styles.gridCell, styles.colFecha]}>
+                      <Text style={styles.cellText}>{fechaFormateada}</Text>
+                    </View>
+                    <View style={[styles.gridCell, styles.colCliente]}>
+                      <Text style={styles.cellTextBold} numberOfLines={1}>
+                        {nombreCliente}
+                      </Text>
+                    </View>
+                    <View style={[styles.gridCell, styles.colMonto]}>
+                      <Text style={styles.cellText}>
+                        {Number(item.monto_prestado).toFixed(2)}
+                      </Text>
+                    </View>
+                    <View style={[styles.gridCell, styles.colMoneda]}>
+                      <View style={styles.badgeMoneda}>
+                        <Text style={styles.badgeMonedaText}>
+                          {item.moneda_pago}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={[styles.gridCell, styles.colPorcentaje]}>
+                      <Text style={styles.cellText}>{item.tasa_interes}%</Text>
+                    </View>
+                    <View style={[styles.gridCell, styles.colTotal]}>
+                      <Text style={styles.cellTextBold}>
+                        {Number(item.monto_total).toFixed(2)}
+                      </Text>
+                    </View>
+                    <View style={[styles.gridCell, styles.colTotal]}>
+                      <Text style={[styles.cellTextBold, { color: "#dc2626" }]}>
+                        {Number(item.saldo_pendiente).toFixed(2)}
+                      </Text>
+                    </View>
+                    <View style={[styles.gridCell, styles.colTotal]}>
+                      <Text style={[styles.cellTextBold, { color: "#16a34a" }]}>
+                        {Number(item.monto_pagado).toFixed(2)}
+                      </Text>
+                    </View>
+                    <View style={[styles.gridCell, styles.colEmpleado]}>
+                      <Text style={styles.cellText} numberOfLines={1}>
+                        {item.registrado_por_cedula || "Sistema"}
+                      </Text>
+                    </View>
+                    <View style={[styles.gridCell, styles.colAccion]}>
+                      <View
+                        style={[
+                          styles.badgeEstado,
+                          { backgroundColor: badgeBg },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.badgeTextEstado,
+                            { color: badgeColor },
+                          ]}
+                        >
+                          {estado.toUpperCase()}
+                        </Text>
+                      </View>
 
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={styles.btnCloseModal}
-                onPress={() => setModalDetalleVisible(false)}
-              >
-                <Text style={styles.btnCloseModalText}>Cerrar</Text>
-              </TouchableOpacity>
-            </View>
+                      <TouchableOpacity
+                        style={styles.btnVerAccion}
+                        onPress={() => abrirDetalles(item)}
+                      >
+                        <Text style={styles.btnVerAccionText}>Detalles</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.btnVerAccion,
+                          { backgroundColor: "#269c4b" },
+                        ]}
+                        onPress={() => abrirEdicion(item)}
+                      >
+                        <Text
+                          style={[
+                            styles.btnVerAccionText,
+                            { color: "#0e1c12" },
+                          ]}
+                        >
+                          Editar
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              }}
+            />
           </View>
-        </View>
-      </Modal>
-
-      {/* MODAL DE EDICIÓN */}
-      <Modal
-        visible={modalEditarVisible}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => setModalEditarVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Editar Pago / Abono</Text>
-              <TouchableOpacity
-                onPress={() => setModalEditarVisible(false)}
-                style={styles.closeBtn}
-              >
-                <Text style={styles.closeBtnText}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.modalBody}>
-              <View style={{ marginBottom: 15 }}>
-                <Text style={styles.modalLabel}>Editar Monto Abonado:</Text>
-                <TextInput
-                  style={styles.inputEdit}
-                  keyboardType="numeric"
-                  value={montoEditado}
-                  onChangeText={setMontoEditado}
-                  placeholder="Ej: 50000"
-                />
-              </View>
-
-              <View style={{ marginBottom: 15 }}>
-                <Text style={styles.modalLabel}>Nueva Fecha (YYYY-MM-DD):</Text>
-                <TextInput
-                  style={styles.inputEdit}
-                  value={fechaEditada}
-                  onChangeText={setFechaEditada}
-                  placeholder="YYYY-MM-DD"
-                />
-              </View>
-
-              <TouchableOpacity
-                style={styles.btnGuardarEdicion}
-                onPress={guardarEdicionPago}
-              >
-                <Text style={styles.btnGuardarEdicionText}>
-                  Guardar Cambios
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* MODAL DE ÉXITO PERSONALIZADO */}
-      <Modal
-        visible={modalExitoVisible}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => setModalExitoVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContainer, styles.successModalContainer]}>
-            <View style={styles.successIconContainer}>
-              <Text style={styles.successIconText}>✓</Text>
-            </View>
-            <Text style={styles.successTitle}>¡Éxito!</Text>
-            <Text style={styles.successMessage}>
-              Pago actualizado correctamente.
-            </Text>
-            <TouchableOpacity
-              style={styles.successButton}
-              onPress={() => setModalExitoVisible(false)}
-            >
-              <Text style={styles.successButtonText}>Aceptar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Modal de Error de Monto Personalizado */}
-      <Modal
-        visible={modalErrorVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setModalErrorVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Monto Excedido</Text>
-              <TouchableOpacity onPress={() => setModalErrorVisible(false)}>
-                <Ionicons name="close" size={24} color="#666" />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.modalBody}>
-              <View style={styles.errorIconContainer}>
-                <Ionicons name="alert-circle" size={48} color="#e74c3c" />
-              </View>
-
-              <Text style={styles.errorTextDescription}>
-                El monto ingresado{" "}
-                <Text style={styles.boldText}>
-                  ({mensajeErrorValidacion.montoIngresado.toLocaleString()})
-                </Text>{" "}
-                supera el límite permitido para este préstamo.
-              </Text>
-
-              <View style={styles.detalleContainer}>
-                <View style={styles.detalleRow}>
-                  <Text style={styles.detalleLabel}>Monto pagado del día:</Text>
-                  <Text style={styles.detalleValue}>
-                    {mensajeErrorValidacion.montoPagadoActual.toLocaleString()}
-                  </Text>
-                </View>
-                <View style={styles.detalleRow}>
-                  <Text style={styles.detalleLabel}>
-                    Saldo pendiente actual:
-                  </Text>
-                  <Text style={styles.detalleValue}>
-                    {mensajeErrorValidacion.saldoPendiente.toLocaleString()}
-                  </Text>
-                </View>
-                <View style={[styles.detalleRow, styles.detalleRowTotal]}>
-                  <Text style={styles.detalleLabelTotal}>
-                    Monto completo a pagar del prestamo:
-                  </Text>
-                  <Text style={styles.detalleValueTotal}>
-                    {mensajeErrorValidacion.maximoPermitido.toLocaleString()}
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={styles.botonEntendido}
-                onPress={() => setModalErrorVisible(false)}
-              >
-                <Text style={styles.botonEntendidoText}>Entendido</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+        </ScrollView>
+      </View>
     </View>
   );
 }

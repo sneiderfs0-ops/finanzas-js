@@ -17,6 +17,10 @@ import {
 import { supabase } from "../../supabase";
 import { formatearFechaLocal } from "../../utils/fechass";
 
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
+import * as FileSystem from "expo-file-system";
+
 export default function ListaPrestamosScreen() {
   const { width } = useWindowDimensions();
   const esPantallaPequena = width < 768;
@@ -307,63 +311,160 @@ export default function ListaPrestamosScreen() {
     );
   });
 
-  const exportarExcelTablaGeneral = () => {
+  const exportarExcelTablaGeneral = async () => {
     if (prestamosFiltrados.length === 0) {
       Alert.alert("Aviso", "No hay datos en la tabla para exportar.");
       return;
     }
 
+    // Estructura del archivo CSV con soporte para caracteres especiales (\uFEFF para tildes y eñes)
+    let csvContent =
+      "\uFEFFFecha;Cliente;Monto Prestado;Moneda;Porcentaje;Total a Pagar;Saldo Pendiente;Cuotas;Frecuencia;Registrado por;Estado\r\n";
+
+    prestamosFiltrados.forEach((item) => {
+      const fecha = item.fecha_prestamo
+        ? `"${formatearFechaLocal(item.fecha_prestamo)}"`
+        : '"N/A"';
+      const cliente = item.clientes
+        ? `"${item.clientes.nombres} ${item.clientes.apellidos}"`
+        : '"Desconocido"';
+      const montoPrestado = Number(
+        item.monto_prestado || item.monto_total || 0,
+      ).toFixed(2);
+      const moneda = `"${item.moneda || "COP"}"`;
+      const porcentaje = `${item.tasa_interes || 0}%`;
+      const totalPagar = Number(item.monto_total || 0).toFixed(2);
+      const saldoPendiente = Number(item.saldo_pendiente || 0).toFixed(2);
+      const cuotas = item.cuotas || 0;
+      const frecuencia = `"${item.frecuencia || "N/A"}"`;
+      const empleado = `"${item.empleadoNombre}"`;
+      const estado = `"${item.estadoTexto.toUpperCase()}"`;
+
+      csvContent += `${fecha};${cliente};${montoPrestado};${moneda};${porcentaje};${totalPagar};${saldoPendiente};${cuotas};${frecuencia};${empleado};${estado}\r\n`;
+    });
+
+    const nombreArchivo = `reporte_prestamos_${new Date().toISOString().slice(0, 10)}.csv`;
+
     if (Platform.OS === "web") {
-      let csvContent =
-        "data:text/csv;charset=utf-8,\uFEFFFecha;Cliente;Monto Prestado;Moneda;Porcentaje;Total a Pagar;Saldo Pendiente;Cuotas;Frecuencia;Registrado por;Estado\r\n";
-
-      prestamosFiltrados.forEach((item) => {
-        const fecha = item.fecha_prestamo
-          ? `"${formatearFechaLocal(item.fecha_prestamo)}"`
-          : '"N/A"';
-        const cliente = item.clientes
-          ? `"${item.clientes.nombres} ${item.clientes.apellidos}"`
-          : '"Desconocido"';
-        const montoPrestado = Number(
-          item.monto_prestado || item.monto_total || 0,
-        ).toFixed(2);
-        const moneda = `"${item.moneda || "COP"}"`;
-        const porcentaje = `${item.tasa_interes || 0}%`;
-        const totalPagar = Number(item.monto_total || 0).toFixed(2);
-        const saldoPendiente = Number(item.saldo_pendiente || 0).toFixed(2);
-        const cuotas = item.cuotas || 0;
-        const frecuencia = `"${item.frecuencia || "N/A"}"`;
-        const empleado = `"${item.empleadoNombre}"`;
-        const estado = `"${item.estadoTexto.toUpperCase()}"`;
-
-        csvContent += `${fecha};${cliente};${montoPrestado};${moneda};${porcentaje};${totalPagar};${saldoPendiente};${cuotas};${frecuencia};${empleado};${estado}\r\n`;
-      });
-
-      const encodedUri = encodeURI(csvContent);
+      // --- COMPORTAMIENTO PARA WEB ---
+      const encodedUri = encodeURI("data:text/csv;charset=utf-8," + csvContent);
       const link = document.createElement("a");
       link.setAttribute("href", encodedUri);
-      link.setAttribute(
-        "download",
-        `reporte_prestamos_${new Date().toISOString().slice(0, 10)}.csv`,
-      );
+      link.setAttribute("download", nombreArchivo);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
     } else {
-      Alert.alert(
-        "Aviso",
-        "La exportación a Excel está optimizada para la versión web.",
-      );
+      // --- COMPORTAMIENTO PARA APK MÓVIL (Android / iOS) ---
+      try {
+        // 1. Guardar el archivo temporalmente en el directorio de caché del dispositivo
+        const fileUri = `${FileSystem.cacheDirectory}${nombreArchivo}`;
+        await FileSystem.writeAsStringAsync(fileUri, csvContent, {
+          encoding: FileSystem.EncodingType.UTF8,
+        });
+
+        // 2. Abrir el menú nativo para compartir, enviar por WhatsApp o guardar en archivos
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType: "text/csv",
+            dialogTitle: "Reporte General de Préstamos",
+            UTI: "public.comma-separated-values-text",
+          });
+        } else {
+          Alert.alert("Éxito", `Archivo CSV guardado en: ${fileUri}`);
+        }
+      } catch (error: any) {
+        console.log("Error al exportar Excel en móvil:", error);
+        Alert.alert(
+          "Error",
+          "No se pudo generar el archivo en el dispositivo.",
+        );
+      }
     }
   };
 
-  const exportarPDFTablaGeneral = () => {
+  const exportarPDFTablaGeneral = async () => {
     if (prestamosFiltrados.length === 0) {
       Alert.alert("Aviso", "No hay datos en la tabla para exportar.");
       return;
     }
 
+    // Generamos el contenido HTML que ya tenías diseñado
+    let html = `
+    <html>
+      <head>
+        <title>Reporte General de Préstamos</title>
+        <style>
+          @page { size: landscape; margin: 10mm; }
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; color: #1e293b; background-color: #ffffff; }
+          h2 { text-align: center; color: #0f172a; margin-bottom: 5px; font-size: 24px; font-weight: 700; }
+          p.subtitle { text-align: center; color: #64748b; margin-top: 0; margin-bottom: 25px; font-size: 14px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+          th, td { border: 1px solid #cbd5e1; padding: 8px 10px; text-align: left; }
+          th { background-color: #0f172a; color: #ffffff; font-weight: 600; text-transform: uppercase; font-size: 11px; }
+          tr:nth-child(even) { background-color: #f8fafc; }
+          .text-right { text-align: right; }
+        </style>
+      </head>
+      <body>
+        <h2>Gestión y Detalles de Préstamos</h2>
+        <p class="subtitle">Reporte generado el ${new Date().toLocaleDateString()}</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Cliente</th>
+              <th class="text-right">Monto Prestado</th>
+              <th>Moneda</th>
+              <th>Porcentaje</th>
+              <th class="text-right">Total a Pagar</th>
+              <th class="text-right">Saldo Pendiente</th>
+              <th>Registrado por</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+  `;
+
+    prestamosFiltrados.forEach((item) => {
+      const fecha = item.fecha_prestamo
+        ? formatearFechaLocal(item.fecha_prestamo)
+        : "N/A";
+      const cliente = item.clientes
+        ? `${item.clientes.nombres} ${item.clientes.apellidos}`
+        : "Desconocido";
+      const montoPrestadoNum = Number(item.monto_prestado || 0).toFixed(2);
+      const moneda = item.moneda || "COP";
+      const porcentaje = `${item.tasa_interes || 0}%`;
+      const totalPagarNum = Number(item.monto_total || 0).toFixed(2);
+      const saldoPendienteNum = Number(item.saldo_pendiente || 0).toFixed(2);
+      const empleado = item.empleadoNombre;
+      const estado = item.estadoTexto.toUpperCase();
+
+      html += `
+      <tr>
+        <td>${fecha}</td>
+        <td><strong>${cliente}</strong></td>
+        <td class="text-right">${montoPrestadoNum}</td>
+        <td><strong>${moneda}</strong></td>
+        <td>${porcentaje}</td>
+        <td class="text-right">${totalPagarNum}</td>
+        <td class="text-right"><strong>${saldoPendienteNum}</strong></td>
+        <td>${empleado}</td>
+        <td>${estado}</td>
+      </tr>
+    `;
+    });
+
+    html += `
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `;
+
     if (Platform.OS === "web") {
+      // --- COMPORTAMIENTO PARA WEB ---
       let ventanaImpresion = window.open("", "_blank");
       if (!ventanaImpresion) {
         Alert.alert(
@@ -372,80 +473,6 @@ export default function ListaPrestamosScreen() {
         );
         return;
       }
-
-      let html = `
-        <html>
-          <head>
-            <title>Reporte General de Préstamos</title>
-            <style>
-              @page { size: landscape; margin: 10mm; }
-              body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; color: #1e293b; background-color: #ffffff; }
-              h2 { text-align: center; color: #0f172a; margin-bottom: 5px; font-size: 24px; font-weight: 700; }
-              p.subtitle { text-align: center; color: #64748b; margin-top: 0; margin-bottom: 25px; font-size: 14px; }
-              table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
-              th, td { border: 1px solid #cbd5e1; padding: 8px 10px; text-align: left; }
-              th { background-color: #0f172a; color: #ffffff; font-weight: 600; text-transform: uppercase; font-size: 11px; }
-              tr:nth-child(even) { background-color: #f8fafc; }
-              .text-right { text-align: right; }
-            </style>
-          </head>
-          <body>
-            <h2>Gestión y Detalles de Préstamos</h2>
-            <p class="subtitle">Reporte generado el ${new Date().toLocaleDateString()}</p>
-            <table>
-              <thead>
-                <tr>
-                  <th>Fecha</th>
-                  <th>Cliente</th>
-                  <th class="text-right">Monto Prestado</th>
-                  <th>Moneda</th>
-                  <th>Porcentaje</th>
-                  <th class="text-right">Total a Pagar</th>
-                  <th class="text-right">Saldo Pendiente</th>
-                  <th>Registrado por</th>
-                  <th>Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-      `;
-
-      prestamosFiltrados.forEach((item) => {
-        const fecha = item.fecha_prestamo
-          ? formatearFechaLocal(item.fecha_prestamo)
-          : "N/A";
-        const cliente = item.clientes
-          ? `${item.clientes.nombres} ${item.clientes.apellidos}`
-          : "Desconocido";
-        const montoPrestadoNum = Number(item.monto_prestado || 0).toFixed(2);
-        const moneda = item.moneda || "COP";
-        const porcentaje = `${item.tasa_interes || 0}%`;
-        const totalPagarNum = Number(item.monto_total || 0).toFixed(2);
-        const saldoPendienteNum = Number(item.saldo_pendiente || 0).toFixed(2);
-        const empleado = item.empleadoNombre;
-        const estado = item.estadoTexto.toUpperCase();
-
-        html += `
-          <tr>
-            <td>${fecha}</td>
-            <td><strong>${cliente}</strong></td>
-            <td class="text-right">${montoPrestadoNum}</td>
-            <td><strong>${moneda}</strong></td>
-            <td>${porcentaje}</td>
-            <td class="text-right">${totalPagarNum}</td>
-            <td class="text-right"><strong>${saldoPendienteNum}</strong></td>
-            <td>${empleado}</td>
-            <td>${estado}</td>
-          </tr>
-        `;
-      });
-
-      html += `
-              </tbody>
-            </table>
-          </body>
-        </html>
-      `;
-
       ventanaImpresion.document.write(html);
       ventanaImpresion.document.close();
       ventanaImpresion.focus();
@@ -453,10 +480,25 @@ export default function ListaPrestamosScreen() {
         ventanaImpresion.print();
       }, 500);
     } else {
-      Alert.alert(
-        "Aviso",
-        "La exportación a PDF está optimizada para la versión web.",
-      );
+      // --- COMPORTAMIENTO PARA APK MÓVIL (Android / iOS) ---
+      try {
+        // 1. Imprime el HTML en un archivo PDF temporal en el dispositivo
+        const { uri } = await Print.printToFileAsync({ html });
+
+        // 2. Abre el menú nativo del teléfono para compartir, guardar en archivos o imprimir
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(uri, {
+            mimeType: "application/pdf",
+            dialogTitle: "Reporte General de Préstamos",
+            UTI: "com.adobe.pdf",
+          });
+        } else {
+          Alert.alert("Éxito", `PDF generado en: ${uri}`);
+        }
+      } catch (error: any) {
+        console.log("Error al generar PDF en móvil:", error);
+        Alert.alert("Error", "No se pudo generar el PDF en el dispositivo.");
+      }
     }
   };
 

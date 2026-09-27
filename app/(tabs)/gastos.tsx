@@ -14,6 +14,8 @@ import {
 import { supabase } from "../../supabase";
 import { colors } from "@/constants/globalStyles";
 import { obtenerFechaHoraExactaVenezuela } from "../../utils/fechas";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
 
 interface CajaOption {
   id: string;
@@ -314,57 +316,60 @@ export default function GastosScreen() {
     }
   };
 
-  const descargarPDF = () => {
+  const descargarPDF = async () => {
+    // Generamos el contenido HTML exactamente igual como lo tenías
+    const htmlContent = `
+    <html>
+      <head>
+        <title>Reporte de Gastos</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
+          h2 { text-align: center; color: #2f3640; margin-bottom: 20px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; font-size: 12px; }
+          th { background-color: #0984e3; color: white; }
+          tr:nth-child(even) { background-color: #f9f9f9; }
+          .text-right { text-align: right; }
+        </style>
+      </head>
+      <body>
+        <h2>Reporte de Gastos</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Descripción</th>
+              <th>Responsable</th>
+              <th>Categoría</th>
+              <th>Moneda</th>
+              <th class="text-right">Monto</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${gastosFiltrados
+              .map(
+                (item) => `
+              <tr>
+                <td>${item.fecha}</td>
+                <td>${item.descripcion}</td>
+                <td>${item.nombreResponsable}</td>
+                <td>${item.categoria}</td>
+                <td>${item.moneda}</td>
+                <td class="text-right">${Number(item.monto).toLocaleString()}</td>
+              </tr>
+            `,
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `;
+
     if (Platform.OS === "web") {
+      // --- COMPORTAMIENTO WEB (Intacto) ---
       const printWindow = window.open("", "_blank");
       if (printWindow) {
-        const htmlContent = `
-          <html>
-            <head>
-              <title>Reporte de Gastos</title>
-              <style>
-                body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
-                h2 { text-align: center; color: #2f3640; margin-bottom: 20px; }
-                table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-                th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; font-size: 12px; }
-                th { background-color: #0984e3; color: white; }
-                tr:nth-child(even) { background-color: #f9f9f9; }
-                .text-right { text-align: right; }
-              </style>
-            </head>
-            <body>
-              <h2>Reporte de Gastos</h2>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Fecha</th>
-                    <th>Descripción</th>
-                    <th>Responsable</th>
-                    <th>Categoría</th>
-                    <th>Moneda</th>
-                    <th class="text-right">Monto</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${gastosFiltrados
-                    .map(
-                      (item) => `
-                    <tr>
-                      <td>${item.fecha}</td>
-                      <td>${item.descripcion}</td>
-                      <td>${item.nombreResponsable}</td>
-                      <td>${item.categoria}</td>
-                      <td>${item.moneda}</td>
-                      <td class="text-right">${Number(item.monto).toLocaleString()}</td>
-                    </tr>
-                  `,
-                    )
-                    .join("")}
-                </tbody>
-              </table>
-            </body>
-          </html>
-        `;
         printWindow.document.write(htmlContent);
         printWindow.document.close();
         printWindow.focus();
@@ -374,7 +379,25 @@ export default function GastosScreen() {
         }, 500);
       }
     } else {
-      Alert.alert("Exportar PDF", "Utiliza la opción de imprimir.");
+      // --- COMPORTAMIENTO MÓVIL (APK Android / iOS) ---
+      try {
+        // 1. Crea un archivo PDF temporal a partir de tu HTML
+        const { uri } = await Print.printToFileAsync({ html: htmlContent });
+
+        // 2. Abre el menú nativo para compartir, guardar o imprimir el PDF
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(uri, {
+            mimeType: "application/pdf",
+            dialogTitle: "Reporte de Gastos",
+            UTI: "com.adobe.pdf",
+          });
+        } else {
+          Alert.alert("Éxito", `PDF guardado en: ${uri}`);
+        }
+      } catch (error: any) {
+        console.log("Error al exportar PDF en móvil:", error);
+        Alert.alert("Error", "No se pudo generar el PDF en el dispositivo.");
+      }
     }
   };
 

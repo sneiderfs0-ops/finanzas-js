@@ -87,6 +87,7 @@ export default function ListaPrestamosScreen() {
       const { data: prestamosData, error: prestamoError } = await supabase
         .from("prestamos")
         .select("*")
+        .neq("estado", "renovado") // 🔹 Excluye automáticamente los préstamos renovados de la consulta
         .order("fecha_prestamo", { ascending: false });
 
       if (prestamoError) throw prestamoError;
@@ -826,6 +827,21 @@ export default function ListaPrestamosScreen() {
                     {prestamoSeleccionado.estadoTexto.toUpperCase()}
                   </Text>
                 </View>
+
+                {/* 🔹 MUESTRA EL MENSAJE SOLO SI TIENE PRESTAMO_PADRE_ID */}
+                {prestamoSeleccionado.prestamo_padre_id && (
+                  <View style={styles.modalRowItem}>
+                    <Text style={styles.modalLabel}>Tipo de Registro:</Text>
+                    <Text
+                      style={[
+                        styles.modalValue,
+                        { fontWeight: "bold", color: "#16a34a" },
+                      ]}
+                    >
+                      🔄 Renovación de Préstamo
+                    </Text>
+                  </View>
+                )}
 
                 {/* SECCIÓN DEL HISTORIAL DE PAGOS */}
                 <Text style={styles.historySectionTitle}>

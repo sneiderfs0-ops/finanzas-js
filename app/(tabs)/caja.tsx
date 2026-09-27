@@ -529,7 +529,7 @@ export default function CajaScreen() {
             {generatingPdf ? (
               <ActivityIndicator size="small" color="#ffffff" />
             ) : (
-              <Text style={styles.pdfButtonText}>📥 Descargar PDF</Text>
+              <Text style={styles.pdfButtonText}>📥 PDF</Text>
             )}
           </TouchableOpacity>
         </View>

@@ -521,7 +521,7 @@ export default function CrearPagoScreen({ route }: any) {
                     monedaPago === m && styles.selectChipTxtActive,
                   ]}
                 >
-                  {m === "COP" ? "Pesos (COP)" : "Dólares (USD)"}
+                  {m === "COP" ? "🇨🇴 Pesos (COP)" : "💵 Dólares (USD)"}
                 </Text>
               </TouchableOpacity>
             ))}

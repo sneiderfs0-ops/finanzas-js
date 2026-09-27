@@ -598,13 +598,13 @@ export default function GastosScreen() {
                   style={styles.exportExcelBtn}
                   onPress={descargarExcel}
                 >
-                  <Text style={styles.exportText}>📥 Descargar Excel</Text>
+                  <Text style={styles.exportText}>📥 Excel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.exportPdfBtn}
                   onPress={descargarPDF}
                 >
-                  <Text style={styles.exportText}>📥 Descargar PDF</Text>
+                  <Text style={styles.exportText}>📥 PDF</Text>
                 </TouchableOpacity>
               </View>
             </View>

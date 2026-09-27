@@ -1255,7 +1255,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   cardValue: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "bold",
   },
   cardSubValue: {

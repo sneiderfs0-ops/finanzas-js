@@ -1252,7 +1252,7 @@ const styles = StyleSheet.create({
   },
   modalClientName: {
     fontSize: 15,
-    fontWeight: "600",
+    fontWeight: "bold",
     color: "#1e293b",
   },
   textWhite: {

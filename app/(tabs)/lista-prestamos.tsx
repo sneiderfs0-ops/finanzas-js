@@ -194,57 +194,6 @@ export default function ListaPrestamosScreen() {
     setEditModalVisible(true);
   };
 
-  const confirmarEliminarPrestamo = async (item: any) => {
-    try {
-      const { data: pagosRegistrados, error } = await supabase
-        .from("pagos")
-        .select("id, monto_pagado")
-        .eq("prestamo_id", item.id);
-
-      if (error) throw error;
-
-      if (pagosRegistrados && pagosRegistrados.length > 0) {
-        setErrorModalVisible(true);
-        return;
-      }
-
-      setPrestamoAEliminar(item);
-      setDeleteModalVisible(true);
-    } catch (err) {
-      console.error("Error al verificar pagos del préstamo:", err);
-      setErrorModalVisible(true);
-    }
-  };
-
-  const ejecutarEliminacion = async (item: any) => {
-    try {
-      setIdPrestamoBorrando(item.id);
-
-      const { error } = await supabase
-        .from("prestamos")
-        .delete()
-        .eq("id", item.id);
-
-      if (error) throw error;
-
-      setPrestamos((prevPrestamos: any[]) =>
-        prevPrestamos.filter((p) => p.id !== item.id),
-      );
-
-      setDeleteModalVisible(false);
-      setPrestamoAEliminar(null);
-      setSuccessModalVisible(true);
-    } catch (err) {
-      console.error("Error al eliminar el préstamo:", err);
-      Alert.alert(
-        "Error",
-        "No se pudo eliminar el préstamo de la base de datos.",
-      );
-    } finally {
-      setIdPrestamoBorrando(null);
-    }
-  };
-
   const guardarEdicionPrestamo = async () => {
     if (!prestamoAEditar) return;
 
@@ -290,6 +239,54 @@ export default function ListaPrestamosScreen() {
       Alert.alert("Error", "No se pudo actualizar el préstamo: " + err.message);
     } finally {
       setGuardandoEdicion(false);
+    }
+  };
+
+  const confirmarEliminarPrestamo = async (item: any) => {
+    try {
+      const { data: pagosRegistrados, error } = await supabase
+        .from("pagos")
+        .select("id, monto_pagado")
+        .eq("prestamo_id", item.id);
+
+      if (error) throw error;
+
+      if (pagosRegistrados && pagosRegistrados.length > 0) {
+        setErrorModalVisible(true);
+        return;
+      }
+
+      setPrestamoAEliminar(item);
+      setDeleteModalVisible(true);
+    } catch (err) {
+      console.error("Error al verificar pagos del préstamo:", err);
+      setErrorModalVisible(true);
+    }
+  };
+
+  const ejecutarEliminacion = async () => {
+    if (!prestamoAEliminar) return;
+    try {
+      const { error } = await supabase
+        .from("prestamos")
+        .delete()
+        .eq("id", prestamoAEliminar.id);
+
+      if (error) throw error;
+
+      setPrestamos((prevPrestamos: any[]) =>
+        prevPrestamos.filter((p) => p.id !== prestamoAEliminar.id),
+      );
+
+      setDeleteModalVisible(false);
+      setPrestamoAEliminar(null);
+      setSuccessModalVisible(true);
+    } catch (err) {
+      console.error("Error al eliminar el préstamo:", err);
+      Alert.alert(
+        "Error",
+        "No se pudo eliminar el préstamo de la base de datos.",
+      );
     }
   };
 
@@ -516,13 +513,13 @@ export default function ListaPrestamosScreen() {
             style={styles.btnGlobalExcel}
             onPress={exportarExcelTablaGeneral}
           >
-            <Text style={styles.btnExportText}>📥 Descargar Excel</Text>
+            <Text style={styles.btnExportText}>📥 Excel</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.btnGlobalPdf}
             onPress={exportarPDFTablaGeneral}
           >
-            <Text style={styles.btnExportText}>📥 Descargar PDF</Text>
+            <Text style={styles.btnExportText}>📥 PDF</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -889,6 +886,202 @@ export default function ListaPrestamosScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* MODAL DE EDICIÓN */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={editModalVisible}
+        onRequestClose={() => setEditModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContentModern}>
+            {/* Cabecera del Modal */}
+            <View style={styles.modalHeaderModern}>
+              <View>
+                <Text style={styles.modalTitleModern}>Editar Préstamo</Text>
+                <Text style={styles.modalSubtitleModern}>
+                  Modifica los valores necesarios
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setEditModalVisible(false)}
+                style={styles.closeIconBtnModern}
+              >
+                <Text style={styles.closeIconTextModern}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Contenido de los inputs */}
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingVertical: 5 }}
+            >
+              <View style={styles.inputGroupModern}>
+                <Text style={styles.inputLabelModern}>
+                  💵 Monto del Préstamo
+                </Text>
+                <TextInput
+                  style={styles.inputModalModern}
+                  value={editMonto}
+                  onChangeText={setEditMonto}
+                  keyboardType="numeric"
+                  placeholder="Ej: 200000"
+                  placeholderTextColor="#94a3b8"
+                />
+              </View>
+
+              <View style={styles.inputGroupModern}>
+                <Text style={styles.inputLabelModern}>
+                  📊 Porcentaje de Interés (%)
+                </Text>
+                <TextInput
+                  style={styles.inputModalModern}
+                  value={editPorcentaje}
+                  onChangeText={setEditPorcentaje}
+                  keyboardType="numeric"
+                  placeholder="Ej: 20"
+                  placeholderTextColor="#94a3b8"
+                />
+              </View>
+
+              <View style={styles.inputGroupModern}>
+                <Text style={styles.inputLabelModern}>📅 Cuotas</Text>
+                <TextInput
+                  style={styles.inputModalModern}
+                  value={editCuotas}
+                  onChangeText={setEditCuotas}
+                  keyboardType="numeric"
+                  placeholder="Ej: 24"
+                  placeholderTextColor="#94a3b8"
+                />
+              </View>
+            </ScrollView>
+
+            {/* Botones de Acción */}
+            <View style={styles.modalFooterModern}>
+              <TouchableOpacity
+                style={styles.btnCancelarModern}
+                onPress={() => setEditModalVisible(false)}
+              >
+                <Text style={styles.btnCancelarTextModern}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.btnGuardarModern}
+                onPress={guardarEdicionPrestamo}
+                disabled={guardandoEdicion}
+              >
+                <Text style={styles.btnGuardarTextModern}>
+                  {guardandoEdicion ? "Guardando..." : "Guardar Cambios"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL DE CONFIRMACIÓN DE ELIMINACIÓN MEJORADO */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={deleteModalVisible}
+        onRequestClose={() => setDeleteModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContentDelete}>
+            {/* Icono de advertencia superior */}
+            <View style={styles.deleteIconContainer}>
+              <Text style={{ fontSize: 28 }}>⚠️</Text>
+            </View>
+
+            {/* Textos del modal */}
+            <Text style={styles.modalTitleDelete}>¿Eliminar Préstamo?</Text>
+            <Text style={styles.modalTextDelete}>
+              ¿Estás seguro de que deseas eliminar este préstamo? Esta acción no
+              se puede deshacer y borrará los registros asociados.
+            </Text>
+
+            {/* Botones de acción */}
+            <View style={styles.modalFooterDelete}>
+              <TouchableOpacity
+                style={styles.btnCancelarDelete}
+                onPress={() => setDeleteModalVisible(false)}
+              >
+                <Text style={styles.btnCancelarTextDelete}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.btnConfirmarDelete}
+                onPress={ejecutarEliminacion}
+              >
+                <Text style={styles.btnConfirmarTextDelete}>Sí, Eliminar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL DE ERROR (SI TIENE PAGOS) */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={errorModalVisible}
+        onRequestClose={() => setErrorModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContentError}>
+            {/* Icono de bloqueo / advertencia superior */}
+            <View style={styles.errorIconContainer}>
+              <Text style={{ fontSize: 28 }}>🔒</Text>
+            </View>
+
+            {/* Textos del modal */}
+            <Text style={styles.modalTitleError}>No se puede eliminar</Text>
+            <Text style={styles.modalTextError}>
+              Este préstamo ya cuenta con pagos registrados en el sistema. No es
+              posible eliminarlo por seguridad contable.
+            </Text>
+
+            {/* Botón de acción */}
+            <TouchableOpacity
+              style={styles.btnEntendidoError}
+              onPress={() => setErrorModalVisible(false)}
+            >
+              <Text style={styles.btnEntendidoTextError}>Entendido</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL DE ÉXITO AL ELIMINAR */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={successModalVisible}
+        onRequestClose={() => setSuccessModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContentSuccess}>
+            {/* Icono de éxito superior */}
+            <View style={styles.successIconContainer}>
+              <Text style={{ fontSize: 28 }}>✅</Text>
+            </View>
+
+            {/* Textos del modal */}
+            <Text style={styles.modalTitleSuccess}>¡Eliminado con Éxito!</Text>
+            <Text style={styles.modalTextSuccess}>
+              El préstamo ha sido eliminado correctamente del sistema.
+            </Text>
+
+            {/* Botón de acción */}
+            <TouchableOpacity
+              style={styles.btnAceptarSuccess}
+              onPress={() => setSuccessModalVisible(false)}
+            >
+              <Text style={styles.btnAceptarTextSuccess}>Aceptar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1236,5 +1429,282 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 16,
     fontWeight: "600",
+  },
+
+  modalContentModern: {
+    width: "90%",
+    maxWidth: 440,
+    backgroundColor: "#ffffff",
+    borderRadius: 20,
+    padding: 24,
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  modalHeaderModern: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f5f9",
+    paddingBottom: 12,
+  },
+  modalTitleModern: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#0f172a",
+  },
+  modalSubtitleModern: {
+    fontSize: 13,
+    color: "#64748b",
+    marginTop: 2,
+  },
+  closeIconBtnModern: {
+    backgroundColor: "#f1f5f9",
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  closeIconTextModern: {
+    fontSize: 14,
+    fontWeight: "bold",
+    color: "#64748b",
+  },
+  inputGroupModern: {
+    marginBottom: 16,
+  },
+  inputLabelModern: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#334155",
+    marginBottom: 6,
+  },
+  inputModalModern: {
+    borderWidth: 1.5,
+    borderColor: "#e2e8f0",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 48,
+    color: "#0f172a",
+    backgroundColor: "#f8fafc",
+    fontSize: 15,
+  },
+  modalFooterModern: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: "#f1f5f9",
+  },
+  btnCancelarModern: {
+    flex: 1,
+    backgroundColor: "#f1f5f9",
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  btnCancelarTextModern: {
+    color: "#475569",
+    fontWeight: "600",
+    fontSize: 15,
+  },
+  btnGuardarModern: {
+    flex: 1.2,
+    backgroundColor: "#2563eb",
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    shadowColor: "#2563eb",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  btnGuardarTextModern: {
+    color: "#ffffff",
+    fontWeight: "bold",
+    fontSize: 15,
+  },
+  modalContentDelete: {
+    width: "90%",
+    maxWidth: 380,
+    backgroundColor: "#ffffff",
+    borderRadius: 20,
+    padding: 24,
+    alignItems: "center",
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  deleteIconContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#fef2f2",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  modalTitleDelete: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#0f172a",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  modalTextDelete: {
+    fontSize: 14,
+    color: "#64748b",
+    textAlign: "center",
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  modalFooterDelete: {
+    flexDirection: "row",
+    gap: 12,
+    width: "100%",
+  },
+  btnCancelarDelete: {
+    flex: 1,
+    backgroundColor: "#f1f5f9",
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  btnCancelarTextDelete: {
+    color: "#475569",
+    fontWeight: "600",
+    fontSize: 15,
+  },
+  btnConfirmarDelete: {
+    flex: 1,
+    backgroundColor: "#dc2626",
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    shadowColor: "#dc2626",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  btnConfirmarTextDelete: {
+    color: "#ffffff",
+    fontWeight: "bold",
+    fontSize: 15,
+  },
+  modalContentError: {
+    width: "90%",
+    maxWidth: 380,
+    backgroundColor: "#ffffff",
+    borderRadius: 20,
+    padding: 24,
+    alignItems: "center",
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  errorIconContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#fff1f2",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  modalTitleError: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#0f172a",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  modalTextError: {
+    fontSize: 14,
+    color: "#64748b",
+    textAlign: "center",
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  btnEntendidoError: {
+    width: "100%",
+    backgroundColor: "#2563eb",
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    shadowColor: "#2563eb",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  btnEntendidoTextError: {
+    color: "#ffffff",
+    fontWeight: "bold",
+    fontSize: 15,
+  },
+  modalContentSuccess: {
+    width: "90%",
+    maxWidth: 380,
+    backgroundColor: "#ffffff",
+    borderRadius: 20,
+    padding: 24,
+    alignItems: "center",
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  successIconContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#f0fdf4",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  modalTitleSuccess: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#0f172a",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  modalTextSuccess: {
+    fontSize: 14,
+    color: "#64748b",
+    textAlign: "center",
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  btnAceptarSuccess: {
+    width: "100%",
+    backgroundColor: "#16a34a",
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    shadowColor: "#16a34a",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  btnAceptarTextSuccess: {
+    color: "#ffffff",
+    fontWeight: "bold",
+    fontSize: 15,
   },
 });

@@ -219,11 +219,8 @@ export default function PagosHabilesScreen() {
           };
         });
 
-        const filtrados = pagosFormateados.filter(
-          (item) => item.saldo_pendiente > 0,
-        );
-        setTodosLosPagos(filtrados);
-        setPagosHabilesFiltrados(filtrados);
+        setTodosLosPagos(pagosFormateados);
+        setPagosHabilesFiltrados(pagosFormateados);
       }
     } catch (err) {
       console.log("Error inesperado:", err);
@@ -265,7 +262,7 @@ export default function PagosHabilesScreen() {
 
       if (authError || !user || !user.email) {
         alert("No se encontró una sesión activa.");
-        router.replace("/home");
+        router.replace("/index");
         return;
       }
 
@@ -290,7 +287,7 @@ export default function PagosHabilesScreen() {
       if (secretariaData) {
         if (secretariaData.aprobado !== "aprobado") {
           alert("Tu cuenta de secretaria aún está pendiente de aprobación.");
-          router.replace("/home");
+          router.replace("/index");
           return;
         }
         setTienePermiso(true);
@@ -299,10 +296,10 @@ export default function PagosHabilesScreen() {
       }
 
       alert("Acceso exclusivo para administradores y secretarias.");
-      router.replace("/home");
+      router.replace("/index");
     } catch (err) {
       console.log("Error verificando permisos:", err);
-      router.replace("/home");
+      router.replace("/index");
     } finally {
       setVerificandoAcceso(false);
     }
@@ -538,24 +535,10 @@ export default function PagosHabilesScreen() {
         }
       }
     } catch (error: any) {
-      console.log("Error al exportar Excel:", error);
-      Alert.alert(
-        "Error",
-        "No se pudo generar el archivo Excel: " + (error.message || error),
-      );
+      console.log("Error al exportar Excel en móvil:", error);
+      Alert.alert("Error", "No se pudo generar el archivo en el dispositivo.");
     }
   };
-
-  if (verificandoAcceso || !tienePermiso) {
-    return (
-      <View style={styles.loaderContainer}>
-        <ActivityIndicator size="large" color="#0f172a" />
-        <Text style={{ marginTop: 10, color: "#64748b" }}>
-          Verificando permisos de acceso...
-        </Text>
-      </View>
-    );
-  }
 
   return (
     <View style={styles.container}>

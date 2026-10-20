@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "../../supabase";
 import { obtenerFechaHoraExactaVenezuela } from "../../utils/fechas";
 
@@ -82,9 +83,9 @@ export default function CrearPagoScreen({ route }: any) {
     new Date().toISOString().split("T")[0],
   );
 
-  const [tipoPago, setTipoPago] = useState<"efectivo" | "transferencia">(
-    "efectivo",
-  );
+  // Tipo de pago fijo en efectivo
+  const tipoPago = "efectivo";
+
   const [loading, setLoading] = useState(false);
   const guardandoRef = useRef(false);
 
@@ -99,11 +100,34 @@ export default function CrearPagoScreen({ route }: any) {
     obtenerUsuarioLogueadoYCargarDatos();
   }, []);
 
+  // Recuperar el último cliente guardado de forma persistente (independiente de la sesión)
   useEffect(() => {
-    if (clienteCedulaParam && clientes.length > 0) {
-      cargarPrestamosCliente(clienteCedulaParam);
-    }
-  }, [clienteCedulaParam, clientes]);
+    const recuperarClienteSupabase = async () => {
+      if (clientes.length > 0 && usuarioActual?.id) {
+        if (clienteCedulaParam) {
+          cargarPrestamosCliente(clienteCedulaParam);
+        } else {
+          try {
+            const { data: cedulaGuardada, error } = await supabase.rpc(
+              "obtener_ultima_preferencia_cliente",
+              { p_usuario_id: usuarioActual.id },
+            );
+
+            if (!error && cedulaGuardada && !clienteSeleccionado) {
+              const existe = clientes.some((c) => c.cedula === cedulaGuardada);
+              if (existe) {
+                setClienteSeleccionado(cedulaGuardada);
+                cargarPrestamosCliente(cedulaGuardada);
+              }
+            }
+          } catch (e) {
+            console.log("Error al recuperar preferencia de Supabase:", e);
+          }
+        }
+      }
+    };
+    recuperarClienteSupabase();
+  }, [clientes, usuarioActual]);
 
   const obtenerUsuarioLogueadoYCargarDatos = async () => {
     try {
@@ -256,11 +280,22 @@ export default function CrearPagoScreen({ route }: any) {
     setMontoFisico("");
   };
 
-  const handleSeleccionarCliente = (cedula: string) => {
+  const handleSeleccionarCliente = async (cedula: string) => {
     setClienteSeleccionado(cedula);
     setPrestamoSeleccionado(null);
     setModalClienteVisible(false);
-    setNombreBusqueda("");
+
+    if (usuarioActual?.id) {
+      try {
+        await supabase.rpc("guardar_ultima_preferencia_cliente", {
+          p_usuario_id: usuarioActual.id,
+          p_cedula: cedula,
+        });
+      } catch (e) {
+        console.log("Error al guardar preferencia en Supabase:", e);
+      }
+    }
+
     cargarPrestamosCliente(cedula);
   };
 
@@ -383,7 +418,6 @@ export default function CrearPagoScreen({ route }: any) {
     };
 
     setMontoFisico("");
-    setClienteSeleccionado(null);
     setPrestamoSeleccionado(null);
     setPrestamosCliente([]);
 
@@ -481,9 +515,9 @@ export default function CrearPagoScreen({ route }: any) {
             {prestamoSeleccionado ? (
               <View style={{ flex: 1 }}>
                 <Text style={styles.dropdownTriggerTitle}>
-                  Préstamo en {prestamoSeleccionado.moneda} - Saldo: ${" "}
+                  Préstamo en {prestamoSeleccionado.moneda} | Saldo: ${" "}
                   {formatearSinDecimales(
-                    prestamoSeleccionado.monto_prestado || 0,
+                    prestamoSeleccionado.saldo_pendiente || 0,
                   )}
                 </Text>
                 <Text style={styles.dropdownTriggerSubtitle}>
@@ -542,34 +576,8 @@ export default function CrearPagoScreen({ route }: any) {
             </TouchableOpacity>
           )}
 
-          <Text style={styles.label}>4. Método de Cobro</Text>
-          <View style={styles.rowSelector}>
-            {[
-              { id: "efectivo", label: `Efectivo (${monedaPago})` },
-              { id: "transferencia", label: `Transferencia (${monedaPago})` },
-            ].map((t) => (
-              <TouchableOpacity
-                key={t.id}
-                style={[
-                  styles.selectChip,
-                  tipoPago === t.id && styles.selectChipActive,
-                ]}
-                onPress={() => setTipoPago(t.id as any)}
-              >
-                <Text
-                  style={[
-                    styles.selectChipTxt,
-                    tipoPago === t.id && styles.selectChipTxtActive,
-                  ]}
-                >
-                  {t.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
           <Text style={styles.label}>
-            5. Monto Entregado Físicamente ({monedaPago})
+            4. Monto Entregado Físicamente ({monedaPago})
           </Text>
           <TextInput
             style={styles.input}
@@ -951,209 +959,120 @@ const styles = StyleSheet.create({
   userCard: {
     backgroundColor: "#e0f2fe",
     padding: 12,
-    borderRadius: 12,
+    borderRadius: 8,
     marginBottom: 16,
-    borderWidth: 1,
-    borderColor: "#bae6fd",
   },
-  userCardTitle: {
-    fontSize: 12,
-    color: "#0369a1",
-    fontWeight: "600",
-    marginBottom: 2,
-  },
-  userCardText: { fontSize: 15, fontWeight: "bold", color: "#0c4a6e" },
+  userCardTitle: { fontSize: 12, color: "#0369a1", fontWeight: "600" },
+  userCardText: { fontSize: 14, color: "#0c4a6e", fontWeight: "bold" },
   label: {
-    fontSize: 15,
-    fontWeight: "bold",
+    fontSize: 14,
+    fontWeight: "600",
     color: "#334155",
-    marginBottom: 8,
-    marginTop: 10,
-  },
-  subLabel: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#475569",
     marginBottom: 6,
+    marginTop: 12,
   },
-  helperText: {
-    fontSize: 11,
-    color: "#d97706",
-    fontStyle: "italic",
-    marginTop: -8,
-    marginBottom: 10,
-  },
-  manualDateBox: {
-    backgroundColor: "#fefce8",
-    borderWidth: 1,
-    borderColor: "#fef08a",
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 10,
-    marginBottom: 10,
-  },
-  checkboxRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  checkboxBox: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: "#f1b228",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#fff",
-  },
-  checkboxBoxChecked: {
-    backgroundColor: "#ad7702",
-  },
-  checkboxTick: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "bold",
-  },
-  checkboxLabel: {
-    marginLeft: 8,
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#854d0e",
-  },
-  input: {
-    backgroundColor: "#f8fafc",
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    fontSize: 16,
-    color: "#1e293b",
-  },
-  button: {
-    backgroundColor: "#0284c7",
-    padding: 16,
-    borderRadius: 12,
-    alignItems: "center",
-    shadowColor: "#0284c7",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  buttonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
+  subLabel: { fontSize: 13, color: "#64748b", marginBottom: 4 },
+  bold: { fontWeight: "bold", color: "#1e293b" },
+  boldPrimary: { fontWeight: "bold", color: "#0284c7" },
   dropdownTrigger: {
-    backgroundColor: "#f8fafc",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 12,
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
   },
-  dropdownTriggerTitle: {
-    fontSize: 15,
-    fontWeight: "bold",
-    color: "#1e293b",
-  },
-  dropdownTriggerSubtitle: {
-    fontSize: 13,
-    color: "#64748b",
-    marginTop: 2,
-  },
-  dropdownTriggerPlaceholder: {
-    fontSize: 15,
-    color: "#94a3b8",
-    flex: 1,
-  },
-  dropdownTriggerIcon: {
-    fontSize: 12,
-    color: "#0c4eab",
-    marginLeft: 8,
-  },
-  rowSelector: {
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 10,
-  },
+  dropdownTriggerTitle: { fontSize: 15, fontWeight: "600", color: "#1e293b" },
+  dropdownTriggerSubtitle: { fontSize: 12, color: "#64748b", marginTop: 2 },
+  dropdownTriggerPlaceholder: { fontSize: 15, color: "#94a3b8" },
+  dropdownTriggerIcon: { fontSize: 12, color: "#64748b", marginLeft: 8 },
+  rowSelector: { flexDirection: "row", gap: 8 },
   selectChip: {
     flex: 1,
     paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    backgroundColor: "#f8fafc",
     alignItems: "center",
+  },
+  selectChipActive: { backgroundColor: "#0284c7", borderColor: "#0284c7" },
+  selectChipTxt: { fontSize: 14, fontWeight: "600", color: "#475569" },
+  selectChipTxtActive: { color: "#ffffff" },
+  tasaBanner: {
+    backgroundColor: "#fef3c7",
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: "#fde68a",
+  },
+  tasaBannerText: { fontSize: 13, color: "#92400e", textAlign: "center" },
+  input: {
     backgroundColor: "#f8fafc",
     borderWidth: 1,
     borderColor: "#cbd5e1",
-    borderRadius: 10,
-  },
-  selectChipActive: {
-    backgroundColor: "#e0f2fe",
-    borderColor: "#0284c7",
-  },
-  selectChipTxt: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#475569",
-  },
-  selectChipTxtActive: {
-    color: "#0369a1",
-  },
-  tasaBanner: {
-    backgroundColor: "#f1f5f9",
-    padding: 10,
     borderRadius: 8,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-  },
-  tasaBannerText: {
-    fontSize: 13,
-    color: "#475569",
-    textAlign: "center",
-  },
-  bold: {
-    fontWeight: "bold",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
     color: "#1e293b",
-  },
-  boldPrimary: {
-    fontWeight: "bold",
-    color: "#0284c7",
   },
   calcBox: {
     backgroundColor: "#f8fafc",
-    padding: 16,
-    borderRadius: 12,
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 16,
     borderWidth: 1,
-    borderColor: "#cbd5e1",
-    marginBottom: 20,
+    borderColor: "#e2e8f0",
   },
   calcTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "bold",
-    color: "#1e293b",
-    marginBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
-    paddingBottom: 6,
+    color: "#475569",
+    marginBottom: 8,
   },
   calcRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 8,
+    paddingVertical: 4,
   },
-  calcText: {
-    fontSize: 14,
-    color: "#0e356d",
+  calcText: { fontSize: 13, color: "#64748b" },
+  manualDateBox: {
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: "#f8fafc",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
   },
-  bold: { fontWeight: "bold", color: "#1e293b" },
-  boldPrimary: { fontWeight: "bold", color: "#0284c7", fontSize: 15 },
-
+  checkboxRow: { flexDirection: "row", alignItems: "center" },
+  checkboxBox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+  },
+  checkboxBoxChecked: { backgroundColor: "#0284c7", borderColor: "#0284c7" },
+  checkboxTick: { color: "#fff", fontSize: 12, fontWeight: "bold" },
+  checkboxLabel: { fontSize: 14, fontWeight: "600", color: "#334155" },
+  helperText: { fontSize: 11, color: "#94a3b8", marginTop: 4 },
+  button: {
+    backgroundColor: "#0284c7",
+    borderRadius: 8,
+    paddingVertical: 14,
+    alignItems: "center",
+    marginTop: 24,
+  },
+  buttonText: { color: "#ffffff", fontSize: 16, fontWeight: "bold" },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
@@ -1164,9 +1083,9 @@ const styles = StyleSheet.create({
   modalContainer: {
     width: "100%",
     maxWidth: 500,
-    maxHeight: "80%",
-    backgroundColor: "#fff",
+    backgroundColor: "#ffffff",
     borderRadius: 16,
+    maxHeight: "80%",
     overflow: "hidden",
   },
   modalHeader: {
@@ -1177,44 +1096,25 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#e2e8f0",
   },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#1e293b",
-  },
-  closeBtn: {
-    padding: 4,
-  },
-  closeBtnText: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#64748b",
-  },
-  searchBoxContainer: {
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
-    backgroundColor: "#f8fafc",
-  },
+  modalTitle: { fontSize: 18, fontWeight: "bold", color: "#1e293b" },
+  closeBtn: { padding: 4 },
+  closeBtnText: { fontSize: 18, color: "#64748b", fontWeight: "bold" },
+  searchBoxContainer: { padding: 12, backgroundColor: "#f8fafc" },
   modalSearchInput: {
-    backgroundColor: "#fff",
+    backgroundColor: "#ffffff",
     borderWidth: 1,
     borderColor: "#cbd5e1",
     borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
   },
-  modalList: {
-    padding: 12,
-  },
-  modalListContent: {
-    paddingBottom: 20,
-  },
+  modalList: { paddingHorizontal: 12 },
+  modalListContent: { paddingVertical: 8 },
   modalClientCard: {
-    backgroundColor: "#f8fafc",
     padding: 12,
-    borderRadius: 10,
+    borderRadius: 8,
+    backgroundColor: "#f8fafc",
     marginBottom: 8,
     borderWidth: 1,
     borderColor: "#e2e8f0",
@@ -1223,66 +1123,54 @@ const styles = StyleSheet.create({
     backgroundColor: "#0284c7",
     borderColor: "#0284c7",
   },
-  modalClientName: {
-    fontSize: 15,
-    fontWeight: "bold",
-    color: "#1e293b",
-  },
-  modalClientCedula: {
-    fontSize: 13,
-    color: "#64748b",
-    marginTop: 2,
-  },
-  textWhite: {
-    color: "#fff",
-  },
-  textWhiteSub: {
-    color: "#e0f2fe",
-  },
+  modalClientName: { fontSize: 15, fontWeight: "600", color: "#1e293b" },
+  modalClientCedula: { fontSize: 13, color: "#64748b", marginTop: 2 },
+  textWhite: { color: "#ffffff" },
+  textWhiteSub: { color: "#e0f2fe" },
   modalExitoContainer: {
     width: "100%",
-    maxWidth: 320,
-    backgroundColor: "#fff",
-    borderRadius: 16,
+    maxWidth: 340,
+    backgroundColor: "#ffffff",
+    borderRadius: 20,
     padding: 24,
     alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 5,
   },
   successIconContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: "#dcfce7",
-    justifyContent: "center",
     alignItems: "center",
+    justifyContent: "center",
     marginBottom: 16,
   },
-  errorIconContainer: {
-    backgroundColor: "#fee2e2",
-  },
-  successIconText: {
-    fontSize: 24,
+  errorIconContainer: { backgroundColor: "#fee2e2" },
+  successIconText: { fontSize: 28, color: "#16a34a", fontWeight: "bold" },
+  modalExitoTitle: {
+    fontSize: 20,
     fontWeight: "bold",
-    color: "#16a34a",
+    color: "#1e293b",
+    marginBottom: 8,
+    textAlign: "center",
   },
   modalExitoMessage: {
     fontSize: 14,
     color: "#64748b",
     textAlign: "center",
-    marginBottom: 20,
+    marginBottom: 24,
   },
   successButton: {
+    width: "100%",
     backgroundColor: "#0284c7",
     borderRadius: 10,
     paddingVertical: 12,
-    width: "100%",
     alignItems: "center",
   },
-  errorButton: {
-    backgroundColor: "#dc2626",
-  },
-  successButtonText: {
-    color: "#fff",
-    fontSize: 15,
-    fontWeight: "bold",
-  },
+  errorButton: { backgroundColor: "#dc2626" },
+  successButtonText: { color: "#ffffff", fontSize: 15, fontWeight: "bold" },
 });

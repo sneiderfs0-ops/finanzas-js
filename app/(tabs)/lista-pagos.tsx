@@ -1072,10 +1072,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  horizontalScrollContent: {
-    minWidth: 1300,
-    flexGrow: 1,
-  },
+  horizontalScrollContent: { paddingBottom: 20, minWidth: 1300, flexGrow: 1 },
   gridRow: {
     flexDirection: "row",
     borderBottomWidth: 1,

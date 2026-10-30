@@ -444,11 +444,18 @@ export default function CrearPagoScreen({ route }: any) {
     }
   };
 
-  const clientesFiltrados = clientes.filter((c) =>
+  const clientesFiltradosOriginal = clientes.filter((c) =>
     `${c.nombres} ${c.apellidos} ${c.cedula}`
       .toLowerCase()
       .includes(nombreBusqueda.toLowerCase()),
   );
+
+  const clientesFiltrados = [...clientesFiltradosOriginal].sort((a, b) => {
+    if (a.cedula === clienteSeleccionado) return -1; // Pone al seleccionado de primero
+    if (b.cedula === clienteSeleccionado) return 1; // Pone al seleccionado de primero
+    return 0; // Mantiene el orden original para el resto
+  });
+
   const clienteObjetoSeleccionado = clientes.find(
     (c) => c.cedula === clienteSeleccionado,
   );
@@ -588,55 +595,17 @@ export default function CrearPagoScreen({ route }: any) {
             maxLength={15}
             placeholderTextColor="#a4b0be"
           />
-
-          <View style={styles.calcBox}>
-            <Text style={styles.calcTitle}>Resumen de Conversión y Cobro</Text>
-            <View style={styles.calcRow}>
-              <Text style={styles.calcText}>Saldo Actual del Préstamo:</Text>
-              <Text style={styles.bold}>
-                ${" "}
-                {prestamoSeleccionado
-                  ? formatearSinDecimales(prestamoSeleccionado.saldo_pendiente)
-                  : "0"}{" "}
-                {monedaPrestamo}
-              </Text>
-            </View>
-            <View style={styles.calcRow}>
-              <Text style={styles.calcText}>
-                Monto Recibido ({monedaPago}):
-              </Text>
-              <Text style={styles.bold}>
-                $ {formatearSinDecimales(montoFisicoNum)} {monedaPago}
-              </Text>
-            </View>
-            {monedaPago !== monedaPrestamo && (
-              <View style={styles.calcRow}>
-                <Text style={styles.calcText}>
-                  Equivalente Abonado al Préstamo:
-                </Text>
-                <Text style={styles.boldPrimary}>
-                  $ {formatearSinDecimales(montoAplicadoPrestamo)}{" "}
-                  {monedaPrestamo}
-                </Text>
-              </View>
+          <TouchableOpacity
+            style={[styles.button, loading && { opacity: 0.7 }]}
+            onPress={guardarPago}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.buttonText}>Registrar Pago</Text>
             )}
-            <View style={styles.calcRow}>
-              <Text style={styles.calcText}>Nuevo Saldo Resultante:</Text>
-              <Text style={styles.bold}>
-                ${" "}
-                {prestamoSeleccionado
-                  ? formatearSinDecimales(
-                      Math.max(
-                        0,
-                        prestamoSeleccionado.saldo_pendiente -
-                          montoAplicadoPrestamo,
-                      ),
-                    )
-                  : "0"}{" "}
-                {monedaPrestamo}
-              </Text>
-            </View>
-          </View>
+          </TouchableOpacity>
 
           {usuarioActual?.tipo === "Administrador" && (
             <View style={styles.manualDateBox}>
@@ -680,17 +649,55 @@ export default function CrearPagoScreen({ route }: any) {
             </View>
           )}
 
-          <TouchableOpacity
-            style={[styles.button, loading && { opacity: 0.7 }]}
-            onPress={guardarPago}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Registrar Pago</Text>
+          <View style={styles.calcBox}>
+            <Text style={styles.calcTitle}>Resumen de Conversión y Cobro</Text>
+            <View style={styles.calcRow}>
+              <Text style={styles.calcText}>Saldo Actual del Préstamo:</Text>
+              <Text style={styles.bold}>
+                ${" "}
+                {prestamoSeleccionado
+                  ? formatearSinDecimales(prestamoSeleccionado.saldo_pendiente)
+                  : "0"}{" "}
+                {monedaPrestamo}
+              </Text>
+            </View>
+
+            <View style={styles.calcRow}>
+              <Text style={styles.calcText}>
+                Monto Recibido ({monedaPago}):
+              </Text>
+              <Text style={styles.bold}>
+                $ {formatearSinDecimales(montoFisicoNum)} {monedaPago}
+              </Text>
+            </View>
+            {monedaPago !== monedaPrestamo && (
+              <View style={styles.calcRow}>
+                <Text style={styles.calcText}>
+                  Equivalente Abonado al Préstamo:
+                </Text>
+                <Text style={styles.boldPrimary}>
+                  $ {formatearSinDecimales(montoAplicadoPrestamo)}{" "}
+                  {monedaPrestamo}
+                </Text>
+              </View>
             )}
-          </TouchableOpacity>
+            <View style={styles.calcRow}>
+              <Text style={styles.calcText}>Nuevo Saldo Resultante:</Text>
+              <Text style={styles.bold}>
+                ${" "}
+                {prestamoSeleccionado
+                  ? formatearSinDecimales(
+                      Math.max(
+                        0,
+                        prestamoSeleccionado.saldo_pendiente -
+                          montoAplicadoPrestamo,
+                      ),
+                    )
+                  : "0"}{" "}
+                {monedaPrestamo}
+              </Text>
+            </View>
+          </View>
         </View>
 
         {/* MODAL TASA DE CAMBIO */}

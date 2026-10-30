@@ -26,9 +26,10 @@ export default function ListaPrestamosScreen() {
   const esPantallaPequena = width < 768;
 
   const [prestamos, setPrestamos] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false); // Cambiado a false para que no bloquee la pantalla de inicio
+  const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [busqueda, setBusqueda] = useState("");
+  const [fechaFiltro, setFechaFiltro] = useState(""); // 🔹 Filtro por fecha (AAAA-MM-DD)
 
   // Modal de Detalles e Historial
   const [modalVisible, setModalVisible] = useState(false);
@@ -36,7 +37,7 @@ export default function ListaPrestamosScreen() {
   const [pagosPrestamo, setPagosPrestamo] = useState<any[]>([]);
   const [cargandoPagos, setCargandoPagos] = useState(false);
 
-  // Estados para el Modal de Edición
+  // 🔹 Estados para el Modal de Edición (¡Añadidos!)
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [prestamoAEditar, setPrestamoAEditar] = useState<any>(null);
   const [editFecha, setEditFecha] = useState("");
@@ -45,37 +46,16 @@ export default function ListaPrestamosScreen() {
   const [editMonto, setEditMonto] = useState("");
   const [editCuotas, setEditCuotas] = useState("");
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
-  // Estados para el Modal de Confirmación de Eliminación
+
+  // 🔹 Estados para los Modales de Eliminación (¡Añadidos!)
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [prestamoAEliminar, setPrestamoAEliminar] = useState<any>(null);
-  // Estados para el Modal de Éxito y Mensajes
-  const [modalExitoVisible, setModalExitoVisible] = useState(false);
-  const [mensajeExito, setMensajeExito] = useState("");
-  // Estado para el modal de error al intentar eliminar un préstamo con pagos
   const [errorModalVisible, setErrorModalVisible] = useState(false);
-  // Estado para el modal de éxito al eliminar un préstamo
   const [successModalVisible, setSuccessModalVisible] = useState(false);
-  // Nuevo estado opcional para rastrear el ID que se está eliminando
-  const [idPrestamoBorrando, setIdPrestamoBorrando] = useState<string | null>(
-    null,
-  );
 
   useEffect(() => {
     cargarPrestamos();
   }, []);
-
-  const obtenerNombreRegistrador = async (cedula: string) => {
-    if (!cedula) return "Sin asignar";
-    try {
-      const { data, error } = await supabase.rpc("obtener_nombre_registrador", {
-        p_cedula: String(cedula).trim(),
-      });
-      if (!error && data) return data;
-    } catch (e) {
-      console.log("Error buscando registrador:", e);
-    }
-    return `Cédula: ${cedula}`;
-  };
 
   const cargarPrestamos = async (isRefresh = false) => {
     if (isRefresh) {
@@ -84,10 +64,38 @@ export default function ListaPrestamosScreen() {
       setLoading(true);
     }
     try {
+      // 1. Obtener tablas de usuarios para mapear cédula -> Nombre y Apellido completo
+      const [adminsRes, empleRes, secRes] = await Promise.all([
+        supabase.from("administradores").select("cedula, nombres, apellidos"),
+        supabase.from("empleados").select("cedula, nombres, apellidos"),
+        supabase.from("secretaria").select("cedula, nombres, apellidos"),
+      ]);
+
+      const mapaUsuarios: { [cedula: string]: string } = {};
+      const registrarEnMapa = (data: any[]) => {
+        if (data) {
+          data.forEach((u) => {
+            if (u.cedula) {
+              const cedulaLimpia = String(u.cedula).trim();
+              const nombreCompleto =
+                `${u.nombres || ""} ${u.apellidos || ""}`.trim();
+              if (nombreCompleto) {
+                mapaUsuarios[cedulaLimpia] = nombreCompleto;
+              }
+            }
+          });
+        }
+      };
+
+      registrarEnMapa(adminsRes.data || []);
+      registrarEnMapa(empleRes.data || []);
+      registrarEnMapa(secRes.data || []);
+
+      // 2. Cargar préstamos
       const { data: prestamosData, error: prestamoError } = await supabase
         .from("prestamos")
         .select("*")
-        .neq("estado", "renovado") // 🔹 Excluye automáticamente los préstamos renovados de la consulta
+        .neq("estado", "renovado")
         .order("fecha_prestamo", { ascending: false });
 
       if (prestamoError) throw prestamoError;
@@ -124,11 +132,20 @@ export default function ListaPrestamosScreen() {
                 )
               : 0;
 
-            const montoTotal = Number(p.monto_total) || 0;
-            const saldoPendienteCalculado = montoTotal - monto_pagado;
-            const empleadoNombre = await obtenerNombreRegistrador(
-              p.registrado_por_cedula,
-            );
+            const montoPrestadoNum = Number(p.monto_prestado) || 0;
+            const tasaInteresNum = Number(p.tasa_interes) || 0;
+            const interesCalculado = (montoPrestadoNum * tasaInteresNum) / 100;
+            const montoTotalCalculado =
+              Number(p.monto_total) || montoPrestadoNum + interesCalculado;
+
+            const saldoPendienteCalculado = montoTotalCalculado - monto_pagado;
+
+            const cedulaReg = p.registrado_por_cedula
+              ? String(p.registrado_por_cedula).trim()
+              : "";
+            const empleadoNombre =
+              mapaUsuarios[cedulaReg] ||
+              (cedulaReg ? `Cédula: ${cedulaReg}` : "Sin asignar");
 
             let estadoCalculado = "activo";
             if (saldoPendienteCalculado <= 0) {
@@ -140,6 +157,8 @@ export default function ListaPrestamosScreen() {
             return {
               ...p,
               clientes: clienteInfo,
+              monto_prestado: montoPrestadoNum,
+              monto_total: montoTotalCalculado,
               monto_pagado,
               saldo_pendiente: saldoPendienteCalculado,
               estadoTexto: estadoCalculado,
@@ -181,6 +200,7 @@ export default function ListaPrestamosScreen() {
     }
   };
 
+  // 🔹 Función para abrir el modal de edición con los datos del préstamo seleccionado
   const abrirModalEdicion = (item: any) => {
     setPrestamoAEditar(item);
     let fechaOriginal = "";
@@ -195,6 +215,7 @@ export default function ListaPrestamosScreen() {
     setEditModalVisible(true);
   };
 
+  // 🔹 Función para guardar los cambios de la edición en Supabase
   const guardarEdicionPrestamo = async () => {
     if (!prestamoAEditar) return;
 
@@ -243,6 +264,7 @@ export default function ListaPrestamosScreen() {
     }
   };
 
+  // 🔹 Función para verificar si tiene pagos antes de eliminar
   const confirmarEliminarPrestamo = async (item: any) => {
     try {
       const { data: pagosRegistrados, error } = await supabase
@@ -265,6 +287,7 @@ export default function ListaPrestamosScreen() {
     }
   };
 
+  // 🔹 Función para ejecutar la eliminación del préstamo en Supabase
   const ejecutarEliminacion = async () => {
     if (!prestamoAEliminar) return;
     try {
@@ -291,23 +314,70 @@ export default function ListaPrestamosScreen() {
     }
   };
 
+  // 🔹 Filtro combinado por fecha exacta (AAAA-MM-DD) y texto de búsqueda
   const prestamosFiltrados = prestamos.filter((item) => {
-    const texto = busqueda.toLowerCase().trim();
-    if (!texto) return true;
+    const textoBusqueda = busqueda.toLowerCase().trim();
+
+    if (fechaFiltro.trim() !== "") {
+      if (item.fecha_prestamo) {
+        const fechaBD = String(item.fecha_prestamo).substring(0, 10);
+        if (!fechaBD.includes(fechaFiltro.trim())) {
+          return false;
+        }
+      } else {
+        return false;
+      }
+    }
+
+    if (!textoBusqueda) return true;
     const nombres = (item.clientes?.nombres || "").toLowerCase();
     const apellidos = (item.clientes?.apellidos || "").toLowerCase();
     const nombreCompleto = `${nombres} ${apellidos}`;
+    const registrador = (item.empleadoNombre || "").toLowerCase();
     const montoPrestado = String(item.monto_prestado || "").toLowerCase();
     const montoTotal = String(item.monto_total || "").toLowerCase();
 
     return (
-      nombres.includes(texto) ||
-      apellidos.includes(texto) ||
-      nombreCompleto.includes(texto) ||
-      montoPrestado.includes(texto) ||
-      montoTotal.includes(texto)
+      nombres.includes(textoBusqueda) ||
+      apellidos.includes(textoBusqueda) ||
+      nombreCompleto.includes(textoBusqueda) ||
+      registrador.includes(textoBusqueda) ||
+      montoPrestado.includes(textoBusqueda) ||
+      montoTotal.includes(textoBusqueda)
     );
   });
+
+  // 🔹 Totales superiores separados por moneda (COP y USD)
+  const totalesCalculados = prestamosFiltrados.reduce(
+    (acc, curr) => {
+      const moneda = (curr.moneda || "COP").toUpperCase();
+      const mPrestado = Number(curr.monto_prestado || 0);
+      const mTotal = Number(curr.monto_total || 0);
+      const mPagado = Number(curr.monto_pagado || 0);
+
+      if (moneda === "USD") {
+        acc.usd.prestado += mPrestado;
+        acc.usd.total += mTotal;
+        acc.usd.pagado += mPagado;
+      } else {
+        acc.cop.prestado += mPrestado;
+        acc.cop.total += mTotal;
+        acc.cop.pagado += mPagado;
+      }
+      return acc;
+    },
+    {
+      cop: { prestado: 0, total: 0, pagado: 0 },
+      usd: { prestado: 0, total: 0, pagado: 0 },
+    },
+  );
+
+  const formatearDinero = (val: number) => {
+    return val.toLocaleString("es-CO", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
 
   const exportarExcelTablaGeneral = async () => {
     if (prestamosFiltrados.length === 0) {
@@ -315,7 +385,6 @@ export default function ListaPrestamosScreen() {
       return;
     }
 
-    // Estructura del archivo CSV con soporte para caracteres especiales (\uFEFF para tildes y eñes)
     let csvContent =
       "\uFEFFFecha;Cliente;Monto Prestado;Moneda;Porcentaje;Total a Pagar;Saldo Pendiente;Cuotas;Frecuencia;Registrado por;Estado\r\n";
 
@@ -344,7 +413,6 @@ export default function ListaPrestamosScreen() {
     const nombreArchivo = `reporte_prestamos_${new Date().toISOString().slice(0, 10)}.csv`;
 
     if (Platform.OS === "web") {
-      // --- COMPORTAMIENTO PARA WEB ---
       const encodedUri = encodeURI("data:text/csv;charset=utf-8," + csvContent);
       const link = document.createElement("a");
       link.setAttribute("href", encodedUri);
@@ -353,15 +421,12 @@ export default function ListaPrestamosScreen() {
       link.click();
       document.body.removeChild(link);
     } else {
-      // --- COMPORTAMIENTO PARA APK MÓVIL (Android / iOS) ---
       try {
-        // 1. Guardar el archivo temporalmente en el directorio de caché del dispositivo
         const fileUri = `${FileSystem.cacheDirectory}${nombreArchivo}`;
         await FileSystem.writeAsStringAsync(fileUri, csvContent, {
           encoding: FileSystem.EncodingType.UTF8,
         });
 
-        // 2. Abrir el menú nativo para compartir, enviar por WhatsApp o guardar en archivos
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(fileUri, {
             mimeType: "text/csv",
@@ -387,7 +452,6 @@ export default function ListaPrestamosScreen() {
       return;
     }
 
-    // Generamos el contenido HTML que ya tenías diseñado
     let html = `
     <html>
       <head>
@@ -462,7 +526,6 @@ export default function ListaPrestamosScreen() {
   `;
 
     if (Platform.OS === "web") {
-      // --- COMPORTAMIENTO PARA WEB ---
       let ventanaImpresion = window.open("", "_blank");
       if (!ventanaImpresion) {
         Alert.alert(
@@ -478,12 +541,8 @@ export default function ListaPrestamosScreen() {
         ventanaImpresion.print();
       }, 500);
     } else {
-      // --- COMPORTAMIENTO PARA APK MÓVIL (Android / iOS) ---
       try {
-        // 1. Imprime el HTML en un archivo PDF temporal en el dispositivo
         const { uri } = await Print.printToFileAsync({ html });
-
-        // 2. Abre el menú nativo del teléfono para compartir, guardar en archivos o imprimir
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(uri, {
             mimeType: "application/pdf",
@@ -525,19 +584,93 @@ export default function ListaPrestamosScreen() {
         </View>
       </View>
 
+      {/* 🔹 CONTENEDOR DE TOTALES SUPERIOR (COP / USD) */}
+      <View style={styles.totalesContainer}>
+        <Text style={styles.totalesHeaderTitle}>
+          📊 Totales{" "}
+          {fechaFiltro ? `(Fecha: ${fechaFiltro})` : "(General / Filtrados)"}:
+        </Text>
+        <View style={styles.totalesGrid}>
+          {/* COP */}
+          <View style={styles.totalCard}>
+            <Text style={styles.totalCardCurrency}>COP ($)</Text>
+            <Text style={styles.totalRowText}>
+              Total Prestado:{" "}
+              <Text style={styles.totalValue}>
+                {formatearDinero(totalesCalculados.cop.prestado)}
+              </Text>
+            </Text>
+            <Text style={styles.totalRowText}>
+              Total Prestado + Intereses (+%):{" "}
+              <Text style={styles.totalValue}>
+                {formatearDinero(totalesCalculados.cop.total)}
+              </Text>
+            </Text>
+            <Text style={styles.totalRowText}>
+              Total Pagado:{" "}
+              <Text style={[styles.totalValue, { color: "#16a34a" }]}>
+                {formatearDinero(totalesCalculados.cop.pagado)}
+              </Text>
+            </Text>
+          </View>
+          {/* USD */}
+          <View style={styles.totalCard}>
+            <Text style={styles.totalCardCurrency}>USD ($)</Text>
+            <Text style={styles.totalRowText}>
+              Total Prestado:{" "}
+              <Text style={styles.totalValue}>
+                {formatearDinero(totalesCalculados.usd.prestado)}
+              </Text>
+            </Text>
+            <Text style={styles.totalRowText}>
+              Total Prestado + Intereses (+%):{" "}
+              <Text style={styles.totalValue}>
+                {formatearDinero(totalesCalculados.usd.total)}
+              </Text>
+            </Text>
+            <Text style={styles.totalRowText}>
+              Total Pagado:{" "}
+              <Text style={[styles.totalValue, { color: "#16a34a" }]}>
+                {formatearDinero(totalesCalculados.usd.pagado)}
+              </Text>
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* 🔹 FILTROS DE BÚSQUEDA Y FECHA */}
       <View style={styles.filtersWrapper}>
-        <View style={styles.searchRow}>
+        <View
+          style={[
+            styles.searchRow,
+            { flexDirection: esPantallaPequena ? "column" : "row", gap: 10 },
+          ]}
+        >
           <TextInput
-            style={styles.searchInput}
-            placeholder="🔍 Buscar por nombres, apellidos o monto del préstamo..."
+            style={[styles.searchInput, { flex: 2 }]}
+            placeholder="🔍 Buscar por nombres, apellidos, registrador o monto..."
             value={busqueda}
             onChangeText={setBusqueda}
             placeholderTextColor="#94a3b8"
           />
+          <TextInput
+            style={[styles.searchInput, { flex: 1, minWidth: 150 }]}
+            placeholder="📅 Fecha (AAAA-MM-DD)"
+            value={fechaFiltro}
+            onChangeText={setFechaFiltro}
+            placeholderTextColor="#94a3b8"
+          />
+          {fechaFiltro !== "" && (
+            <TouchableOpacity
+              style={styles.btnClearDate}
+              onPress={() => setFechaFiltro("")}
+            >
+              <Text style={styles.btnClearDateText}>Limpiar Fecha</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
-      {/* Se quitó el bloqueo de pantalla completa por 'loading', la estructura carga de inmediato */}
       <View style={styles.tableFullContainer}>
         <ScrollView
           horizontal={true}
@@ -545,7 +678,6 @@ export default function ListaPrestamosScreen() {
           contentContainerStyle={styles.horizontalScrollContent}
         >
           <View style={{ width: "100%" }}>
-            {/* Cabecera de la tabla (permanece fija arriba) */}
             <View style={[styles.gridRow, styles.gridHeader]}>
               <View style={[styles.gridCell, styles.colFecha]}>
                 <Text style={styles.headerText}>Fecha</Text>
@@ -576,10 +708,11 @@ export default function ListaPrestamosScreen() {
               </View>
             </View>
 
-            {/* FlatList */}
             <FlatList
               data={prestamosFiltrados}
               keyExtractor={(item, index) => item.id || index.toString()}
+              scrollEnabled={true}
+              showsVerticalScrollIndicator={true}
               ListEmptyComponent={
                 loading ? (
                   <View style={{ padding: 20, alignItems: "center" }}>
@@ -621,7 +754,6 @@ export default function ListaPrestamosScreen() {
                   badgeBg = "#fef2f2";
                   badgeColor = "#dc2626";
                 }
-
                 return (
                   <View
                     style={[
@@ -663,7 +795,7 @@ export default function ListaPrestamosScreen() {
                       </Text>
                     </View>
                     <View style={[styles.gridCell, styles.colEmpleado]}>
-                      <Text style={styles.cellText} numberOfLines={1}>
+                      <Text style={styles.cellTextBold} numberOfLines={1}>
                         {item.empleadoNombre}
                       </Text>
                     </View>
@@ -691,6 +823,7 @@ export default function ListaPrestamosScreen() {
                           <Text style={styles.btnAccionText}>Detalles</Text>
                         </TouchableOpacity>
 
+                        {/* 🔹 Botón Editar conectado correctamente */}
                         <TouchableOpacity
                           style={styles.btnEditarAccion}
                           onPress={() => abrirModalEdicion(item)}
@@ -698,6 +831,7 @@ export default function ListaPrestamosScreen() {
                           <Text style={styles.btnAccionText}>Editar</Text>
                         </TouchableOpacity>
 
+                        {/* 🔹 Botón Eliminar conectado correctamente */}
                         <TouchableOpacity
                           style={[
                             styles.btnEditarAccion,
@@ -718,7 +852,7 @@ export default function ListaPrestamosScreen() {
         </ScrollView>
       </View>
 
-      {/* MODAL DE DETALLES E HISTORIAL DE PAGOS */}
+      {/* MODAL DE DETALLES */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -828,7 +962,6 @@ export default function ListaPrestamosScreen() {
                   </Text>
                 </View>
 
-                {/* 🔹 MUESTRA EL MENSAJE SOLO SI TIENE PRESTAMO_PADRE_ID */}
                 {prestamoSeleccionado.prestamo_padre_id && (
                   <View style={styles.modalRowItem}>
                     <Text style={styles.modalLabel}>Tipo de Registro:</Text>
@@ -843,7 +976,6 @@ export default function ListaPrestamosScreen() {
                   </View>
                 )}
 
-                {/* SECCIÓN DEL HISTORIAL DE PAGOS */}
                 <Text style={styles.historySectionTitle}>
                   Historial de Pagos
                 </Text>
@@ -892,18 +1024,11 @@ export default function ListaPrestamosScreen() {
                 )}
               </ScrollView>
             )}
-
-            <TouchableOpacity
-              style={styles.btnCloseModal}
-              onPress={() => setModalVisible(false)}
-            >
-              <Text style={styles.btnCloseModalText}>Cerrar</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* MODAL DE EDICIÓN */}
+      {/* 🔹 MODAL DE EDICIÓN */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -911,92 +1036,100 @@ export default function ListaPrestamosScreen() {
         onRequestClose={() => setEditModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContentModern}>
-            {/* Cabecera del Modal */}
-            <View style={styles.modalHeaderModern}>
-              <View>
-                <Text style={styles.modalTitleModern}>Editar Préstamo</Text>
-                <Text style={styles.modalSubtitleModern}>
-                  Modifica los valores necesarios
-                </Text>
-              </View>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>Editar Préstamo</Text>
               <TouchableOpacity
                 onPress={() => setEditModalVisible(false)}
-                style={styles.closeIconBtnModern}
+                style={styles.closeIconBtn}
               >
-                <Text style={styles.closeIconTextModern}>✕</Text>
+                <Text style={styles.closeIconText}>✕</Text>
               </TouchableOpacity>
             </View>
 
-            {/* Contenido de los inputs */}
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingVertical: 5 }}
-            >
-              <View style={styles.inputGroupModern}>
-                <Text style={styles.inputLabelModern}>
-                  💵 Monto del Préstamo
-                </Text>
-                <TextInput
-                  style={styles.inputModalModern}
-                  value={editMonto}
-                  onChangeText={setEditMonto}
-                  keyboardType="numeric"
-                  placeholder="Ej: 200000"
-                  placeholderTextColor="#94a3b8"
-                />
-              </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalLabel}>Monto Prestado:</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={editMonto}
+                onChangeText={setEditMonto}
+                keyboardType="numeric"
+                placeholder="Ej. 100000"
+              />
 
-              <View style={styles.inputGroupModern}>
-                <Text style={styles.inputLabelModern}>
-                  📊 Porcentaje de Interés (%)
-                </Text>
-                <TextInput
-                  style={styles.inputModalModern}
-                  value={editPorcentaje}
-                  onChangeText={setEditPorcentaje}
-                  keyboardType="numeric"
-                  placeholder="Ej: 20"
-                  placeholderTextColor="#94a3b8"
-                />
-              </View>
+              <Text style={styles.modalLabel}>Porcentaje de Interés (%):</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={editPorcentaje}
+                onChangeText={setEditPorcentaje}
+                keyboardType="numeric"
+                placeholder="Ej. 20"
+              />
 
-              <View style={styles.inputGroupModern}>
-                <Text style={styles.inputLabelModern}>📅 Cuotas</Text>
-                <TextInput
-                  style={styles.inputModalModern}
-                  value={editCuotas}
-                  onChangeText={setEditCuotas}
-                  keyboardType="numeric"
-                  placeholder="Ej: 24"
-                  placeholderTextColor="#94a3b8"
-                />
+              <Text style={styles.modalLabel}>Frecuencia:</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={editFrecuencia}
+                onChangeText={setEditFrecuencia}
+                placeholder="Ej. Diario"
+              />
+
+              <Text style={styles.modalLabel}>Cuotas:</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={editCuotas}
+                onChangeText={setEditCuotas}
+                keyboardType="numeric"
+                placeholder="Ej. 30"
+              />
+
+              <Text style={styles.modalLabel}>Fecha (AAAA-MM-DD):</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={editFecha}
+                onChangeText={setEditFecha}
+                placeholder="2026-09-10"
+              />
+
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "flex-end",
+                  gap: 10,
+                  marginTop: 15,
+                }}
+              >
+                <TouchableOpacity
+                  style={[
+                    styles.btnModalAction,
+                    { backgroundColor: "#64748b" },
+                  ]}
+                  onPress={() => setEditModalVisible(false)}
+                >
+                  <Text style={styles.btnModalActionText}>Cancelar</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.btnModalAction,
+                    { backgroundColor: "#16a34a" },
+                  ]}
+                  onPress={guardarEdicionPrestamo}
+                  disabled={guardandoEdicion}
+                >
+                  {guardandoEdicion ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.btnModalActionText}>Guardar</Text>
+                  )}
+                </TouchableOpacity>
               </View>
             </ScrollView>
-
-            {/* Botones de Acción */}
-            <View style={styles.modalFooterModern}>
-              <TouchableOpacity
-                style={styles.btnCancelarModern}
-                onPress={() => setEditModalVisible(false)}
-              >
-                <Text style={styles.btnCancelarTextModern}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.btnGuardarModern}
-                onPress={guardarEdicionPrestamo}
-                disabled={guardandoEdicion}
-              >
-                <Text style={styles.btnGuardarTextModern}>
-                  {guardandoEdicion ? "Guardando..." : "Guardar Cambios"}
-                </Text>
-              </TouchableOpacity>
-            </View>
           </View>
         </View>
       </Modal>
 
-      {/* MODAL DE CONFIRMACIÓN DE ELIMINACIÓN MEJORADO */}
+      {/* 🔹 MODAL DE CONFIRMACIÓN DE ELIMINACIÓN */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -1004,39 +1137,44 @@ export default function ListaPrestamosScreen() {
         onRequestClose={() => setDeleteModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContentDelete}>
-            {/* Icono de advertencia superior */}
-            <View style={styles.deleteIconContainer}>
-              <Text style={{ fontSize: 28 }}>⚠️</Text>
-            </View>
-
-            {/* Textos del modal */}
-            <Text style={styles.modalTitleDelete}>¿Eliminar Préstamo?</Text>
-            <Text style={styles.modalTextDelete}>
-              ¿Estás seguro de que deseas eliminar este préstamo? Esta acción no
-              se puede deshacer y borrará los registros asociados.
+          <View style={[styles.modalContent, { maxWidth: 350 }]}>
+            <Text
+              style={[
+                styles.modalTitle,
+                { color: "#dc2626", marginBottom: 10 },
+              ]}
+            >
+              ⚠️ Confirmar Eliminación
             </Text>
-
-            {/* Botones de acción */}
-            <View style={styles.modalFooterDelete}>
+            <Text style={{ fontSize: 13, color: "#334155", marginBottom: 20 }}>
+              ¿Estás seguro de que deseas eliminar este préstamo? Esta acción no
+              se puede deshacer.
+            </Text>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "flex-end",
+                gap: 10,
+              }}
+            >
               <TouchableOpacity
-                style={styles.btnCancelarDelete}
+                style={[styles.btnModalAction, { backgroundColor: "#64748b" }]}
                 onPress={() => setDeleteModalVisible(false)}
               >
-                <Text style={styles.btnCancelarTextDelete}>Cancelar</Text>
+                <Text style={styles.btnModalActionText}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.btnConfirmarDelete}
+                style={[styles.btnModalAction, { backgroundColor: "#dc2626" }]}
                 onPress={ejecutarEliminacion}
               >
-                <Text style={styles.btnConfirmarTextDelete}>Sí, Eliminar</Text>
+                <Text style={styles.btnModalActionText}>Eliminar</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* MODAL DE ERROR (SI TIENE PAGOS) */}
+      {/* 🔹 MODAL DE ERROR (SI TIENE PAGOS) */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -1044,31 +1182,33 @@ export default function ListaPrestamosScreen() {
         onRequestClose={() => setErrorModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContentError}>
-            {/* Icono de bloqueo / advertencia superior */}
-            <View style={styles.errorIconContainer}>
-              <Text style={{ fontSize: 28 }}>🔒</Text>
-            </View>
-
-            {/* Textos del modal */}
-            <Text style={styles.modalTitleError}>No se puede eliminar</Text>
-            <Text style={styles.modalTextError}>
-              Este préstamo ya cuenta con pagos registrados en el sistema. No es
-              posible eliminarlo por seguridad contable.
+          <View style={[styles.modalContent, { maxWidth: 350 }]}>
+            <Text
+              style={[
+                styles.modalTitle,
+                { color: "#dc2626", marginBottom: 10 },
+              ]}
+            >
+              ❌ No se puede eliminar
             </Text>
-
-            {/* Botón de acción */}
+            <Text style={{ fontSize: 13, color: "#334155", marginBottom: 20 }}>
+              Este préstamo ya cuenta con pagos registrados en su historial. No
+              es posible eliminarlo.
+            </Text>
             <TouchableOpacity
-              style={styles.btnEntendidoError}
+              style={[
+                styles.btnModalAction,
+                { backgroundColor: "#2563eb", alignSelf: "flex-end" },
+              ]}
               onPress={() => setErrorModalVisible(false)}
             >
-              <Text style={styles.btnEntendidoTextError}>Entendido</Text>
+              <Text style={styles.btnModalActionText}>Entendido</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* MODAL DE ÉXITO AL ELIMINAR */}
+      {/* 🔹 MODAL DE ÉXITO AL ELIMINAR */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -1076,24 +1216,26 @@ export default function ListaPrestamosScreen() {
         onRequestClose={() => setSuccessModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContentSuccess}>
-            {/* Icono de éxito superior */}
-            <View style={styles.successIconContainer}>
-              <Text style={{ fontSize: 28 }}>✅</Text>
-            </View>
-
-            {/* Textos del modal */}
-            <Text style={styles.modalTitleSuccess}>¡Eliminado con Éxito!</Text>
-            <Text style={styles.modalTextSuccess}>
-              El préstamo ha sido eliminado correctamente del sistema.
+          <View style={[styles.modalContent, { maxWidth: 350 }]}>
+            <Text
+              style={[
+                styles.modalTitle,
+                { color: "#16a34a", marginBottom: 10 },
+              ]}
+            >
+              ✅ Eliminado
             </Text>
-
-            {/* Botón de acción */}
+            <Text style={{ fontSize: 13, color: "#334155", marginBottom: 20 }}>
+              El préstamo ha sido eliminado correctamente de la base de datos.
+            </Text>
             <TouchableOpacity
-              style={styles.btnAceptarSuccess}
+              style={[
+                styles.btnModalAction,
+                { backgroundColor: "#16a34a", alignSelf: "flex-end" },
+              ]}
               onPress={() => setSuccessModalVisible(false)}
             >
-              <Text style={styles.btnAceptarTextSuccess}>Aceptar</Text>
+              <Text style={styles.btnModalActionText}>Aceptar</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1110,45 +1252,104 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
   },
-  loaderContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   headerTitleRow: {
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 12,
   },
-  title: { fontSize: 22, fontWeight: "bold", color: "#0f172a" },
-  globalExportRow: { flexDirection: "row", gap: 10 },
+  title: { fontSize: 20, fontWeight: "bold", color: "#0f172a" },
+  globalExportRow: { flexDirection: "row", gap: 8 },
   btnGlobalExcel: {
-    backgroundColor: "#10b981",
-    padding: 10,
+    backgroundColor: "#16a34a",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 6,
-    alignItems: "center",
   },
   btnGlobalPdf: {
-    backgroundColor: "#ef4444",
-    padding: 10,
+    backgroundColor: "#dc2626",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 6,
-    alignItems: "center",
   },
-  btnExportText: { color: "#fff", fontWeight: "600" },
-  filtersWrapper: {
-    backgroundColor: "#fff",
+  btnExportText: { color: "#ffffff", fontWeight: "bold", fontSize: 12 },
+
+  totalesContainer: {
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
     padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
     elevation: 2,
   },
-  searchRow: { marginBottom: 15 },
+  totalesHeaderTitle: {
+    fontSize: 13,
+    fontWeight: "bold",
+    color: "#334155",
+    marginBottom: 8,
+  },
+  totalesGrid: {
+    flexDirection: "row",
+    gap: 12,
+    flexWrap: "wrap",
+  },
+  totalCard: {
+    flex: 1,
+    minWidth: 200,
+    backgroundColor: "#f8fafc",
+    borderRadius: 8,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+  },
+  totalCardCurrency: {
+    fontSize: 13,
+    fontWeight: "bold",
+    color: "#0f172a",
+    marginBottom: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e2e8f0",
+    paddingBottom: 2,
+  },
+  totalRowText: {
+    fontSize: 12,
+    color: "#475569",
+    marginTop: 2,
+  },
+  totalValue: {
+    fontWeight: "bold",
+    color: "#0f172a",
+  },
+
+  filtersWrapper: { marginBottom: 12 },
+  searchRow: { flexDirection: "row", alignItems: "center" },
+  searchContainer: {
+    marginBottom: 12,
+  },
   searchInput: {
+    height: 42,
     backgroundColor: "#ffffff",
     borderWidth: 1,
     borderColor: "#cbd5e1",
     borderRadius: 8,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    fontSize: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
     color: "#0f172a",
   },
+  btnClearDate: {
+    backgroundColor: "#e2e8f0",
+    paddingHorizontal: 12,
+    justifyContent: "center",
+    borderRadius: 8,
+    height: 40,
+  },
+  btnClearDateText: { fontSize: 12, fontWeight: "bold", color: "#334155" },
+
   tableFullContainer: {
     flex: 1,
     backgroundColor: "#ffffff",
@@ -1161,30 +1362,27 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
+    maxHeight: 450,
+    overflow: "hidden",
     ...(Platform.OS === "web"
-      ? { width: "100%", display: "flex", flex: 1 }
+      ? {
+          overflowY: "auto",
+        }
       : {}),
   },
-  horizontalScrollContent: {
-    minWidth: 1000,
-    flexGrow: 1,
-  },
-  tableInnerWrapper: {
-    flexDirection: "column",
-    width: "100%",
-  },
+  horizontalScrollContent: { paddingBottom: 20, minWidth: 1300, flexGrow: 1 },
   gridRow: {
     flexDirection: "row",
     borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
+    borderBottomColor: "#f1f5f9",
     alignItems: "center",
-    minHeight: 56,
+    minHeight: 40,
   },
   gridHeader: {
     backgroundColor: "#0f172a",
     borderBottomWidth: 2,
     borderBottomColor: "#0f172a",
-    minHeight: 48,
+    minHeight: 50,
   },
   rowAlternate: {
     backgroundColor: "#fafbfc",
@@ -1195,25 +1393,27 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   headerText: {
+    fontSize: 14,
+    fontWeight: "bold",
     color: "#ffffff",
-    fontWeight: "600",
-    fontSize: 12,
-    textTransform: "uppercase",
   },
-  cellText: { color: "#14181f", fontSize: 14 },
+  cellText: {
+    fontSize: 14,
+    color: "#334155",
+  },
   cellTextBold: {
     fontSize: 14,
     fontWeight: "bold",
     color: "#0f172a",
   },
-  colFecha: { width: 110 },
-  colCliente: { flex: 1, minWidth: 180 },
-  colMonto: { width: 140 },
+  colFecha: { width: 180 },
+  colCliente: { width: 170 },
+  colMonto: { width: 160 },
   colMoneda: { width: 90 },
-  colPorcentaje: { width: 130 },
-  colTotal: { width: 130 },
-  colEmpleado: { width: 140 },
-  colAccion: { width: 290, flexDirection: "row", alignItems: "center", gap: 6 },
+  colPorcentaje: { width: 120 },
+  colTotal: { width: 180 },
+  colEmpleado: { width: 160 },
+  colAccion: { width: 250, flexDirection: "row", alignItems: "center", gap: 6 },
   badgeMoneda: {
     backgroundColor: "#e0f2fe",
     paddingHorizontal: 8,
@@ -1221,34 +1421,32 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     alignSelf: "flex-start",
   },
-  badgeMonedaText: {
-    fontSize: 12,
-    fontWeight: "bold",
-    color: "#0369a1",
-  },
+  badgeMonedaText: { color: "#0369a1", fontSize: 10, fontWeight: "bold" },
   badgeEstado: {
     paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
-  badgeTextEstado: {
-    fontSize: 10,
-    fontWeight: "bold",
-  },
+  badgeTextEstado: { fontSize: 10, fontWeight: "bold" },
   btnVerAccion: {
-    backgroundColor: "#4f46e5",
-    paddingHorizontal: 8,
-    paddingVertical: 5,
+    backgroundColor: "#2563eb",
+    paddingHorizontal: 6,
+    paddingVertical: 4,
     borderRadius: 4,
   },
   btnEditarAccion: {
-    backgroundColor: "#269c4b",
-    paddingHorizontal: 8,
-    paddingVertical: 5,
+    backgroundColor: "#16a34a",
+    paddingHorizontal: 6,
+    paddingVertical: 4,
     borderRadius: 4,
   },
-  btnAccionText: { color: "#fff", fontSize: 12, fontWeight: "600" },
-  emptyText: { textAlign: "center", padding: 20, color: "#64748b" },
+  btnAccionText: { color: "#ffffff", fontSize: 10, fontWeight: "bold" },
+  emptyText: {
+    textAlign: "center",
+    padding: 20,
+    color: "#64748b",
+    fontSize: 13,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -1257,197 +1455,6 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   modalContent: {
-    backgroundColor: "#fff",
-    borderRadius: 8,
-    width: "100%",
-    maxWidth: 550,
-    padding: 20,
-    maxHeight: "85%",
-  },
-  modalHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 15,
-  },
-  modalTitle: { fontSize: 18, fontWeight: "bold", color: "#0f172a" },
-  closeIconBtn: { padding: 4 },
-  closeIconText: { fontSize: 16, fontWeight: "bold", color: "#64748b" },
-  modalRowItem: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
-  },
-  modalLabel: { fontSize: 14, color: "#000000" },
-  modalValue: { fontSize: 14, color: "#000000" },
-  modalValueBold: { fontSize: 13, fontWeight: "bold", color: "#0f172a" },
-  historySectionTitle: {
-    fontSize: 15,
-    fontWeight: "bold",
-    color: "#0f172a",
-    marginTop: 18,
-    marginBottom: 8,
-  },
-  emptyHistoryText: {
-    fontSize: 12,
-    color: "#060a10",
-    fontStyle: "italic",
-    marginVertical: 6,
-  },
-  historyTable: {
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 6,
-    overflow: "hidden",
-    marginBottom: 10,
-  },
-  historyHeaderRow: {
-    flexDirection: "row",
-    backgroundColor: "#f1f5f9",
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
-  },
-  historyHeaderText: {
-    flex: 1,
-    fontSize: 11,
-    fontWeight: "bold",
-    color: "#0b0e11",
-    textTransform: "uppercase",
-  },
-  historyItemRow: {
-    flexDirection: "row",
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  historyCellText: { flex: 1, fontSize: 12, color: "#000000" },
-  btnCloseModal: {
-    backgroundColor: "#2563eb",
-    padding: 10,
-    borderRadius: 6,
-    alignItems: "center",
-    marginTop: 15,
-  },
-  btnCloseModalText: { color: "#fff", fontWeight: "600" },
-  inputContainer: { marginBottom: 12 },
-  inputLabel: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#334155",
-    marginBottom: 6,
-  },
-  inputModal: {
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 6,
-    padding: 8,
-    backgroundColor: "#f8fafc",
-    fontSize: 13,
-    color: "#1e293b",
-  },
-  frecuenciaRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
-  frecuenciaBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 6,
-    backgroundColor: "#f8fafc",
-  },
-  frecuenciaBtnActive: {
-    backgroundColor: "#0284c7",
-    borderColor: "#0284c7",
-  },
-  frecuenciaBtnText: { fontSize: 12, color: "#334155" },
-  frecuenciaBtnTextActive: { color: "#fff", fontWeight: "bold" },
-  modalFooterActions: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: 10,
-    marginTop: 15,
-  },
-  btnCancelarModal: {
-    backgroundColor: "#e2e8f0",
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 6,
-  },
-  btnCancelarText: { color: "#334155", fontWeight: "600" },
-  btnGuardarModal: {
-    backgroundColor: "#2563eb",
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 6,
-    minWidth: 130,
-    alignItems: "center",
-  },
-  btnGuardarText: { color: "#fff", fontWeight: "600" },
-
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  modalContainer: {
-    backgroundColor: "#ffffff",
-    borderRadius: 20,
-    padding: 24,
-    width: "100%",
-    maxWidth: 340,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  iconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: "#dcfce7",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  modalTitulo: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#1f2937",
-    marginBottom: 8,
-    textAlign: "center",
-  },
-  modalTexto: {
-    fontSize: 14,
-    color: "#4b5563",
-    textAlign: "center",
-    marginBottom: 24,
-    lineHeight: 20,
-  },
-  btnModalAceptar: {
-    backgroundColor: "#16a34a",
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    width: "100%",
-    alignItems: "center",
-  },
-  btnModalAceptarText: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-
-  modalContentModern: {
     width: "90%",
     maxWidth: 440,
     backgroundColor: "#ffffff",
@@ -1459,268 +1466,77 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 10,
   },
-  modalHeaderModern: {
+  modalHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 20,
+    alignItems: "center",
+    marginBottom: 15,
+  },
+  modalTitle: { fontSize: 16, fontWeight: "bold", color: "#0f172a" },
+  closeIconBtn: { padding: 4 },
+  closeIconText: { fontSize: 16, fontWeight: "bold", color: "#64748b" },
+  modalInput: {
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
+    color: "#0f172a",
+    marginBottom: 10,
+  },
+  btnModalAction: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  btnModalActionText: { color: "#ffffff", fontWeight: "bold", fontSize: 13 },
+  modalRowItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: "#f1f5f9",
-    paddingBottom: 12,
+    paddingBottom: 6,
   },
-  modalTitleModern: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#0f172a",
-  },
-  modalSubtitleModern: {
-    fontSize: 13,
-    color: "#64748b",
-    marginTop: 2,
-  },
-  closeIconBtnModern: {
-    backgroundColor: "#f1f5f9",
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  closeIconTextModern: {
+  modalLabel: { fontSize: 13, color: "#64748b" },
+  modalValue: { fontSize: 13, color: "#0f172a" },
+  modalValueBold: { fontSize: 13, fontWeight: "bold", color: "#0f172a" },
+  historySectionTitle: {
     fontSize: 14,
     fontWeight: "bold",
-    color: "#64748b",
-  },
-  inputGroupModern: {
-    marginBottom: 16,
-  },
-  inputLabelModern: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#334155",
-    marginBottom: 6,
-  },
-  inputModalModern: {
-    borderWidth: 1.5,
-    borderColor: "#e2e8f0",
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    height: 48,
     color: "#0f172a",
-    backgroundColor: "#f8fafc",
-    fontSize: 15,
+    marginTop: 15,
+    marginBottom: 8,
   },
-  modalFooterModern: {
+  emptyHistoryText: { fontSize: 12, color: "#64748b", fontStyle: "italic" },
+  historyTable: { borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 6 },
+  historyHeaderRow: {
     flexDirection: "row",
-    gap: 12,
-    marginTop: 20,
-    paddingTop: 16,
+    backgroundColor: "#f1f5f9",
+    padding: 6,
+  },
+  historyHeaderText: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: "bold",
+    color: "#475569",
+    textAlign: "center",
+  },
+  historyItemRow: {
+    flexDirection: "row",
+    padding: 6,
     borderTopWidth: 1,
     borderTopColor: "#f1f5f9",
+    alignItems: "center",
   },
-  btnCancelarModern: {
+  historyCellText: {
     flex: 1,
-    backgroundColor: "#f1f5f9",
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  btnCancelarTextModern: {
-    color: "#475569",
-    fontWeight: "600",
-    fontSize: 15,
-  },
-  btnGuardarModern: {
-    flex: 1.2,
-    backgroundColor: "#2563eb",
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: "center",
-    shadowColor: "#2563eb",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  btnGuardarTextModern: {
-    color: "#ffffff",
-    fontWeight: "bold",
-    fontSize: 15,
-  },
-  modalContentDelete: {
-    width: "90%",
-    maxWidth: 380,
-    backgroundColor: "#ffffff",
-    borderRadius: 20,
-    padding: 24,
-    alignItems: "center",
-    shadowColor: "#0f172a",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  deleteIconContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "#fef2f2",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  modalTitleDelete: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#0f172a",
-    marginBottom: 8,
+    fontSize: 11,
+    color: "#334155",
     textAlign: "center",
-  },
-  modalTextDelete: {
-    fontSize: 14,
-    color: "#64748b",
-    textAlign: "center",
-    lineHeight: 20,
-    marginBottom: 24,
-  },
-  modalFooterDelete: {
-    flexDirection: "row",
-    gap: 12,
-    width: "100%",
-  },
-  btnCancelarDelete: {
-    flex: 1,
-    backgroundColor: "#f1f5f9",
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  btnCancelarTextDelete: {
-    color: "#475569",
-    fontWeight: "600",
-    fontSize: 15,
-  },
-  btnConfirmarDelete: {
-    flex: 1,
-    backgroundColor: "#dc2626",
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: "center",
-    shadowColor: "#dc2626",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  btnConfirmarTextDelete: {
-    color: "#ffffff",
-    fontWeight: "bold",
-    fontSize: 15,
-  },
-  modalContentError: {
-    width: "90%",
-    maxWidth: 380,
-    backgroundColor: "#ffffff",
-    borderRadius: 20,
-    padding: 24,
-    alignItems: "center",
-    shadowColor: "#0f172a",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  errorIconContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "#fff1f2",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  modalTitleError: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#0f172a",
-    marginBottom: 8,
-    textAlign: "center",
-  },
-  modalTextError: {
-    fontSize: 14,
-    color: "#64748b",
-    textAlign: "center",
-    lineHeight: 20,
-    marginBottom: 24,
-  },
-  btnEntendidoError: {
-    width: "100%",
-    backgroundColor: "#2563eb",
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: "center",
-    shadowColor: "#2563eb",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  btnEntendidoTextError: {
-    color: "#ffffff",
-    fontWeight: "bold",
-    fontSize: 15,
-  },
-  modalContentSuccess: {
-    width: "90%",
-    maxWidth: 380,
-    backgroundColor: "#ffffff",
-    borderRadius: 20,
-    padding: 24,
-    alignItems: "center",
-    shadowColor: "#0f172a",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  successIconContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "#f0fdf4",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  modalTitleSuccess: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#0f172a",
-    marginBottom: 8,
-    textAlign: "center",
-  },
-  modalTextSuccess: {
-    fontSize: 14,
-    color: "#64748b",
-    textAlign: "center",
-    lineHeight: 20,
-    marginBottom: 24,
-  },
-  btnAceptarSuccess: {
-    width: "100%",
-    backgroundColor: "#16a34a",
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: "center",
-    shadowColor: "#16a34a",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  btnAceptarTextSuccess: {
-    color: "#ffffff",
-    fontWeight: "bold",
-    fontSize: 15,
   },
 });

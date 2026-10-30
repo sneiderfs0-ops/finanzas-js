@@ -396,15 +396,6 @@ export default function CrearPrestamoScreen({ route }: any) {
 
       const saldoDisponible = Number(cajaInfo?.saldo_actual || 0);
 
-      if (montoNum > saldoDisponible) {
-        mostrarMensaje(
-          "error",
-          `⚠️ Saldo insuficiente en la caja seleccionada (${cajaSeleccionada.nombre}).\n\nDisponible: $ ${formatearSinDecimales(saldoDisponible)} ${moneda}\nIntento de préstamo: $ ${formatearSinDecimales(montoNum)} ${moneda}`,
-        );
-        setLoading(false);
-        return;
-      }
-
       // Estructura de datos a insertar con el soporte opcional de prestamo_padre_id
       const objetoPrestamo: any = {
         cedula: clienteSeleccionado,

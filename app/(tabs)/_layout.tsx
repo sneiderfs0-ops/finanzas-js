@@ -101,58 +101,6 @@ function CustomDrawerContent(props: any) {
 
         <Pressable
           style={localStyles.navItem}
-          onPress={() => router.push("/(tabs)/rutas")}
-        >
-          <Text style={localStyles.navText}>🗺️ Rutas de Cobro</Text>
-        </Pressable>
-
-        {canAccessPrivileged && (
-          <Pressable
-            style={localStyles.navItem}
-            onPress={() => router.push("/(tabs)/listas-rutas")}
-          >
-            <Text style={localStyles.navText}>📋 Lista de Rutas</Text>
-          </Pressable>
-        )}
-
-        {canAccessPrivileged && (
-          <Pressable
-            style={localStyles.navItem}
-            onPress={() => router.push("/(tabs)/empleados")}
-          >
-            <Text style={localStyles.navText}>👥 Empleados</Text>
-          </Pressable>
-        )}
-
-        {isAdmin && (
-          <Pressable
-            style={localStyles.navItem}
-            onPress={() => router.push("/(tabs)/lista-prestamos")}
-          >
-            <Text style={localStyles.navText}>📋 Lista de Préstamos</Text>
-          </Pressable>
-        )}
-
-        {canAccessPrivileged && (
-          <Pressable
-            style={localStyles.navItem}
-            onPress={() => router.push("/(tabs)/lista-pagos")}
-          >
-            <Text style={localStyles.navText}>
-              📋 Lista de Pagos de Clientes
-            </Text>
-          </Pressable>
-        )}
-
-        <Pressable
-          style={localStyles.navItem}
-          onPress={() => router.push("/(tabs)/clientes")}
-        >
-          <Text style={localStyles.navText}>📇 Clientes</Text>
-        </Pressable>
-
-        <Pressable
-          style={localStyles.navItem}
           onPress={() => router.push("/(tabs)/crear-clientes")}
         >
           <Text style={localStyles.navText}>📝 Registrar Nuevo Cliente</Text>
@@ -178,6 +126,58 @@ function CustomDrawerContent(props: any) {
         >
           <Text style={localStyles.navText}>📉 Gastos</Text>
         </Pressable>
+
+        <Pressable
+          style={localStyles.navItem}
+          onPress={() => router.push("/(tabs)/clientes")}
+        >
+          <Text style={localStyles.navText}>📇 Clientes</Text>
+        </Pressable>
+
+        {isAdmin && (
+          <Pressable
+            style={localStyles.navItem}
+            onPress={() => router.push("/(tabs)/lista-prestamos")}
+          >
+            <Text style={localStyles.navText}>📋 Lista de Préstamos</Text>
+          </Pressable>
+        )}
+
+        {canAccessPrivileged && (
+          <Pressable
+            style={localStyles.navItem}
+            onPress={() => router.push("/(tabs)/lista-pagos")}
+          >
+            <Text style={localStyles.navText}>
+              📋 Lista de Pagos de Clientes
+            </Text>
+          </Pressable>
+        )}
+
+        <Pressable
+          style={localStyles.navItem}
+          onPress={() => router.push("/(tabs)/rutas")}
+        >
+          <Text style={localStyles.navText}>🗺️ Rutas de Cobro</Text>
+        </Pressable>
+
+        {canAccessPrivileged && (
+          <Pressable
+            style={localStyles.navItem}
+            onPress={() => router.push("/(tabs)/listas-rutas")}
+          >
+            <Text style={localStyles.navText}>📋 Lista de Rutas</Text>
+          </Pressable>
+        )}
+
+        {canAccessPrivileged && (
+          <Pressable
+            style={localStyles.navItem}
+            onPress={() => router.push("/(tabs)/empleados")}
+          >
+            <Text style={localStyles.navText}>👥 Empleados</Text>
+          </Pressable>
+        )}
       </View>
 
       <View style={localStyles.drawerFooter}>

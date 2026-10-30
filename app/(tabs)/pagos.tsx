@@ -451,9 +451,29 @@ export default function CrearPagoScreen({ route }: any) {
   );
 
   const clientesFiltrados = [...clientesFiltradosOriginal].sort((a, b) => {
-    if (a.cedula === clienteSeleccionado) return -1; // Pone al seleccionado de primero
-    if (b.cedula === clienteSeleccionado) return 1; // Pone al seleccionado de primero
-    return 0; // Mantiene el orden original para el resto
+    // 1. El cliente seleccionado siempre va de primero
+    if (a.cedula === clienteSeleccionado) return -1;
+    if (b.cedula === clienteSeleccionado) return 1;
+
+    const nombreA = `${a.nombres || ""} ${a.apellidos || ""}`.toLowerCase();
+    const nombreB = `${b.nombres || ""} ${b.apellidos || ""}`.toLowerCase();
+
+    // Encontramos al cliente seleccionado para saber su nombre y letra base
+    const clienteSelObj = clientes.find(
+      (c) => c.cedula === clienteSeleccionado,
+    );
+    const nombreSel = clienteSelObj
+      ? `${clienteSelObj.nombres || ""} ${clienteSelObj.apellidos || ""}`.toLowerCase()
+      : "";
+
+    // Comparamos normal de la A a la Z, pero dando prioridad a los que están después de la letra del seleccionado
+    const esDespuesDeSelA = nombreA >= nombreSel;
+    const esDespuesDeSelB = nombreB >= nombreSel;
+
+    if (esDespuesDeSelA && !esDespuesDeSelB) return -1;
+    if (!esDespuesDeSelA && esDespuesDeSelB) return 1;
+
+    return nombreA.localeCompare(nombreB);
   });
 
   const clienteObjetoSeleccionado = clientes.find(

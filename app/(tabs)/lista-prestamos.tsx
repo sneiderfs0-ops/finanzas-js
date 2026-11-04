@@ -21,7 +21,7 @@ import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import * as FileSystem from "expo-file-system";
 
-const LIMITE_POR_PAGINA = 20;
+const LIMITE_POR_PAGINA = 30;
 
 export default function ListaPrestamosScreen() {
   const { width } = useWindowDimensions();

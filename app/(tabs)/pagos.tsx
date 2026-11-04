@@ -369,7 +369,10 @@ export default function CrearPagoScreen({ route }: any) {
       mostrarMensaje("error", "Ingrese un monto de pago válido mayor a 0.");
       return;
     }
-    if (montoAplicadoPrestamo > prestamoSeleccionado.saldo_pendiente) {
+    if (
+      Math.round(montoAplicadoPrestamo) >
+      Math.round(prestamoSeleccionado.saldo_pendiente)
+    ) {
       guardandoRef.current = false;
       mostrarMensaje(
         "error",

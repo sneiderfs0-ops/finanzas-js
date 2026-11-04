@@ -28,6 +28,14 @@ export default function ClientesScreen() {
   const [telefonoEdit, setTelefonoEdit] = useState("");
   const [direccionEdit, setDireccionEdit] = useState("");
 
+  // Estados para el Modal de Eliminación
+  const [modalDeleteVisible, setModalDeleteVisible] = useState(false);
+  const [clienteAEliminar, setClienteAEliminar] = useState<any>(null);
+  const [verificandoEliminacion, setVerificandoEliminacion] = useState(false);
+
+  // 🔹 Estado para el Modal de Bloqueo por Préstamos Activos
+  const [modalBloqueoVisible, setModalBloqueoVisible] = useState(false);
+
   useEffect(() => {
     verificarRolYObtenerClientes();
   }, []);
@@ -162,6 +170,53 @@ export default function ClientesScreen() {
     }
   };
 
+  const abrirModalEliminar = (item: any) => {
+    setClienteAEliminar(item);
+    setModalDeleteVisible(true);
+  };
+
+  const confirmarYEjecutarEliminacion = async () => {
+    if (!clienteAEliminar) return;
+    setVerificandoEliminacion(true);
+
+    try {
+      // Validar si el cliente tiene préstamos asociados
+      const { data: prestamosAsociados, error: errorPrestamos } = await supabase
+        .from("prestamos")
+        .select("id")
+        .eq("cedula", clienteAEliminar.cedula);
+
+      if (errorPrestamos) throw errorPrestamos;
+
+      if (prestamosAsociados && prestamosAsociados.length > 0) {
+        setModalDeleteVisible(false);
+        setVerificandoEliminacion(false);
+        setModalBloqueoVisible(true); // 👈 Abre el modal de bloqueo visual
+        return;
+      }
+
+      // Si no tiene préstamos, proceder con la eliminación
+      const { error: errorDelete } = await supabase
+        .from("clientes")
+        .delete()
+        .eq("cedula", clienteAEliminar.cedula);
+
+      if (errorDelete) throw errorDelete;
+
+      setModalDeleteVisible(false);
+      Alert.alert("Éxito", "El cliente ha sido eliminado correctamente.");
+      verificarRolYObtenerClientes();
+    } catch (error: any) {
+      setModalDeleteVisible(false);
+      Alert.alert(
+        "Error",
+        error.message || "No se pudo eliminar el cliente de la base de datos.",
+      );
+    } finally {
+      setVerificandoEliminacion(false);
+    }
+  };
+
   const clientesFiltrados = clientes.filter((c) =>
     `${c.nombres} ${c.apellidos}`
       .toLowerCase()
@@ -198,14 +253,23 @@ export default function ClientesScreen() {
                 </Text>
               </View>
 
-              {/* Botón de editar visible SOLO para Administrador y Secretaría */}
+              {/* Botones de acción visibles SOLO para Administrador y Secretaría */}
               {esPrivilegiado && (
-                <TouchableOpacity
-                  style={styles.editButton}
-                  onPress={() => abrirModalEditar(item)}
-                >
-                  <Text style={styles.editButtonText}>✏️ Editar</Text>
-                </TouchableOpacity>
+                <View style={styles.actionsRow}>
+                  <TouchableOpacity
+                    style={styles.editButton}
+                    onPress={() => abrirModalEditar(item)}
+                  >
+                    <Text style={styles.editButtonText}>✏️ Editar</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.deleteButton}
+                    onPress={() => abrirModalEliminar(item)}
+                  >
+                    <Text style={styles.deleteButtonText}>🗑️ Eliminar</Text>
+                  </TouchableOpacity>
+                </View>
               )}
             </View>
 
@@ -309,6 +373,113 @@ export default function ClientesScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Modal de Confirmación de Eliminación */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={modalDeleteVisible}
+        onRequestClose={() => setModalDeleteVisible(false)}
+      >
+        <View style={globalStyles.modalOverlay}>
+          <View style={[globalStyles.modalContainer, { maxWidth: 360 }]}>
+            <Text
+              style={[
+                globalStyles.modalTitle,
+                { color: "#dc2626", marginBottom: 10 },
+              ]}
+            >
+              ⚠️ Confirmar Eliminación
+            </Text>
+            <Text
+              style={{
+                fontSize: 14,
+                color: colors.textSecondary,
+                marginBottom: 20,
+                lineHeight: 20,
+              }}
+            >
+              ¿Estás seguro de que deseas eliminar al cliente{" "}
+              <Text style={{ fontWeight: "bold", color: colors.textPrimary }}>
+                {clienteAEliminar?.nombres} {clienteAEliminar?.apellidos}
+              </Text>
+              ? Esta acción no se puede deshacer.
+            </Text>
+
+            <View style={styles.modalActionButtons}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.btnCancel]}
+                onPress={() => setModalDeleteVisible(false)}
+                disabled={verificandoEliminacion}
+              >
+                <Text style={styles.modalBtnCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.btnDeleteModal]}
+                onPress={confirmarYEjecutarEliminacion}
+                disabled={verificandoEliminacion}
+              >
+                <Text style={styles.modalBtnSaveText}>
+                  {verificandoEliminacion ? "Verificando..." : "Sí, Eliminar"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 🔹 MODAL DE BLOQUEO (Préstamos Registrados) */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={modalBloqueoVisible}
+        onRequestClose={() => setModalBloqueoVisible(false)}
+      >
+        <View style={globalStyles.modalOverlay}>
+          <View style={[globalStyles.modalContainer, { maxWidth: 380 }]}>
+            <Text
+              style={[
+                globalStyles.modalTitle,
+                { color: "#ea580c", marginBottom: 10 },
+              ]}
+            >
+              🚫 Acción No Permitida
+            </Text>
+            <Text
+              style={{
+                fontSize: 14,
+                color: colors.textSecondary,
+                marginBottom: 20,
+                lineHeight: 20,
+              }}
+            >
+              Este cliente no es posible eliminarlo, cuenta con préstamos
+              registrados en el sistema.
+            </Text>
+
+            <TouchableOpacity
+              style={[
+                styles.modalBtn,
+                {
+                  backgroundColor: "#ea580c",
+                  width: "100%",
+                  paddingVertical: 12,
+                  borderRadius: 10,
+                  alignItems: "center",
+                },
+              ]}
+              onPress={() => setModalBloqueoVisible(false)}
+            >
+              <Text
+                style={{ color: "#ffffff", fontSize: 16, fontWeight: "600" }}
+              >
+                Entendido
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -369,6 +540,11 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: colors.textPrimary,
   },
+  actionsRow: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+  },
   editButton: {
     backgroundColor: colors.border,
     paddingVertical: 6,
@@ -379,6 +555,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "bold",
     color: colors.textPrimary,
+  },
+  deleteButton: {
+    backgroundColor: "#fee2e2",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#fca5a5",
+  },
+  deleteButtonText: {
+    fontSize: 13,
+    fontWeight: "bold",
+    color: "#dc2626",
   },
   divider: {
     height: 1,
@@ -398,10 +587,10 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     width: "90%",
-    maxWidth: 300,
+    maxWidth: 400,
     padding: 20,
-    maxHeight: "80%",
-    borderRadius: 8,
+    maxHeight: "85%",
+    borderRadius: 12,
     backgroundColor: colors.cardBackground,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
@@ -423,7 +612,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     fontSize: 15,
-    padding: 8,
     color: colors.textPrimary,
   },
   modalActionButtons: {
@@ -443,19 +631,12 @@ const styles = StyleSheet.create({
   },
   btnCancel: {
     backgroundColor: colors.border,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    width: "100%",
-    alignItems: "center",
   },
   btnSave: {
     backgroundColor: "#16a34a",
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    width: "100%",
-    alignItems: "center",
+  },
+  btnDeleteModal: {
+    backgroundColor: "#dc2626",
   },
   modalBtnCancelText: {
     fontWeight: "600",

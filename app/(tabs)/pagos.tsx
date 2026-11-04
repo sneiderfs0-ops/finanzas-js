@@ -450,31 +450,33 @@ export default function CrearPagoScreen({ route }: any) {
       .includes(nombreBusqueda.toLowerCase()),
   );
 
-  const clientesFiltrados = [...clientesFiltradosOriginal].sort((a, b) => {
-    // 1. El cliente seleccionado siempre va de primero
-    if (a.cedula === clienteSeleccionado) return -1;
-    if (b.cedula === clienteSeleccionado) return 1;
+  // 1. Ordenamos toda la lista filtrada de la A a la Z de forma limpia
+  const listaOrdenadaAlfabeticamente = [...clientesFiltradosOriginal].sort(
+    (a, b) => {
+      const nombreA = `${a.nombres || ""} ${a.apellidos || ""}`.toLowerCase();
+      const nombreB = `${b.nombres || ""} ${b.apellidos || ""}`.toLowerCase();
+      return nombreA.localeCompare(nombreB);
+    },
+  );
 
-    const nombreA = `${a.nombres || ""} ${a.apellidos || ""}`.toLowerCase();
-    const nombreB = `${b.nombres || ""} ${b.apellidos || ""}`.toLowerCase();
+  let clientesFiltrados = listaOrdenadaAlfabeticamente;
 
-    // Encontramos al cliente seleccionado para saber su nombre y letra base
-    const clienteSelObj = clientes.find(
+  // 2. Si no estamos buscando nada y hay un cliente seleccionado:
+  if (!nombreBusqueda.trim() && clienteSeleccionado) {
+    const objSeleccionado = clientes.find(
       (c) => c.cedula === clienteSeleccionado,
     );
-    const nombreSel = clienteSelObj
-      ? `${clienteSelObj.nombres || ""} ${clienteSelObj.apellidos || ""}`.toLowerCase()
-      : "";
-
-    // Comparamos normal de la A a la Z, pero dando prioridad a los que están después de la letra del seleccionado
-    const esDespuesDeSelA = nombreA >= nombreSel;
-    const esDespuesDeSelB = nombreB >= nombreSel;
-
-    if (esDespuesDeSelA && !esDespuesDeSelB) return -1;
-    if (!esDespuesDeSelA && esDespuesDeSelB) return 1;
-
-    return nombreA.localeCompare(nombreB);
-  });
+    if (objSeleccionado) {
+      // Verificamos si ya está en la lista ordenada actual para posicionarlo arriba
+      // sin quitarlo de su lugar abajo (lo duplicamos visualmente solo en la posición [0])
+      const existeEnLista = listaOrdenadaAlfabeticamente.some(
+        (c) => c.cedula === clienteSeleccionado,
+      );
+      if (existeEnLista) {
+        clientesFiltrados = [objSeleccionado, ...listaOrdenadaAlfabeticamente];
+      }
+    }
+  }
 
   const clienteObjetoSeleccionado = clientes.find(
     (c) => c.cedula === clienteSeleccionado,
@@ -801,11 +803,11 @@ export default function CrearPagoScreen({ route }: any) {
                 style={styles.modalList}
                 contentContainerStyle={styles.modalListContent}
               >
-                {clientesFiltrados.map((item) => {
+                {clientesFiltrados.map((item, index) => {
                   const isSelected = clienteSeleccionado === item.cedula;
                   return (
                     <TouchableOpacity
-                      key={item.cedula}
+                      key={`${item.cedula}-${index}`}
                       style={[
                         styles.modalClientCard,
                         isSelected && styles.modalClientCardSelected,

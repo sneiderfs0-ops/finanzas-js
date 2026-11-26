@@ -12,7 +12,6 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "../../supabase";
 import { obtenerFechaHoraExactaVenezuela } from "../../utils/fechas";
 
@@ -43,6 +42,14 @@ interface Prestamo {
   fecha_inicio: string;
   monto_prestado?: number;
   fecha_prestamo?: string;
+  proxima_cuota?: string;
+}
+
+interface PagoHoyInfo {
+  prestamo_id: string;
+  monto_pagado: number;
+  moneda?: "USD" | "COP";
+  moneda_pago?: "USD" | "COP";
 }
 
 export default function CrearPagoScreen({ route }: any) {
@@ -51,7 +58,8 @@ export default function CrearPagoScreen({ route }: any) {
   const isWebOrTablet = width >= 768;
 
   const [clientes, setClientes] = useState<Cliente[]>([]);
-  const [prestamosCliente, setPrestamosCliente] = useState<Prestamo[]>([]);
+  const [todosLosPrestamos, setTodosLosPrestamos] = useState<Prestamo[]>([]);
+  const [pagosHoy, setPagosHoy] = useState<PagoHoyInfo[]>([]);
   const [cajas, setCajas] = useState<CajaOption[]>([]);
 
   const [clienteSeleccionado, setClienteSeleccionado] = useState<string | null>(
@@ -60,17 +68,22 @@ export default function CrearPagoScreen({ route }: any) {
   const [prestamoSeleccionado, setPrestamoSeleccionado] =
     useState<Prestamo | null>(null);
 
-  const [modalClienteVisible, setModalClienteVisible] = useState(false);
-  const [modalPrestamoVisible, setModalPrestamoVisible] = useState(false);
-  const [modalTasaVisible, setModalTasaVisible] = useState(false);
+  // Filtros de la vista principal
   const [nombreBusqueda, setNombreBusqueda] = useState("");
+  const [filtroFrecuencia, setFiltroFrecuencia] = useState<
+    "Todas" | "diario" | "semanal" | "mensual"
+  >("Todas");
 
+  // Modales
+  const [modalPagoVisible, setModalPagoVisible] = useState(false);
+  const [modalTasaVisible, setModalTasaVisible] = useState(false);
   const [modalResultadoVisible, setModalResultadoVisible] = useState(false);
   const [tipoResultado, setTipoResultado] = useState<"exito" | "error">(
     "exito",
   );
   const [mensajeResultado, setMensajeResultado] = useState("");
 
+  // Estados del formulario de pago
   const [montoFisico, setMontoFisico] = useState("");
   const [monedaPrestamo, setMonedaPrestamo] = useState<"USD" | "COP">("COP");
   const [monedaPago, setMonedaPago] = useState<"USD" | "COP">("COP");
@@ -83,10 +96,8 @@ export default function CrearPagoScreen({ route }: any) {
     new Date().toISOString().split("T")[0],
   );
 
-  // Tipo de pago fijo en efectivo
-  const tipoPago = "efectivo";
-
   const [loading, setLoading] = useState(false);
+  const [cargandoLista, setCargandoLista] = useState(true);
   const guardandoRef = useRef(false);
 
   const [usuarioActual, setUsuarioActual] = useState<{
@@ -96,40 +107,14 @@ export default function CrearPagoScreen({ route }: any) {
     tipo: string;
   } | null>(null);
 
+  const fechaHoyStr = obtenerFechaHoraExactaVenezuela().split("T")[0];
+
   useEffect(() => {
     obtenerUsuarioLogueadoYCargarDatos();
   }, []);
 
-  // Recuperar el último cliente guardado de forma persistente (independiente de la sesión)
-  useEffect(() => {
-    const recuperarClienteSupabase = async () => {
-      if (clientes.length > 0 && usuarioActual?.id) {
-        if (clienteCedulaParam) {
-          cargarPrestamosCliente(clienteCedulaParam);
-        } else {
-          try {
-            const { data: cedulaGuardada, error } = await supabase.rpc(
-              "obtener_ultima_preferencia_cliente",
-              { p_usuario_id: usuarioActual.id },
-            );
-
-            if (!error && cedulaGuardada && !clienteSeleccionado) {
-              const existe = clientes.some((c) => c.cedula === cedulaGuardada);
-              if (existe) {
-                setClienteSeleccionado(cedulaGuardada);
-                cargarPrestamosCliente(cedulaGuardada);
-              }
-            }
-          } catch (e) {
-            console.log("Error al recuperar preferencia de Supabase:", e);
-          }
-        }
-      }
-    };
-    recuperarClienteSupabase();
-  }, [clientes, usuarioActual]);
-
   const obtenerUsuarioLogueadoYCargarDatos = async () => {
+    setCargandoLista(true);
     try {
       const { data: authData } = await supabase.auth.getUser();
       const userId = authData.user?.id;
@@ -137,6 +122,7 @@ export default function CrearPagoScreen({ route }: any) {
 
       if (!userId && !emailLogueado) {
         mostrarMensaje("error", "No hay una sesión activa en el sistema.");
+        setCargandoLista(false);
         return;
       }
 
@@ -198,19 +184,22 @@ export default function CrearPagoScreen({ route }: any) {
           "error",
           "No se pudo identificar qué usuario está realizando el registro.",
         );
+        setCargandoLista(false);
         return;
       }
 
       setUsuarioActual(usuarioInfo);
       await cargarCajas();
-      await cargarClientes(usuarioInfo);
+      const listaClientes = await cargarClientes(usuarioInfo);
+      await cargarPrestamosActivosYPagosHoy(listaClientes);
     } catch (err) {
       console.log("Error obteniendo usuario actual:", err);
       mostrarMensaje(
         "error",
         "Error de conexión al verificar los datos del usuario.",
       );
-      await cargarCajas();
+    } finally {
+      setCargandoLista(false);
     }
   };
 
@@ -225,7 +214,7 @@ export default function CrearPagoScreen({ route }: any) {
     id: string;
     cedula: string;
     tipo: string;
-  }) => {
+  }): Promise<Cliente[]> => {
     let query = supabase
       .from("clientes")
       .select("cedula, nombres, apellidos, registrado_por_cedula, ruta_id")
@@ -239,7 +228,7 @@ export default function CrearPagoScreen({ route }: any) {
 
       if (errorRutas || !rutasAsignadas || rutasAsignadas.length === 0) {
         setClientes([]);
-        return;
+        return [];
       }
 
       const idsRutas = rutasAsignadas.map((r) => r.ruta_id);
@@ -249,54 +238,70 @@ export default function CrearPagoScreen({ route }: any) {
     const { data, error } = await query;
     if (!error && data) {
       setClientes(data);
+      if (clienteCedulaParam) {
+        const cliParam = data.find((c) => c.cedula === clienteCedulaParam);
+        if (cliParam) {
+          setNombreBusqueda(`${cliParam.nombres} ${cliParam.apellidos}`);
+        }
+      }
+      return data;
     } else {
       setClientes([]);
+      return [];
     }
   };
 
-  const cargarPrestamosCliente = async (cedulaCliente: string) => {
-    const { data, error } = await supabase
+  const cargarPrestamosActivosYPagosHoy = async (listaClientes: Cliente[]) => {
+    if (listaClientes.length === 0) {
+      setTodosLosPrestamos([]);
+      setPagosHoy([]);
+      return;
+    }
+
+    const cedulas = listaClientes.map((c) => c.cedula);
+
+    const { data: prestamosData, error } = await supabase
       .from("prestamos")
       .select("*")
-      .eq("cedula", cedulaCliente)
-      .eq("estado", "activo");
+      .in("cedula", cedulas)
+      .eq("estado", "activo")
+      .order("fecha_prestamo", { ascending: true });
 
-    if (error) {
-      setPrestamosCliente([]);
-    } else if (data) {
-      setPrestamosCliente(data);
-      if (data.length > 0) {
-        seleccionarPrestamo(data[0]);
-      } else {
-        setPrestamoSeleccionado(null);
-      }
+    if (!error && prestamosData) {
+      setTodosLosPrestamos(prestamosData);
+    } else {
+      setTodosLosPrestamos([]);
+    }
+
+    const { data: pagosData } = await supabase
+      .from("pagos")
+      .select("prestamo_id, monto_pagado, moneda, moneda_pago, fecha_pago")
+      .gte("fecha_pago", `${fechaHoyStr}T00:00:00`)
+      .lte("fecha_pago", `${fechaHoyStr}T23:59:59`);
+
+    if (pagosData) {
+      setPagosHoy(pagosData);
     }
   };
 
-  const seleccionarPrestamo = (prestamo: Prestamo) => {
+  const abrirModalPago = async (prestamo: Prestamo) => {
+    setClienteSeleccionado(prestamo.cedula);
     setPrestamoSeleccionado(prestamo);
     setMonedaPrestamo(prestamo.moneda);
     setMonedaPago(prestamo.moneda);
     setMontoFisico("");
-  };
-
-  const handleSeleccionarCliente = async (cedula: string) => {
-    setClienteSeleccionado(cedula);
-    setPrestamoSeleccionado(null);
-    setModalClienteVisible(false);
+    setModalPagoVisible(true);
 
     if (usuarioActual?.id) {
       try {
         await supabase.rpc("guardar_ultima_preferencia_cliente", {
           p_usuario_id: usuarioActual.id,
-          p_cedula: cedula,
+          p_cedula: prestamo.cedula,
         });
       } catch (e) {
         console.log("Error al guardar preferencia en Supabase:", e);
       }
     }
-
-    cargarPrestamosCliente(cedula);
   };
 
   const cambiarMonedaPago = (nuevaMoneda: "USD" | "COP") => {
@@ -420,10 +425,6 @@ export default function CrearPagoScreen({ route }: any) {
           : obtenerFechaHoraExactaVenezuela(),
     };
 
-    setMontoFisico("");
-    setPrestamoSeleccionado(null);
-    setPrestamosCliente([]);
-
     try {
       const { error: errorPago } = await supabase
         .from("pagos")
@@ -431,10 +432,13 @@ export default function CrearPagoScreen({ route }: any) {
 
       if (errorPago) throw errorPago;
 
-      mostrarMensaje(
-        "exito",
-        "El pago con cambio de divisa se ha registrado satisfactoriamente.",
-      );
+      setMontoFisico("");
+      setModalPagoVisible(false);
+      setPrestamoSeleccionado(null);
+
+      await cargarPrestamosActivosYPagosHoy(clientes);
+
+      mostrarMensaje("exito", "Pago realizado satisfactoriamente.");
     } catch (err: any) {
       mostrarMensaje(
         "error",
@@ -447,50 +451,87 @@ export default function CrearPagoScreen({ route }: any) {
     }
   };
 
-  const clientesFiltradosOriginal = clientes.filter((c) =>
-    `${c.nombres} ${c.apellidos} ${c.cedula}`
-      .toLowerCase()
-      .includes(nombreBusqueda.toLowerCase()),
-  );
+  const mapaClientes = new Map<string, Cliente>();
+  clientes.forEach((c) => mapaClientes.set(c.cedula, c));
 
-  // 1. Ordenamos toda la lista filtrada de la A a la Z de forma limpia
-  const listaOrdenadaAlfabeticamente = [...clientesFiltradosOriginal].sort(
-    (a, b) => {
-      const nombreA = `${a.nombres || ""} ${a.apellidos || ""}`.toLowerCase();
-      const nombreB = `${b.nombres || ""} ${b.apellidos || ""}`.toLowerCase();
-      return nombreA.localeCompare(nombreB);
-    },
-  );
+  // Ordenar alfabéticamente de la A a la Z por nombre del cliente,
+  // y si tiene varios préstamos, mantenerlos juntos en fila por fecha.
+  const prestamosOrdenadosAZ = [...todosLosPrestamos].sort((a, b) => {
+    const cliA = mapaClientes.get(a.cedula);
+    const cliB = mapaClientes.get(b.cedula);
 
-  let clientesFiltrados = listaOrdenadaAlfabeticamente;
+    const nombreA = cliA
+      ? `${cliA.nombres || ""} ${cliA.apellidos || ""}`.trim()
+      : a.cedula;
+    const nombreB = cliB
+      ? `${cliB.nombres || ""} ${cliB.apellidos || ""}`.trim()
+      : b.cedula;
 
-  // 2. Si no estamos buscando nada y hay un cliente seleccionado:
-  if (!nombreBusqueda.trim() && clienteSeleccionado) {
-    const objSeleccionado = clientes.find(
-      (c) => c.cedula === clienteSeleccionado,
+    const comparacionNombre = nombreA.localeCompare(nombreB, "es", {
+      sensitivity: "base",
+    });
+    if (comparacionNombre !== 0) return comparacionNombre;
+
+    if (a.cedula !== b.cedula) return a.cedula.localeCompare(b.cedula);
+
+    const fechaA = (a.fecha_prestamo || a.fecha_inicio || "").localeCompare(
+      b.fecha_prestamo || b.fecha_inicio || "",
     );
-    if (objSeleccionado) {
-      // Verificamos si ya está en la lista ordenada actual para posicionarlo arriba
-      // sin quitarlo de su lugar abajo (lo duplicamos visualmente solo en la posición [0])
-      const existeEnLista = listaOrdenadaAlfabeticamente.some(
-        (c) => c.cedula === clienteSeleccionado,
-      );
-      if (existeEnLista) {
-        clientesFiltrados = [objSeleccionado, ...listaOrdenadaAlfabeticamente];
-      }
-    }
-  }
+    if (fechaA !== 0) return fechaA;
 
-  const clienteObjetoSeleccionado = clientes.find(
-    (c) => c.cedula === clienteSeleccionado,
+    return String(a.id).localeCompare(String(b.id));
+  });
+
+  const contadorPorCliente: Record<string, number> = {};
+  const prestamosConIndice = prestamosOrdenadosAZ.map((p) => {
+    contadorPorCliente[p.cedula] = (contadorPorCliente[p.cedula] || 0) + 1;
+    return {
+      ...p,
+      indiceCliente: contadorPorCliente[p.cedula],
+    };
+  });
+
+  const prestamosFiltrados = prestamosConIndice.filter((p) => {
+    const cli = mapaClientes.get(p.cedula);
+    const nombreCompleto = cli
+      ? `${cli.nombres} ${cli.apellidos} ${cli.cedula}`.toLowerCase()
+      : p.cedula.toLowerCase();
+
+    const coincideNombre = nombreCompleto.includes(
+      nombreBusqueda.trim().toLowerCase(),
+    );
+
+    const freq = (p.frecuencia || "").toLowerCase();
+    const coincideFrecuencia =
+      filtroFrecuencia === "Todas" || freq.includes(filtroFrecuencia);
+
+    return coincideNombre && coincideFrecuencia;
+  });
+
+  const idsVisibles = new Set(prestamosFiltrados.map((p) => p.id));
+  const pagosVisiblesHoy = pagosHoy.filter((pago) =>
+    idsVisibles.has(pago.prestamo_id),
   );
+
+  const totalPagadoHoyCop = pagosVisiblesHoy
+    .filter((pago) => (pago.moneda_pago || pago.moneda || "COP") === "COP")
+    .reduce((acc, curr) => acc + (Number(curr.monto_pagado) || 0), 0);
+
+  const totalPagadoHoyUsd = pagosVisiblesHoy
+    .filter((pago) => (pago.moneda_pago || pago.moneda) === "USD")
+    .reduce((acc, curr) => acc + (Number(curr.monto_pagado) || 0), 0);
+
+  const calcularDiasMora = (fechaStr?: string) => {
+    if (!fechaStr) return 0;
+    const fechaCuota = new Date(fechaStr.split("T")[0] + "T00:00:00");
+    const hoy = new Date(fechaHoyStr + "T00:00:00");
+    const diffMs = hoy.getTime() - fechaCuota.getTime();
+    const diffDias = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    return diffDias > 0 ? diffDias : 0;
+  };
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
-    >
+    <View style={styles.screenWrapper}>
       <ScrollView
         style={styles.container}
         contentContainerStyle={[
@@ -499,710 +540,1024 @@ export default function CrearPagoScreen({ route }: any) {
         ]}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={[styles.mainCard, isWebOrTablet && styles.mainCardWeb]}>
-          <Text style={styles.title}>Registrar Cobro / Pago</Text>
-
-          {usuarioActual && (
-            <View style={styles.userCard}>
-              <Text style={styles.userCardTitle}>
-                Registrado por ({usuarioActual.tipo}):
-              </Text>
-              <Text style={styles.userCardText}>
-                {usuarioActual.nombreCompleto}
-              </Text>
-            </View>
+        {/* BUSCADOR POR NOMBRE */}
+        <Text style={styles.sectionLabel}>Buscar cliente por nombre</Text>
+        <View style={styles.searchInputWrapper}>
+          <Text style={styles.searchIcon}>⌕</Text>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Escribe el nombre o cédula del cliente..."
+            value={nombreBusqueda}
+            onChangeText={setNombreBusqueda}
+            placeholderTextColor="#94a3b8"
+          />
+          {nombreBusqueda.length > 0 && (
+            <TouchableOpacity
+              onPress={() => setNombreBusqueda("")}
+              style={styles.clearSearchBtn}
+            >
+              <Text style={styles.clearSearchText}>✕</Text>
+            </TouchableOpacity>
           )}
+        </View>
 
-          <Text style={styles.label}>1. Cliente</Text>
-          <TouchableOpacity
-            style={styles.dropdownTrigger}
-            activeOpacity={0.7}
-            onPress={() => setModalClienteVisible(true)}
-          >
-            {clienteObjetoSeleccionado ? (
-              <View style={{ flex: 1 }}>
-                <Text style={styles.dropdownTriggerTitle}>
-                  {clienteObjetoSeleccionado.nombres}{" "}
-                  {clienteObjetoSeleccionado.apellidos}
-                </Text>
-              </View>
-            ) : (
-              <Text style={styles.dropdownTriggerPlaceholder}>
-                Seleccionar cliente...
-              </Text>
-            )}
-            <Text style={styles.dropdownTriggerIcon}>▼</Text>
-          </TouchableOpacity>
-
-          <Text style={styles.label}>2. Préstamo Activo</Text>
-          <TouchableOpacity
-            style={[
-              styles.dropdownTrigger,
-              !clienteSeleccionado && { opacity: 0.6 },
-            ]}
-            activeOpacity={0.7}
-            disabled={!clienteSeleccionado}
-            onPress={() => setModalPrestamoVisible(true)}
-          >
-            {prestamoSeleccionado ? (
-              <View style={{ flex: 1 }}>
-                <Text style={styles.dropdownTriggerTitle}>
-                  Préstamo en {prestamoSeleccionado.moneda} | Saldo: ${" "}
-                  {formatearSinDecimales(
-                    prestamoSeleccionado.saldo_pendiente || 0,
-                  )}
-                </Text>
-                <Text style={styles.dropdownTriggerSubtitle}>
-                  Cuota: ${" "}
-                  {formatearSinDecimales(prestamoSeleccionado.valor_cuota || 0)}{" "}
-                  ({prestamoSeleccionado.frecuencia})
-                </Text>
-              </View>
-            ) : (
-              <Text style={styles.dropdownTriggerPlaceholder}>
-                {clienteSeleccionado
-                  ? "Seleccionar préstamo activo..."
-                  : "Primero seleccione un cliente"}
-              </Text>
-            )}
-            <Text style={styles.dropdownTriggerIcon}>▼</Text>
-          </TouchableOpacity>
-
-          <Text style={styles.label}>
-            3. ¿En qué moneda realiza el pago el cliente?
-          </Text>
-          <View style={styles.rowSelector}>
-            {(["COP", "USD"] as const).map((m) => (
+        {/* FILTROS POR CUOTA */}
+        <Text style={styles.sectionLabel}>Filtrar por cuota</Text>
+        <View style={styles.filterRow}>
+          {[
+            { label: "Todas", value: "Todas" as const },
+            { label: "Diarias", value: "diario" as const },
+            { label: "Semanal", value: "semanal" as const },
+            { label: "Mensual", value: "mensual" as const },
+          ].map((item) => {
+            const activo = filtroFrecuencia === item.value;
+            return (
               <TouchableOpacity
-                key={m}
-                style={[
-                  styles.selectChip,
-                  monedaPago === m && styles.selectChipActive,
-                ]}
-                onPress={() => cambiarMonedaPago(m)}
+                key={item.value}
+                style={[styles.filterPill, activo && styles.filterPillActive]}
+                onPress={() => setFiltroFrecuencia(item.value)}
               >
                 <Text
                   style={[
-                    styles.selectChipTxt,
-                    monedaPago === m && styles.selectChipTxtActive,
+                    styles.filterPillText,
+                    activo && styles.filterPillTextActive,
                   ]}
                 >
-                  {m === "COP" ? "🇨🇴 Pesos (COP)" : "💵 Dólares (USD)"}
+                  {item.label}
                 </Text>
               </TouchableOpacity>
-            ))}
-          </View>
+            );
+          })}
+        </View>
 
-          {monedaPago !== monedaPrestamo && (
-            <TouchableOpacity
-              style={styles.tasaBanner}
-              onPress={() => setModalTasaVisible(true)}
-            >
-              <Text style={styles.tasaBannerText}>
-                💱 Tasa aplicada:{" "}
-                <Text style={styles.bold}>
-                  1 USD = $ {tasaCambioCopPorUsd} COP
-                </Text>{" "}
-                (Click para editar)
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          <Text style={styles.label}>
-            4. Monto Entregado Físicamente ({monedaPago})
+        {/* RESUMEN DE PRÉSTAMOS ACTIVOS Y TOTALES POR MONEDA */}
+        <View style={styles.summaryStrip}>
+          <View style={styles.summaryDot} />
+          <Text style={styles.summaryHeader}>
+            Préstamos activos ({prestamosFiltrados.length}) • Total pagado hoy (
+            {fechaHoyStr}): $ {formatearSinDecimales(totalPagadoHoyCop) || "0"}{" "}
+            COP
+            {totalPagadoHoyUsd > 0
+              ? ` • $ ${formatearSinDecimales(totalPagadoHoyUsd)} USD`
+              : ""}
           </Text>
-          <TextInput
-            style={styles.input}
-            placeholder={`Monto en ${monedaPago}`}
-            value={montoFisico}
-            onChangeText={handleMontoChange}
-            keyboardType="numeric"
-            maxLength={15}
-            placeholderTextColor="#a4b0be"
-          />
-          <TouchableOpacity
-            style={[styles.button, loading && { opacity: 0.7 }]}
-            onPress={guardarPago}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Registrar Pago</Text>
-            )}
-          </TouchableOpacity>
+        </View>
 
-          {usuarioActual?.tipo === "Administrador" && (
-            <View style={styles.manualDateBox}>
-              <TouchableOpacity
-                style={styles.checkboxRow}
-                activeOpacity={0.8}
-                onPress={() => setUsarFechaManual(!usarFechaManual)}
+        {/* LISTADO DE TARJETAS DE PRÉSTAMOS (A - Z, MÚLTIPLES EN FILA) */}
+        {cargandoLista ? (
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color="#7c3aed" />
+            <Text style={styles.loadingText}>Cargando préstamos...</Text>
+          </View>
+        ) : prestamosFiltrados.length === 0 ? (
+          <View style={styles.emptyBox}>
+            <Text style={styles.emptyText}>
+              No se encontraron préstamos activos con esos filtros.
+            </Text>
+          </View>
+        ) : (
+          prestamosFiltrados.map((item) => {
+            const cli = mapaClientes.get(item.cedula);
+            const nombreCliente = cli
+              ? `${cli.nombres} ${cli.apellidos}`
+              : item.cedula;
+
+            const pagadoHoyItem = pagosHoy.some(
+              (p) => p.prestamo_id === item.id,
+            );
+            const montoAbonadoTotal = Math.max(
+              0,
+              (item.monto_total || 0) - (item.saldo_pendiente || 0),
+            );
+            const cuotasFaltantes =
+              item.valor_cuota > 0
+                ? Math.ceil((item.saldo_pendiente || 0) / item.valor_cuota)
+                : item.cuotas || 0;
+
+            const fechaReferenciaCuota =
+              item.proxima_cuota || item.fecha_inicio || "";
+            const diasAtraso = calcularDiasMora(fechaReferenciaCuota);
+            const enMora = !pagadoHoyItem && diasAtraso > 0;
+
+            return (
+              <View
+                key={item.id}
+                style={[
+                  styles.loanCard,
+                  pagadoHoyItem && styles.loanCardPaid,
+                  enMora && styles.loanCardOverdue,
+                ]}
               >
-                <View
-                  style={[
-                    styles.checkboxBox,
-                    usarFechaManual && styles.checkboxBoxChecked,
-                  ]}
-                >
-                  {usarFechaManual && (
-                    <Text style={styles.checkboxTick}>✓</Text>
+                <View style={styles.loanCardBody}>
+                  {/* Encabezado de tarjeta */}
+                  <View style={styles.loanCardHeaderRow}>
+                    <Text style={styles.loanCardClientName}>
+                      {nombreCliente} (#{item.indiceCliente})
+                    </Text>
+
+                    <TouchableOpacity
+                      style={styles.payButton}
+                      activeOpacity={0.85}
+                      onPress={() => abrirModalPago(item)}
+                    >
+                      <Text style={styles.payButtonText}>Pagar</Text>
+                    </TouchableOpacity>
+
+                    {pagadoHoyItem && (
+                      <View style={styles.paidBadge}>
+                        <Text style={styles.paidBadgeText}>Pagado hoy</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={styles.loanCardHeaderRow}>
+                    <Text style={styles.loanCardPrincipal}>
+                      Monto prestado: ${" "}
+                      {formatearSinDecimales(item.monto_prestado || 0)}{" "}
+                      {item.moneda !== "COP" ? item.moneda : ""}
+                    </Text>
+                  </View>
+
+                  {/* Fecha del préstamo */}
+                  <Text style={styles.loanDateText}>
+                    Fecha del préstamo:{" "}
+                    {(item.fecha_prestamo || item.fecha_inicio || "").split(
+                      "T",
+                    )[0] || "N/A"}
+                  </Text>
+
+                  {/* Saldo y cuota */}
+                  <Text style={styles.loanDetailText}>
+                    Saldo pendiente:{" "}
+                    <Text style={styles.highlightBalance}>
+                      $ {formatearSinDecimales(item.saldo_pendiente || 0)}
+                    </Text>{" "}
+                    | Cuota ({item.frecuencia}):{" "}
+                    <Text style={styles.highlightInstallment}>
+                      $ {formatearSinDecimales(item.valor_cuota || 0)}
+                    </Text>
+                  </Text>
+
+                  {/* Cuotas faltantes y montos */}
+                  <Text style={styles.loanDetailText}>
+                    Cuotas faltantes: {cuotasFaltantes} | Monto pagado: ${" "}
+                    {formatearSinDecimales(montoAbonadoTotal)} | Pendiente: ${" "}
+                    {formatearSinDecimales(item.saldo_pendiente || 0)}
+                  </Text>
+
+                  {/* Próxima cuota */}
+                  {fechaReferenciaCuota ? (
+                    <Text style={styles.nextInstallmentText}>
+                      Próxima cuota programada:{" "}
+                      {fechaReferenciaCuota.split("T")[0]}
+                    </Text>
+                  ) : null}
+
+                  {/* Alerta de mora */}
+                  {enMora && (
+                    <Text style={styles.overdueText}>
+                      EN MORA: SE PASÓ LA FECHA DE CUOTA (
+                      {fechaReferenciaCuota.split("T")[0]} • {diasAtraso}{" "}
+                      {diasAtraso === 1 ? "DÍA" : "DÍAS"} DE ATRASO)
+                    </Text>
                   )}
                 </View>
-                <Text style={styles.checkboxLabel}>
-                  📅 Registrar fecha de pago (Manual)
-                </Text>
-              </TouchableOpacity>
+              </View>
+            );
+          })
+        )}
+      </ScrollView>
 
-              {usarFechaManual && (
-                <View style={{ marginTop: 10 }}>
-                  <Text style={styles.subLabel}>
-                    Seleccione la fecha del pago:
-                  </Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="2026-09-01"
-                    value={fechaManual}
-                    onChangeText={setFechaManual}
-                    placeholderTextColor="#94a3b8"
-                  />
-                  <Text style={styles.helperText}>
-                    Formato requerido: AAAA-MM-DD (Ej: 2026-05-15)
+      {/* MODAL DE FORMULARIO DE PAGO AL PRESIONAR "PAGAR" */}
+      <Modal
+        visible={modalPagoVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setModalPagoVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <View style={styles.paymentModalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Registrar Pago</Text>
+              <TouchableOpacity
+                onPress={() => setModalPagoVisible(false)}
+                style={styles.closeBtn}
+              >
+                <Text style={styles.closeBtnText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              contentContainerStyle={styles.paymentModalScroll}
+              keyboardShouldPersistTaps="handled"
+            >
+              {usuarioActual && (
+                <View style={styles.userCard}>
+                  <Text style={styles.userCardTitle}>
+                    Registrado por ({usuarioActual.tipo}):{" "}
+                    <Text style={styles.boldViolet}>
+                      {usuarioActual.nombreCompleto}
+                    </Text>
                   </Text>
                 </View>
               )}
-            </View>
-          )}
 
-          <View style={styles.calcBox}>
-            <Text style={styles.calcTitle}>Resumen de Conversión y Cobro</Text>
-            <View style={styles.calcRow}>
-              <Text style={styles.calcText}>Saldo Actual del Préstamo:</Text>
-              <Text style={styles.bold}>
-                ${" "}
-                {prestamoSeleccionado
-                  ? formatearSinDecimales(prestamoSeleccionado.saldo_pendiente)
-                  : "0"}{" "}
-                {monedaPrestamo}
-              </Text>
-            </View>
+              {prestamoSeleccionado && (
+                <View style={styles.selectedLoanBanner}>
+                  <Text style={styles.selectedLoanTitle}>
+                    {mapaClientes.get(prestamoSeleccionado.cedula)?.nombres}{" "}
+                    {mapaClientes.get(prestamoSeleccionado.cedula)?.apellidos}
+                  </Text>
+                  <Text style={styles.selectedLoanSub}>
+                    Saldo: ${" "}
+                    {formatearSinDecimales(
+                      prestamoSeleccionado.saldo_pendiente,
+                    )}{" "}
+                    {prestamoSeleccionado.moneda} • Cuota: ${" "}
+                    {formatearSinDecimales(prestamoSeleccionado.valor_cuota)}
+                  </Text>
+                </View>
+              )}
 
-            <View style={styles.calcRow}>
-              <Text style={styles.calcText}>
-                Monto Recibido ({monedaPago}):
+              <Text style={styles.label}>
+                1. ¿En qué moneda realiza el pago el cliente?
               </Text>
-              <Text style={styles.bold}>
-                $ {formatearSinDecimales(montoFisicoNum)} {monedaPago}
-              </Text>
-            </View>
-            {monedaPago !== monedaPrestamo && (
-              <View style={styles.calcRow}>
-                <Text style={styles.calcText}>
-                  Equivalente Abonado al Préstamo:
-                </Text>
-                <Text style={styles.boldPrimary}>
-                  $ {formatearSinDecimales(montoAplicadoPrestamo)}{" "}
-                  {monedaPrestamo}
-                </Text>
+              <View style={styles.rowSelector}>
+                {(["COP", "USD"] as const).map((m) => (
+                  <TouchableOpacity
+                    key={m}
+                    style={[
+                      styles.selectChip,
+                      monedaPago === m && styles.selectChipActive,
+                    ]}
+                    onPress={() => cambiarMonedaPago(m)}
+                  >
+                    <Text
+                      style={[
+                        styles.selectChipTxt,
+                        monedaPago === m && styles.selectChipTxtActive,
+                      ]}
+                    >
+                      {m === "COP" ? "🇨🇴 Pesos (COP)" : "💵 Dólares (USD)"}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
               </View>
-            )}
-            <View style={styles.calcRow}>
-              <Text style={styles.calcText}>Nuevo Saldo Resultante:</Text>
-              <Text style={styles.bold}>
-                ${" "}
-                {prestamoSeleccionado
-                  ? formatearSinDecimales(
-                      Math.max(
-                        0,
-                        prestamoSeleccionado.saldo_pendiente -
-                          montoAplicadoPrestamo,
-                      ),
-                    )
-                  : "0"}{" "}
-                {monedaPrestamo}
-              </Text>
-            </View>
-          </View>
-        </View>
 
-        {/* MODAL TASA DE CAMBIO */}
-        <Modal
-          visible={modalTasaVisible}
-          animationType="fade"
-          transparent={true}
-          onRequestClose={() => setModalTasaVisible(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalExitoContainer, { maxWidth: 380 }]}>
-              <Text style={styles.modalExitoTitle}>Tasa de Cambio</Text>
-              <Text style={styles.modalExitoMessage}>
-                Ingrese la tasa de cambio actual (COP por 1 USD):
+              {monedaPago !== monedaPrestamo && (
+                <TouchableOpacity
+                  style={styles.tasaBanner}
+                  onPress={() => setModalTasaVisible(true)}
+                >
+                  <Text style={styles.tasaBannerText}>
+                    💱 Tasa aplicada:{" "}
+                    <Text style={styles.bold}>
+                      1 USD = $ {tasaCambioCopPorUsd} COP
+                    </Text>{" "}
+                    (Click para editar)
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              <Text style={styles.label}>
+                2. Monto Entregado Físicamente ({monedaPago})
               </Text>
               <TextInput
-                style={[
-                  styles.input,
-                  {
-                    width: "100%",
-                    textAlign: "center",
-                    fontSize: 18,
-                    fontWeight: "bold",
-                  },
-                ]}
-                placeholder="Ej: 4100"
+                style={styles.input}
+                placeholder={`Monto en ${monedaPago}`}
+                value={montoFisico}
+                onChangeText={handleMontoChange}
                 keyboardType="numeric"
-                value={tasaInputTemp}
-                onChangeText={setTasaInputTemp}
+                maxLength={15}
                 autoFocus={true}
                 placeholderTextColor="#94a3b8"
               />
+
+              {usuarioActual?.tipo === "Administrador" && (
+                <View style={styles.manualDateBox}>
+                  <TouchableOpacity
+                    style={styles.checkboxRow}
+                    activeOpacity={0.8}
+                    onPress={() => setUsarFechaManual(!usarFechaManual)}
+                  >
+                    <View
+                      style={[
+                        styles.checkboxBox,
+                        usarFechaManual && styles.checkboxBoxChecked,
+                      ]}
+                    >
+                      {usarFechaManual && (
+                        <Text style={styles.checkboxTick}>✓</Text>
+                      )}
+                    </View>
+                    <Text style={styles.checkboxLabel}>
+                      📅 Registrar fecha de pago (Manual)
+                    </Text>
+                  </TouchableOpacity>
+
+                  {usarFechaManual && (
+                    <View style={{ marginTop: 10 }}>
+                      <Text style={styles.subLabel}>
+                        Seleccione la fecha del pago:
+                      </Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="2026-09-01"
+                        value={fechaManual}
+                        onChangeText={setFechaManual}
+                        placeholderTextColor="#94a3b8"
+                      />
+                      <Text style={styles.helperText}>
+                        Formato requerido: AAAA-MM-DD (Ej: 2026-05-15)
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              <View style={styles.calcBox}>
+                <Text style={styles.calcTitle}>
+                  Resumen de Conversión y Cobro
+                </Text>
+                <View style={styles.calcRow}>
+                  <Text style={styles.calcText}>Saldo Actual:</Text>
+                  <Text style={styles.bold}>
+                    ${" "}
+                    {prestamoSeleccionado
+                      ? formatearSinDecimales(
+                          prestamoSeleccionado.saldo_pendiente,
+                        )
+                      : "0"}{" "}
+                    {monedaPrestamo}
+                  </Text>
+                </View>
+
+                <View style={styles.calcRow}>
+                  <Text style={styles.calcText}>
+                    Monto Recibido ({monedaPago}):
+                  </Text>
+                  <Text style={styles.bold}>
+                    $ {formatearSinDecimales(montoFisicoNum)} {monedaPago}
+                  </Text>
+                </View>
+
+                {monedaPago !== monedaPrestamo && (
+                  <View style={styles.calcRow}>
+                    <Text style={styles.calcText}>Equivalente Abonado:</Text>
+                    <Text style={styles.boldViolet}>
+                      $ {formatearSinDecimales(montoAplicadoPrestamo)}{" "}
+                      {monedaPrestamo}
+                    </Text>
+                  </View>
+                )}
+
+                <View style={[styles.calcRow, styles.calcRowLast]}>
+                  <Text style={styles.calcText}>Nuevo Saldo Resultante:</Text>
+                  <Text style={styles.boldEmerald}>
+                    ${" "}
+                    {prestamoSeleccionado
+                      ? formatearSinDecimales(
+                          Math.max(
+                            0,
+                            prestamoSeleccionado.saldo_pendiente -
+                              montoAplicadoPrestamo,
+                          ),
+                        )
+                      : "0"}{" "}
+                    {monedaPrestamo}
+                  </Text>
+                </View>
+              </View>
+
               <TouchableOpacity
-                style={styles.successButton}
-                onPress={() => {
-                  if (tasaInputTemp && parseFloat(tasaInputTemp) > 0) {
-                    setTasaCambioCopPorUsd(tasaInputTemp);
-                    setModalTasaVisible(false);
-                  } else {
-                    mostrarMensaje("error", "Ingrese una tasa válida.");
-                  }
-                }}
+                style={[styles.confirmPayButton, loading && { opacity: 0.7 }]}
+                onPress={guardarPago}
+                disabled={loading}
               >
-                <Text style={styles.successButtonText}>Guardar Tasa</Text>
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.buttonText}>Confirmar Pago</Text>
+                )}
               </TouchableOpacity>
-            </View>
+            </ScrollView>
           </View>
-        </Modal>
+        </KeyboardAvoidingView>
+      </Modal>
 
-        {/* MODAL DE SELECCIÓN DE CLIENTE */}
-        <Modal
-          visible={modalClienteVisible}
-          animationType="fade"
-          transparent={true}
-          onRequestClose={() => setModalClienteVisible(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContainer}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>
-                  Buscar y Seleccionar Cliente
-                </Text>
-                <TouchableOpacity
-                  onPress={() => setModalClienteVisible(false)}
-                  style={styles.closeBtn}
-                >
-                  <Text style={styles.closeBtnText}>✕</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.searchBoxContainer}>
-                <TextInput
-                  style={styles.modalSearchInput}
-                  placeholder="🔍 Escribe nombre o cédula..."
-                  value={nombreBusqueda}
-                  onChangeText={setNombreBusqueda}
-                  placeholderTextColor="#94a3b8"
-                  autoFocus={true}
-                />
-              </View>
-              <ScrollView
-                style={styles.modalList}
-                contentContainerStyle={styles.modalListContent}
-              >
-                {clientesFiltrados.map((item, index) => {
-                  const isSelected = clienteSeleccionado === item.cedula;
-                  return (
-                    <TouchableOpacity
-                      key={`${item.cedula}-${index}`}
-                      style={[
-                        styles.modalClientCard,
-                        isSelected && styles.modalClientCardSelected,
-                      ]}
-                      onPress={() => handleSeleccionarCliente(item.cedula)}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text
-                          style={[
-                            styles.modalClientName,
-                            isSelected && styles.textWhite,
-                          ]}
-                        >
-                          {item.nombres} {item.apellidos}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            </View>
+      {/* MODAL TASA DE CAMBIO */}
+      <Modal
+        visible={modalTasaVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setModalTasaVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalExitoContainer, { maxWidth: 380 }]}>
+            <Text style={styles.modalExitoTitle}>Tasa de Cambio</Text>
+            <Text style={styles.modalExitoMessage}>
+              Ingrese la tasa de cambio actual (COP por 1 USD):
+            </Text>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  width: "100%",
+                  textAlign: "center",
+                  fontSize: 18,
+                  fontWeight: "bold",
+                },
+              ]}
+              placeholder="Ej: 4100"
+              keyboardType="numeric"
+              value={tasaInputTemp}
+              onChangeText={setTasaInputTemp}
+              autoFocus={true}
+              placeholderTextColor="#94a3b8"
+            />
+            <TouchableOpacity
+              style={styles.successButton}
+              onPress={() => {
+                if (tasaInputTemp && parseFloat(tasaInputTemp) > 0) {
+                  setTasaCambioCopPorUsd(tasaInputTemp);
+                  setModalTasaVisible(false);
+                } else {
+                  mostrarMensaje("error", "Ingrese una tasa válida.");
+                }
+              }}
+            >
+              <Text style={styles.successButtonText}>Guardar Tasa</Text>
+            </TouchableOpacity>
           </View>
-        </Modal>
+        </View>
+      </Modal>
 
-        {/* MODAL DE SELECCIÓN DE PRÉSTAMO */}
-        <Modal
-          visible={modalPrestamoVisible}
-          animationType="fade"
-          transparent={true}
-          onRequestClose={() => setModalPrestamoVisible(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContainer}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>
-                  Seleccionar Préstamo Activo
-                </Text>
-                <TouchableOpacity
-                  onPress={() => setModalPrestamoVisible(false)}
-                  style={styles.closeBtn}
-                >
-                  <Text style={styles.closeBtnText}>✕</Text>
-                </TouchableOpacity>
-              </View>
-              <ScrollView
-                style={styles.modalList}
-                contentContainerStyle={styles.modalListContent}
-              >
-                {prestamosCliente.map((item) => {
-                  const isSelected = prestamoSeleccionado?.id === item.id;
-
-                  const formatearFecha = (fechaStr: string) => {
-                    if (!fechaStr) return "";
-                    const [anio, mes, dia] = fechaStr.split("T")[0].split("-");
-                    return `${dia}/${mes}/${anio}`;
-                  };
-
-                  return (
-                    <TouchableOpacity
-                      key={item.id}
-                      style={[
-                        styles.modalClientCard,
-                        isSelected && styles.modalClientCardSelected,
-                      ]}
-                      onPress={() => {
-                        seleccionarPrestamo(item);
-                        setModalPrestamoVisible(false);
-                      }}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text
-                          style={[
-                            styles.modalClientName,
-                            isSelected && styles.textWhite,
-                          ]}
-                        >
-                          Prestado: ${" "}
-                          {formatearSinDecimales(item.monto_prestado || 0)}{" "}
-                          {item.moneda}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.modalClientCedula,
-                            isSelected && styles.textWhiteSub,
-                          ]}
-                        >
-                          Total: $ {formatearSinDecimales(item.monto_total)} |
-                          Pendiente: ${" "}
-                          {formatearSinDecimales(item.saldo_pendiente)}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.modalClientCedula,
-                            isSelected && styles.textWhiteSub,
-                          ]}
-                        >
-                          Cuota: ${" "}
-                          {formatearSinDecimales(item.valor_cuota || 0)} (
-                          {item.frecuencia}) | Fecha:{" "}
-                          {formatearFecha(item.fecha_prestamo || "")}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            </View>
-          </View>
-        </Modal>
-
-        {/* MODAL DE RESULTADO */}
-        <Modal
-          visible={modalResultadoVisible}
-          animationType="fade"
-          transparent={true}
-          onRequestClose={() => setModalResultadoVisible(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalExitoContainer}>
-              <View
+      {/* MODAL DE RESULTADO (PAGO REALIZADO / ERROR) */}
+      <Modal
+        visible={modalResultadoVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setModalResultadoVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalExitoContainer}>
+            <View
+              style={[
+                styles.successIconContainer,
+                tipoResultado === "error" && styles.errorIconContainer,
+              ]}
+            >
+              <Text
                 style={[
-                  styles.successIconContainer,
-                  tipoResultado === "error" && styles.errorIconContainer,
+                  styles.successIconText,
+                  tipoResultado === "error" && styles.errorIconText,
                 ]}
               >
-                <Text style={styles.successIconText}>
-                  {tipoResultado === "exito" ? "✓" : "✕"}
-                </Text>
-              </View>
-              <Text style={styles.modalExitoTitle}>
-                {tipoResultado === "exito" ? "¡Pago Registrado!" : "Atención"}
+                {tipoResultado === "exito" ? "✓" : "✕"}
               </Text>
-              <Text style={styles.modalExitoMessage}>{mensajeResultado}</Text>
-              <TouchableOpacity
-                style={[
-                  styles.successButton,
-                  tipoResultado === "error" && styles.errorButton,
-                ]}
-                onPress={() => setModalResultadoVisible(false)}
-              >
-                <Text style={styles.successButtonText}>Aceptar</Text>
-              </TouchableOpacity>
             </View>
+            <Text style={styles.modalExitoTitle}>
+              {tipoResultado === "exito" ? "¡Pago Realizado!" : "Atención"}
+            </Text>
+            <Text style={styles.modalExitoMessage}>{mensajeResultado}</Text>
+            <TouchableOpacity
+              style={[
+                styles.successButton,
+                tipoResultado === "error" && styles.errorButton,
+              ]}
+              onPress={() => setModalResultadoVisible(false)}
+            >
+              <Text style={styles.successButtonText}>Aceptar</Text>
+            </TouchableOpacity>
           </View>
-        </Modal>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </View>
+      </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f0f2f5" },
-  contentContainer: { padding: 12, paddingBottom: 60 },
-  contentContainerWeb: { alignItems: "center", padding: 24 },
-  mainCard: {
-    width: "100%",
-    backgroundColor: "#ffffff",
-    borderRadius: 16,
+  screenWrapper: {
+    flex: 1,
+    backgroundColor: "#f8fafc",
+  },
+  container: {
+    flex: 1,
+  },
+  contentContainer: {
     padding: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
+    paddingBottom: 44,
   },
-  mainCardWeb: {
-    maxWidth: 750,
-    padding: 32,
-    borderWidth: 1,
-    borderColor: "#e4e7eb",
+  contentContainerWeb: {
+    maxWidth: 1120,
+    width: "100%",
+    alignSelf: "center",
+    paddingTop: 20,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: "bold",
-    marginBottom: 16,
-    color: "#1e293b",
-  },
-  userCard: {
-    backgroundColor: "#e0f2fe",
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
-  },
-  userCardTitle: { fontSize: 12, color: "#0369a1", fontWeight: "600" },
-  userCardText: { fontSize: 14, color: "#0c4a6e", fontWeight: "bold" },
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
+
+  sectionLabel: {
+    fontSize: 13,
+    fontWeight: "700",
     color: "#334155",
-    marginBottom: 6,
-    marginTop: 12,
+    marginBottom: 8,
   },
-  subLabel: { fontSize: 13, color: "#64748b", marginBottom: 4 },
-  bold: { fontWeight: "bold", color: "#1e293b" },
-  boldPrimary: { fontWeight: "bold", color: "#0284c7" },
-  dropdownTrigger: {
+  searchInputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f8fafc",
+    backgroundColor: "#ffffff",
     borderWidth: 1,
     borderColor: "#cbd5e1",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    marginBottom: 16,
+    height: 48,
   },
-  dropdownTriggerTitle: { fontSize: 15, fontWeight: "600", color: "#1e293b" },
-  dropdownTriggerSubtitle: { fontSize: 12, color: "#64748b", marginTop: 2 },
-  dropdownTriggerPlaceholder: { fontSize: 15, color: "#94a3b8" },
-  dropdownTriggerIcon: { fontSize: 12, color: "#64748b", marginLeft: 8 },
-  rowSelector: { flexDirection: "row", gap: 8 },
-  selectChip: {
+  searchIcon: {
+    fontSize: 18,
+    color: "#7c3aed",
+    marginRight: 10,
+    fontWeight: "bold",
+  },
+  searchInput: {
     flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 8,
+    fontSize: 15,
+    color: "#0f172a",
+    height: "100%",
+  },
+  clearSearchBtn: {
+    padding: 6,
+  },
+  clearSearchText: {
+    color: "#64748b",
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  filterRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginBottom: 18,
+  },
+  filterPill: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 999,
+    backgroundColor: "#ffffff",
     borderWidth: 1,
     borderColor: "#cbd5e1",
-    backgroundColor: "#f8fafc",
+  },
+  filterPillActive: {
+    backgroundColor: "#7c3aed",
+    borderColor: "#7c3aed",
+  },
+  filterPillText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#475569",
+  },
+  filterPillTextActive: {
+    color: "#ffffff",
+  },
+  summaryStrip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 14,
+  },
+  summaryDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#16a34a",
+  },
+  summaryHeader: {
+    fontSize: 13,
+    color: "#475569",
+    fontWeight: "600",
+    flex: 1,
+  },
+
+  /* TARJETAS DE PRÉSTAMOS */
+  loanCard: {
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderLeftWidth: 4,
+    borderLeftColor: "#7c3aed",
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 14,
+  },
+  loanCardPaid: {
+    backgroundColor: "#f0fdf4",
+    borderColor: "#86efac",
+    borderLeftWidth: 5,
+    borderLeftColor: "#16a34a",
+  },
+  loanCardOverdue: {
+    backgroundColor: "#fff1f2",
+    borderColor: "#fecdd3",
+    borderLeftWidth: 5,
+    borderLeftColor: "#e11d48",
+  },
+  loanCardBody: {
+    flex: 1,
+  },
+  loanCardHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 5,
+  },
+  loanCardClientName: {
+    fontSize: 15.5,
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+  loanCardPrincipal: {
+    fontSize: 14.5,
+    fontWeight: "700",
+    color: "#5b21b6",
+  },
+  paidBadge: {
+    backgroundColor: "#16a34a",
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  paidBadgeText: {
+    color: "#ffffff",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  loanDateText: {
+    fontSize: 12.5,
+    fontWeight: "700",
+    color: "#1e293b",
+    marginBottom: 3,
+  },
+  loanDetailText: {
+    fontSize: 12.5,
+    color: "#475569",
+    marginBottom: 2.5,
+  },
+  highlightBalance: {
+    color: "#047857",
+    fontWeight: "800",
+  },
+  highlightInstallment: {
+    color: "#0f172a",
+    fontWeight: "700",
+  },
+  nextInstallmentText: {
+    fontSize: 12.5,
+    color: "#7c3aed",
+    fontWeight: "700",
+    marginTop: 3,
+  },
+  overdueText: {
+    fontSize: 12,
+    color: "#dc2626",
+    fontWeight: "800",
+    marginTop: 5,
+  },
+  payButton: {
+    backgroundColor: "#16a34a",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    justifyContent: "center",
     alignItems: "center",
   },
-  selectChipActive: { backgroundColor: "#0284c7", borderColor: "#0284c7" },
-  selectChipTxt: { fontSize: 14, fontWeight: "600", color: "#475569" },
-  selectChipTxtActive: { color: "#ffffff" },
-  tasaBanner: {
-    backgroundColor: "#fef3c7",
-    padding: 10,
-    borderRadius: 8,
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: "#fde68a",
+  payButtonText: {
+    color: "#ffffff",
+    fontWeight: "800",
+    fontSize: 13.5,
   },
-  tasaBannerText: { fontSize: 13, color: "#92400e", textAlign: "center" },
-  input: {
-    backgroundColor: "#f8fafc",
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
-    color: "#1e293b",
+  loadingBox: {
+    padding: 44,
+    alignItems: "center",
   },
-  calcBox: {
-    backgroundColor: "#f8fafc",
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 16,
+  loadingText: {
+    marginTop: 12,
+    color: "#64748b",
+    fontSize: 14,
+  },
+  emptyBox: {
+    backgroundColor: "#ffffff",
+    padding: 32,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    alignItems: "center",
+  },
+  emptyText: {
+    color: "#64748b",
+    fontSize: 14,
+    textAlign: "center",
+  },
+
+  /* MODAL DE PAGO CLARO MODERNO */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 16,
+  },
+  paymentModalContainer: {
+    backgroundColor: "#ffffff",
+    borderRadius: 18,
+    width: "100%",
+    maxWidth: 520,
+    maxHeight: "90%",
+    overflow: "hidden",
     borderWidth: 1,
     borderColor: "#e2e8f0",
   },
-  calcTitle: {
-    fontSize: 14,
-    fontWeight: "bold",
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e2e8f0",
+    backgroundColor: "#f8fafc",
+  },
+  modalTitle: {
+    fontSize: 17.5,
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+  closeBtn: {
+    padding: 6,
+  },
+  closeBtnText: {
+    fontSize: 18,
+    color: "#64748b",
+    fontWeight: "700",
+  },
+  paymentModalScroll: {
+    padding: 20,
+  },
+  userCard: {
+    backgroundColor: "#f5f3ff",
+    padding: 11,
+    borderRadius: 10,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#ddd6fe",
+  },
+  userCardTitle: {
+    fontSize: 13,
+    color: "#5b21b6",
+  },
+  boldViolet: {
+    fontWeight: "800",
+    color: "#7c3aed",
+  },
+  selectedLoanBanner: {
+    backgroundColor: "#f8fafc",
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderLeftWidth: 4,
+    borderLeftColor: "#16a34a",
+  },
+  selectedLoanTitle: {
+    fontSize: 15.5,
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+  selectedLoanSub: {
+    fontSize: 13,
     color: "#475569",
+    marginTop: 3,
+  },
+  label: {
+    fontSize: 13.5,
+    fontWeight: "700",
+    color: "#334155",
     marginBottom: 8,
+    marginTop: 6,
+  },
+  subLabel: {
+    fontSize: 12.5,
+    color: "#475569",
+    marginBottom: 6,
+  },
+  rowSelector: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 12,
+  },
+  selectChip: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+  },
+  selectChipActive: {
+    backgroundColor: "#7c3aed",
+    borderColor: "#7c3aed",
+  },
+  selectChipTxt: {
+    fontSize: 13.5,
+    fontWeight: "700",
+    color: "#334155",
+  },
+  selectChipTxtActive: {
+    color: "#ffffff",
+  },
+  tasaBanner: {
+    backgroundColor: "#fef3c7",
+    padding: 11,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#fcd34d",
+    marginBottom: 12,
+  },
+  tasaBannerText: {
+    fontSize: 13,
+    color: "#92400e",
+    textAlign: "center",
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: "#0f172a",
+    backgroundColor: "#ffffff",
+    marginBottom: 12,
+  },
+  manualDateBox: {
+    backgroundColor: "#f8fafc",
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    marginBottom: 14,
+  },
+  checkboxRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  checkboxBox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: "#64748b",
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+  },
+  checkboxBoxChecked: {
+    backgroundColor: "#7c3aed",
+    borderColor: "#7c3aed",
+  },
+  checkboxTick: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "bold",
+  },
+  checkboxLabel: {
+    fontSize: 13.5,
+    fontWeight: "700",
+    color: "#334155",
+  },
+  helperText: {
+    fontSize: 11.5,
+    color: "#64748b",
+  },
+  calcBox: {
+    backgroundColor: "#f8fafc",
+    padding: 15,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    marginBottom: 18,
+  },
+  calcTitle: {
+    fontSize: 13.5,
+    fontWeight: "800",
+    color: "#0f172a",
+    marginBottom: 10,
   },
   calcRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingVertical: 4,
+    marginBottom: 6,
   },
-  calcText: { fontSize: 13, color: "#64748b" },
-  manualDateBox: {
-    marginTop: 16,
-    padding: 12,
-    backgroundColor: "#f8fafc",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
+  calcRowLast: {
+    borderTopWidth: 1,
+    borderTopColor: "#e2e8f0",
+    paddingTop: 8,
+    marginTop: 4,
+    marginBottom: 0,
   },
-  checkboxRow: { flexDirection: "row", alignItems: "center" },
-  checkboxBox: {
-    width: 20,
-    height: 20,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    backgroundColor: "#fff",
+  calcText: {
+    fontSize: 13,
+    color: "#475569",
+  },
+  bold: {
+    fontWeight: "700",
+    color: "#0f172a",
+  },
+  boldEmerald: {
+    fontWeight: "800",
+    color: "#16a34a",
+    fontSize: 19,
+    fontWeight: "bold",
+  },
+  confirmPayButton: {
+    backgroundColor: "#16a34a",
+    paddingVertical: 15,
+    borderRadius: 12,
     alignItems: "center",
-    justifyContent: "center",
-    marginRight: 8,
   },
-  checkboxBoxChecked: { backgroundColor: "#0284c7", borderColor: "#0284c7" },
-  checkboxTick: { color: "#fff", fontSize: 12, fontWeight: "bold" },
-  checkboxLabel: { fontSize: 14, fontWeight: "600", color: "#334155" },
-  helperText: { fontSize: 11, color: "#94a3b8", marginTop: 4 },
-  button: {
-    backgroundColor: "#0284c7",
-    borderRadius: 8,
-    paddingVertical: 14,
-    alignItems: "center",
-    marginTop: 24,
+  buttonText: {
+    color: "#ffffff",
+    fontSize: 15.5,
+    fontWeight: "800",
   },
-  buttonText: { color: "#ffffff", fontSize: 16, fontWeight: "bold" },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 16,
-  },
-  modalContainer: {
-    width: "100%",
-    maxWidth: 500,
-    backgroundColor: "#ffffff",
-    borderRadius: 16,
-    maxHeight: "80%",
-    overflow: "hidden",
-  },
-  modalHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
-  },
-  modalTitle: { fontSize: 18, fontWeight: "bold", color: "#1e293b" },
-  closeBtn: { padding: 4 },
-  closeBtnText: { fontSize: 18, color: "#64748b", fontWeight: "bold" },
-  searchBoxContainer: { padding: 12, backgroundColor: "#f8fafc" },
-  modalSearchInput: {
-    backgroundColor: "#ffffff",
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
-  },
-  modalList: { paddingHorizontal: 12 },
-  modalListContent: { paddingVertical: 8 },
-  modalClientCard: {
-    padding: 12,
-    borderRadius: 8,
-    backgroundColor: "#f8fafc",
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-  },
-  modalClientCardSelected: {
-    backgroundColor: "#0284c7",
-    borderColor: "#0284c7",
-  },
-  modalClientName: { fontSize: 15, fontWeight: "600", color: "#1e293b" },
-  modalClientCedula: { fontSize: 13, color: "#64748b", marginTop: 2 },
-  textWhite: { color: "#ffffff" },
-  textWhiteSub: { color: "#e0f2fe" },
+
+  /* MODALES DE TASA Y RESULTADO */
   modalExitoContainer: {
-    width: "100%",
-    maxWidth: 340,
     backgroundColor: "#ffffff",
-    borderRadius: 20,
+    borderRadius: 18,
     padding: 24,
+    width: "100%",
+    maxWidth: 400,
     alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 5,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
   },
   successIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: "#dcfce7",
-    alignItems: "center",
     justifyContent: "center",
-    marginBottom: 16,
+    alignItems: "center",
+    marginBottom: 14,
   },
-  errorIconContainer: { backgroundColor: "#fee2e2" },
-  successIconText: { fontSize: 28, color: "#16a34a", fontWeight: "bold" },
-  modalExitoTitle: {
-    fontSize: 20,
+  errorIconContainer: {
+    backgroundColor: "#fee2e2",
+  },
+  successIconText: {
+    fontSize: 28,
     fontWeight: "bold",
-    color: "#1e293b",
+    color: "#16a34a",
+  },
+  errorIconText: {
+    color: "#dc2626",
+  },
+  modalExitoTitle: {
+    fontSize: 19,
+    fontWeight: "800",
+    color: "#0f172a",
     marginBottom: 8,
     textAlign: "center",
   },
   modalExitoMessage: {
     fontSize: 14,
-    color: "#64748b",
+    color: "#475569",
     textAlign: "center",
-    marginBottom: 24,
+    marginBottom: 20,
   },
   successButton: {
-    width: "100%",
-    backgroundColor: "#0284c7",
-    borderRadius: 10,
+    backgroundColor: "#16a34a",
     paddingVertical: 12,
+    paddingHorizontal: 28,
+    borderRadius: 10,
+    width: "100%",
     alignItems: "center",
   },
-  errorButton: { backgroundColor: "#dc2626" },
-  successButtonText: { color: "#ffffff", fontSize: 15, fontWeight: "bold" },
+  errorButton: {
+    backgroundColor: "#dc2626",
+  },
+  successButtonText: {
+    color: "#ffffff",
+    fontWeight: "100",
+    fontSize: 15,
+  },
 });

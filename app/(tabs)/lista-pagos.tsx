@@ -56,6 +56,10 @@ export default function PagosHabilesScreen() {
   const [busqueda, setBusqueda] = useState("");
   const [todosLosPagos, setTodosLosPagos] = useState<PagoItem[]>([]);
 
+  const [modalEliminarVisible, setModalEliminarVisible] = useState(false);
+  const [pagoAEliminar, setPagoAEliminar] = useState<PagoItem | null>(null);
+  const [eliminandoPago, setEliminandoPago] = useState(false);
+
   const [modalDetalleVisible, setModalDetalleVisible] = useState(false);
   const [pagoSeleccionado, setPagoSeleccionado] = useState<PagoItem | null>(
     null,
@@ -383,6 +387,37 @@ export default function PagosHabilesScreen() {
       console.log("Error inesperado al editar:", err);
     } finally {
       setGuardandoEdicion(false);
+    }
+  };
+
+  const abrirConfirmacionEliminar = (item: PagoItem) => {
+    setPagoAEliminar(item);
+    setModalEliminarVisible(true);
+  };
+
+  const confirmarEliminarPago = async () => {
+    if (!pagoAEliminar) return;
+
+    try {
+      setEliminandoPago(true);
+      const { error } = await supabase
+        .from("pagos")
+        .delete()
+        .eq("id", pagoAEliminar.id);
+
+      if (error) {
+        alert("Error al eliminar el pago: " + error.message);
+        return;
+      }
+
+      setModalEliminarVisible(false);
+      setPagoAEliminar(null);
+      await cargarPagosYFiltrarSemana();
+      setModalExitoVisible(true);
+    } catch (err) {
+      console.log("Error inesperado al eliminar:", err);
+    } finally {
+      setEliminandoPago(false);
     }
   };
 
@@ -749,6 +784,23 @@ export default function PagosHabilesScreen() {
                           Editar
                         </Text>
                       </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.btnVerAccion,
+                          { backgroundColor: "#dc2626" },
+                        ]}
+                        onPress={() => abrirConfirmacionEliminar(item)}
+                      >
+                        <Text
+                          style={[
+                            styles.btnVerAccionText,
+                            { color: "#ffffff" },
+                          ]}
+                        >
+                          Eliminar
+                        </Text>
+                      </TouchableOpacity>
                     </View>
                   </View>
                 );
@@ -883,42 +935,62 @@ export default function PagosHabilesScreen() {
                 <Text style={styles.inputLabelModern}>💵 Monto Abonado</Text>
                 <TextInput
                   style={styles.inputModalModern}
+                  keyboardType="numeric"
                   value={montoEditado}
                   onChangeText={setMontoEditado}
-                  keyboardType="numeric"
-                  placeholder="Ej: 50000"
+                  placeholder="Monto abonado"
                   placeholderTextColor="#94a3b8"
                 />
               </View>
 
               <View style={styles.inputGroupModern}>
                 <Text style={styles.inputLabelModern}>
-                  📅 Fecha del Pago (YYYY-MM-DD)
+                  📅 Fecha de Pago (YYYY-MM-DD)
                 </Text>
                 <TextInput
                   style={styles.inputModalModern}
                   value={fechaEditada}
                   onChangeText={setFechaEditada}
-                  placeholder="Ej: 2026-09-27"
+                  placeholder="YYYY-MM-DD"
                   placeholderTextColor="#94a3b8"
                 />
               </View>
             </ScrollView>
 
-            <View style={styles.modalFooterModern}>
+            <View
+              style={{
+                flexDirection: "row",
+                gap: 10,
+                marginTop: 14,
+              }}
+            >
               <TouchableOpacity
-                style={styles.btnCancelarModern}
+                style={[
+                  styles.btnEntendidoError,
+                  { flex: 1, backgroundColor: "#e2e8f0" },
+                ]}
                 onPress={() => setModalEditarVisible(false)}
+                disabled={guardandoEdicion}
               >
-                <Text style={styles.btnCancelarTextModern}>Cancelar</Text>
+                <Text
+                  style={[styles.btnEntendidoTextError, { color: "#334155" }]}
+                >
+                  Cancelar
+                </Text>
               </TouchableOpacity>
+
               <TouchableOpacity
-                style={styles.btnGuardarModern}
+                style={[
+                  styles.btnEntendidoError,
+                  { flex: 1, backgroundColor: "#16a34a" },
+                ]}
                 onPress={guardarEdicionPago}
                 disabled={guardandoEdicion}
               >
-                <Text style={styles.btnGuardarTextModern}>
-                  {guardandoEdicion ? "Guardando..." : "Guardar Cambios"}
+                <Text
+                  style={[styles.btnEntendidoTextError, { color: "#ffffff" }]}
+                >
+                  {guardandoEdicion ? "Guardando..." : "Guardar"}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -926,29 +998,93 @@ export default function PagosHabilesScreen() {
         </View>
       </Modal>
 
-      {/* MODAL DE ERROR DE VALIDACIÓN */}
+      {/* MODAL DE CONFIRMACIÓN PARA ELIMINAR PAGO */}
       <Modal
         animationType="fade"
         transparent={true}
-        visible={modalErrorVisible}
-        onRequestClose={() => setModalErrorVisible(false)}
+        visible={modalEliminarVisible}
+        onRequestClose={() => !eliminandoPago && setModalEliminarVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContentError}>
-            <View style={styles.errorIconContainer}>
-              <Text style={{ fontSize: 28 }}>⚠️</Text>
+          <View style={styles.modalContentModern}>
+            <View style={styles.modalHeaderModern}>
+              <View>
+                <Text style={[styles.modalTitleModern, { color: "#dc2626" }]}>
+                  Eliminar Pago
+                </Text>
+                <Text style={styles.modalSubtitleModern}>
+                  Esta acción no se puede deshacer
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() =>
+                  !eliminandoPago && setModalEliminarVisible(false)
+                }
+                style={styles.closeIconBtnModern}
+              >
+                <Text style={styles.closeIconTextModern}>✕</Text>
+              </TouchableOpacity>
             </View>
-            <Text style={styles.modalTitleError}>Monto Excedido</Text>
-            <Text style={styles.modalTextError}>
-              El monto ingresado supera el saldo pendiente máximo permitido (
-              {mensajeErrorValidacion.maximoPermitido.toFixed(2)}).
-            </Text>
-            <TouchableOpacity
-              style={styles.btnEntendidoError}
-              onPress={() => setModalErrorVisible(false)}
+
+            {pagoAEliminar && (
+              <View style={{ marginVertical: 12, gap: 6 }}>
+                <Text style={styles.modalLabelModern}>
+                  ¿Seguro que deseas eliminar este abono?
+                </Text>
+                <Text style={styles.modalValueBoldModern}>
+                  Cliente: {pagoAEliminar.clientes?.nombres}{" "}
+                  {pagoAEliminar.clientes?.apellidos}
+                </Text>
+                <Text
+                  style={[styles.modalValueBoldModern, { color: "#16a34a" }]}
+                >
+                  Monto abonado:{" "}
+                  {Number(pagoAEliminar.monto_pagado || 0).toFixed(2)}{" "}
+                  {pagoAEliminar.moneda_pago}
+                </Text>
+                <Text style={styles.modalValueModern}>
+                  Fecha: {formatearFechaLocal(pagoAEliminar.fecha_pago)}
+                </Text>
+              </View>
+            )}
+
+            <View
+              style={{
+                flexDirection: "row",
+                gap: 10,
+                marginTop: 14,
+              }}
             >
-              <Text style={styles.btnEntendidoTextError}>Entendido</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.btnEntendidoError,
+                  { flex: 1, backgroundColor: "#e2e8f0" },
+                ]}
+                onPress={() => setModalEliminarVisible(false)}
+                disabled={eliminandoPago}
+              >
+                <Text
+                  style={[styles.btnEntendidoTextError, { color: "#334155" }]}
+                >
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.btnEntendidoError,
+                  { flex: 1, backgroundColor: "#dc2626" },
+                ]}
+                onPress={confirmarEliminarPago}
+                disabled={eliminandoPago}
+              >
+                <Text
+                  style={[styles.btnEntendidoTextError, { color: "#ffffff" }]}
+                >
+                  {eliminandoPago ? "Eliminando..." : "Sí, eliminar"}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -961,21 +1097,51 @@ export default function PagosHabilesScreen() {
         onRequestClose={() => setModalExitoVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContentSuccess}>
-            <View style={styles.successIconContainer}>
-              <Text style={{ fontSize: 28 }}>✅</Text>
-            </View>
-            <Text style={styles.modalTitleSuccess}>
-              ¡Actualizado con Éxito!
-            </Text>
-            <Text style={styles.modalTextSuccess}>
-              El pago ha sido modificado correctamente en el sistema.
+          <View style={styles.modalContentModern}>
+            <Text style={styles.modalTitleModern}>Operación Exitosa</Text>
+            <Text style={styles.modalSubtitleModern}>
+              Los cambios se han aplicado correctamente.
             </Text>
             <TouchableOpacity
-              style={styles.btnAceptarSuccess}
+              style={[
+                styles.btnEntendidoError,
+                { backgroundColor: "#16a34a", marginTop: 16 },
+              ]}
               onPress={() => setModalExitoVisible(false)}
             >
-              <Text style={styles.btnAceptarTextSuccess}>Aceptar</Text>
+              <Text
+                style={[styles.btnEntendidoTextError, { color: "#ffffff" }]}
+              >
+                Aceptar
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL DE ERROR DE VALIDACIÓN */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={modalErrorVisible}
+        onRequestClose={() => setModalErrorVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContentModern}>
+            <Text style={[styles.modalTitleModern, { color: "#dc2626" }]}>
+              Monto Inválido
+            </Text>
+            <Text style={styles.modalSubtitleModern}>
+              El monto ingresado (
+              {mensajeErrorValidacion.montoIngresado.toFixed(2)}) supera el
+              máximo permitido (
+              {mensajeErrorValidacion.maximoPermitido.toFixed(2)}).
+            </Text>
+            <TouchableOpacity
+              style={[styles.btnEntendidoError, { marginTop: 16 }]}
+              onPress={() => setModalErrorVisible(false)}
+            >
+              <Text style={styles.btnEntendidoTextError}>Entendido</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -987,27 +1153,24 @@ export default function PagosHabilesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f0f2f5",
-    padding: 12,
-    width: "100%",
-    height: "100%",
+    backgroundColor: "#f8fafc",
+    padding: 16,
   },
   headerContainer: {
-    marginBottom: 16,
     flexDirection: "row",
-    flexWrap: "wrap",
     justifyContent: "space-between",
     alignItems: "center",
+    marginBottom: 14,
+    flexWrap: "wrap",
     gap: 10,
-    width: "100%",
   },
   titleWrapper: {
     flex: 1,
-    minWidth: 250,
+    minWidth: 200,
   },
   mainTitle: {
     fontSize: 22,
-    fontWeight: "bold",
+    fontWeight: "700",
     color: "#0f172a",
   },
   subtitle: {
@@ -1021,24 +1184,24 @@ const styles = StyleSheet.create({
   },
   btnExcel: {
     backgroundColor: "#16a34a",
-    paddingVertical: 10,
+    paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 8,
   },
   btnExcelText: {
     color: "#ffffff",
-    fontWeight: "bold",
+    fontWeight: "600",
     fontSize: 13,
   },
   btnPdf: {
     backgroundColor: "#dc2626",
-    paddingVertical: 10,
+    paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 8,
   },
   btnPdfText: {
     color: "#ffffff",
-    fontWeight: "bold",
+    fontWeight: "600",
     fontSize: 13,
   },
   searchContainer: {
@@ -1047,17 +1210,12 @@ const styles = StyleSheet.create({
   searchInput: {
     backgroundColor: "#ffffff",
     borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    height: 42,
+    borderColor: "#e2e8f0",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 14,
     color: "#0f172a",
-  },
-  loaderContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 40,
   },
   tableFullContainer: {
     flex: 1,
@@ -1066,127 +1224,132 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#e2e8f0",
     overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
   },
-  horizontalScrollContent: { paddingBottom: 20, minWidth: 1300, flexGrow: 1 },
+  horizontalScrollContent: {
+    minWidth: "100%",
+  },
   gridRow: {
     flexDirection: "row",
+    alignItems: "center",
     borderBottomWidth: 1,
     borderBottomColor: "#f1f5f9",
-    alignItems: "center",
-    minHeight: 56,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
   },
   gridHeader: {
     backgroundColor: "#0f172a",
-    borderBottomWidth: 2,
-    borderBottomColor: "#0f172a",
-    minHeight: 48,
+    paddingVertical: 12,
   },
   rowAlternate: {
-    backgroundColor: "#fafbfc",
+    backgroundColor: "#f8fafc",
   },
   gridCell: {
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    paddingHorizontal: 6,
     justifyContent: "center",
   },
   headerText: {
-    fontSize: 12,
-    fontWeight: "bold",
     color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "700",
   },
   cellText: {
-    fontSize: 14,
+    fontSize: 15,
     color: "#334155",
   },
   cellTextBold: {
-    fontSize: 14,
-    fontWeight: "bold",
+    fontSize: 15,
+    fontWeight: "600",
     color: "#0f172a",
   },
-  colFecha: { width: 110 },
-  colCliente: { flex: 1, minWidth: 180 },
-  colMonto: { width: 140 },
-  colMoneda: { width: 90 },
-  colPorcentaje: { width: 100 },
-  colTotal: { width: 130 },
-  colEmpleado: { width: 140 },
-  colAccion: { width: 220, flexDirection: "row", alignItems: "center", gap: 6 },
+  colFecha: {
+    width: 315,
+  },
+  colCliente: {
+    width: 250,
+  },
+  colMonto: {
+    width: 155,
+  },
+  colMoneda: {
+    width: 90,
+  },
+  colPorcentaje: {
+    width: 155,
+  },
+  colTotal: {
+    width: 480,
+  },
+  colEmpleado: {
+    width: 350,
+  },
+  colAccion: {
+    width: 465,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
   badgeMoneda: {
     backgroundColor: "#e0f2fe",
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 3,
     borderRadius: 6,
     alignSelf: "flex-start",
   },
   badgeMonedaText: {
-    fontSize: 12,
-    fontWeight: "bold",
-    color: "#0369a1",
+    color: "#0284c7",
+    fontSize: 11,
+    fontWeight: "700",
   },
   badgeEstado: {
-    paddingHorizontal: 6,
-    paddingVertical: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 6,
   },
   badgeTextEstado: {
     fontSize: 10,
-    fontWeight: "bold",
+    fontWeight: "700",
   },
   btnVerAccion: {
     backgroundColor: "#f1f5f9",
-    paddingHorizontal: 8,
+    paddingHorizontal: 5,
     paddingVertical: 6,
     borderRadius: 6,
   },
   btnVerAccionText: {
     fontSize: 12,
-    fontWeight: "bold",
-    color: "#475569",
+    fontWeight: "600",
+    color: "#0f172a",
   },
   emptyContainer: {
-    padding: 24,
+    padding: 32,
     alignItems: "center",
   },
   emptyText: {
-    fontSize: 14,
     color: "#64748b",
+    fontSize: 14,
   },
-  // ESTILOS MODERNOS PARA MODALES
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.6)",
+    backgroundColor: "rgba(15, 23, 42, 0.55)",
     justifyContent: "center",
     alignItems: "center",
     padding: 16,
   },
   modalContentModern: {
-    width: "90%",
+    width: "100%",
     maxWidth: 440,
     backgroundColor: "#ffffff",
-    borderRadius: 20,
-    padding: 24,
-    shadowColor: "#0f172a",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 10,
+    borderRadius: 14,
+    padding: 20,
   },
   modalHeaderModern: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
-    paddingBottom: 12,
+    marginBottom: 14,
   },
   modalTitleModern: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "700",
     color: "#0f172a",
   },
@@ -1196,40 +1359,35 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   closeIconBtnModern: {
-    backgroundColor: "#f1f5f9",
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
+    padding: 4,
   },
   closeIconTextModern: {
-    fontSize: 14,
-    fontWeight: "bold",
+    fontSize: 18,
     color: "#64748b",
+    fontWeight: "700",
   },
   modalRowModern: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingVertical: 10,
+    paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: "#f8fafc",
+    borderBottomColor: "#f1f5f9",
   },
   modalLabelModern: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#64748b",
   },
   modalValueModern: {
-    fontSize: 14,
-    color: "#1e293b",
+    fontSize: 13,
+    color: "#0f172a",
   },
   modalValueBoldModern: {
-    fontSize: 14,
-    fontWeight: "bold",
-    color: "#1e293b",
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#0f172a",
   },
   inputGroupModern: {
-    marginBottom: 16,
+    marginBottom: 12,
   },
   inputLabelModern: {
     fontSize: 13,
@@ -1238,138 +1396,25 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   inputModalModern: {
-    borderWidth: 1.5,
-    borderColor: "#e2e8f0",
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    height: 48,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
     color: "#0f172a",
     backgroundColor: "#f8fafc",
-    fontSize: 15,
-  },
-  modalFooterModern: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 20,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: "#f1f5f9",
-  },
-  btnCancelarModern: {
-    flex: 1,
-    backgroundColor: "#f1f5f9",
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  btnCancelarTextModern: {
-    color: "#475569",
-    fontWeight: "600",
-    fontSize: 15,
-  },
-  btnGuardarModern: {
-    flex: 1.2,
-    backgroundColor: "#2563eb",
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: "center",
-    shadowColor: "#2563eb",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  btnGuardarTextModern: {
-    color: "#ffffff",
-    fontWeight: "bold",
-    fontSize: 15,
-  },
-  modalContentError: {
-    width: "90%",
-    maxWidth: 380,
-    backgroundColor: "#ffffff",
-    borderRadius: 20,
-    padding: 24,
-    alignItems: "center",
-    elevation: 10,
-  },
-  errorIconContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "#fff1f2",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  modalTitleError: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#0f172a",
-    marginBottom: 8,
-    textAlign: "center",
-  },
-  modalTextError: {
-    fontSize: 14,
-    color: "#64748b",
-    textAlign: "center",
-    lineHeight: 20,
-    marginBottom: 24,
   },
   btnEntendidoError: {
-    width: "100%",
-    backgroundColor: "#2563eb",
-    paddingVertical: 14,
-    borderRadius: 12,
+    backgroundColor: "#0f172a",
+    paddingVertical: 11,
+    borderRadius: 8,
     alignItems: "center",
+    marginTop: 12,
   },
   btnEntendidoTextError: {
     color: "#ffffff",
-    fontWeight: "bold",
-    fontSize: 15,
-  },
-  modalContentSuccess: {
-    width: "90%",
-    maxWidth: 380,
-    backgroundColor: "#ffffff",
-    borderRadius: 20,
-    padding: 24,
-    alignItems: "center",
-    elevation: 10,
-  },
-  successIconContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "#f0fdf4",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  modalTitleSuccess: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#0f172a",
-    marginBottom: 8,
-    textAlign: "center",
-  },
-  modalTextSuccess: {
+    fontWeight: "600",
     fontSize: 14,
-    color: "#64748b",
-    textAlign: "center",
-    lineHeight: 20,
-    marginBottom: 24,
-  },
-  btnAceptarSuccess: {
-    width: "100%",
-    backgroundColor: "#16a34a",
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  btnAceptarTextSuccess: {
-    color: "#ffffff",
-    fontWeight: "bold",
-    fontSize: 15,
   },
 });

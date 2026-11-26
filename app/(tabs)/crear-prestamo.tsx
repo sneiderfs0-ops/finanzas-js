@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { useLocalSearchParams } from "expo-router";
 import {
   StyleSheet,
   Text,
@@ -26,6 +25,7 @@ interface Cliente {
   cedula: string;
   nombres: string;
   apellidos: string;
+  telefono?: string;
   registrado_por_cedula?: string;
   ruta_id?: string;
 }
@@ -33,9 +33,11 @@ interface Cliente {
 interface PrestamoActivo {
   id: string;
   cedula: string;
+  monto_prestado?: number;
   monto_total: number;
   saldo_pendiente: number;
   moneda: string;
+  frecuencia?: string;
   fecha_prestamo: string;
 }
 
@@ -47,11 +49,18 @@ export default function CrearPrestamoScreen({ route }: any) {
 
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [cajas, setCajas] = useState<CajaOption[]>([]);
+  const [cargandoClientes, setCargandoClientes] = useState(true);
+
   const [clienteSeleccionado, setClienteSeleccionado] = useState<string | null>(
     clienteCedulaParam,
   );
 
-  const [modalVisible, setModalVisible] = useState(false);
+  // Modal principal de Crear Préstamo / Renovación al seleccionar un cliente
+  const [modalPrestamoVisible, setModalPrestamoVisible] = useState(false);
+  // Modal informativo de detalles de la renovación
+  const [modalInfoRenovacionVisible, setModalInfoRenovacionVisible] =
+    useState(false);
+
   const [nombreBusqueda, setNombreBusqueda] = useState("");
 
   const [modalResultadoVisible, setModalResultadoVisible] = useState(false);
@@ -80,7 +89,7 @@ export default function CrearPrestamoScreen({ route }: any) {
     new Date().toISOString().split("T")[0],
   );
 
-  // NUEVOS ESTADOS PARA LA RENOVACIÓN DE PRÉSTAMOS
+  // ESTADOS PARA LA RENOVACIÓN DE PRÉSTAMOS
   const [esRenovacion, setEsRenovacion] = useState(false);
   const [prestamosActivosCliente, setPrestamosActivosCliente] = useState<
     PrestamoActivo[]
@@ -115,9 +124,10 @@ export default function CrearPrestamoScreen({ route }: any) {
       const { data, error } = await supabase
         .from("prestamos")
         .select(
-          "id, cedula, monto_total, saldo_pendiente, moneda, fecha_prestamo",
+          "id, cedula, monto_prestado, monto_total, saldo_pendiente, moneda, frecuencia, fecha_prestamo",
         )
         .eq("cedula", cedulaCliente)
+        .eq("estado", "activo")
         .gt("saldo_pendiente", 0);
 
       if (error) throw error;
@@ -128,6 +138,7 @@ export default function CrearPrestamoScreen({ route }: any) {
   };
 
   const obtenerUsuarioLogueadoYCargarDatos = async () => {
+    setCargandoClientes(true);
     try {
       const { data: authData } = await supabase.auth.getUser();
       const userId = authData.user?.id;
@@ -135,6 +146,7 @@ export default function CrearPrestamoScreen({ route }: any) {
 
       if (!userId && !emailLogueado) {
         mostrarMensaje("error", "No hay una sesión activa en el sistema.");
+        setCargandoClientes(false);
         return;
       }
 
@@ -201,6 +213,7 @@ export default function CrearPrestamoScreen({ route }: any) {
           "error",
           "No se pudo identificar qué empleado, secretaria o administrador está realizando el registro.",
         );
+        setCargandoClientes(false);
         return;
       }
 
@@ -215,6 +228,8 @@ export default function CrearPrestamoScreen({ route }: any) {
         "Error de conexión al verificar los datos del usuario.",
       );
       await cargarCajas();
+    } finally {
+      setCargandoClientes(false);
     }
   };
 
@@ -247,7 +262,9 @@ export default function CrearPrestamoScreen({ route }: any) {
 
         const { data, error } = await supabase
           .from("clientes")
-          .select("cedula, nombres, apellidos, registrado_por_cedula, ruta_id")
+          .select(
+            "cedula, nombres, apellidos, telefono, registrado_por_cedula, ruta_id",
+          )
           .eq("ruta_id", rutaRelacion.ruta_id)
           .order("nombres", { ascending: true });
 
@@ -256,7 +273,9 @@ export default function CrearPrestamoScreen({ route }: any) {
       } else {
         const { data, error } = await supabase
           .from("clientes")
-          .select("cedula, nombres, apellidos, registrado_por_cedula, ruta_id")
+          .select(
+            "cedula, nombres, apellidos, telefono, registrado_por_cedula, ruta_id",
+          )
           .order("nombres", { ascending: true });
 
         if (error) throw error;
@@ -265,6 +284,14 @@ export default function CrearPrestamoScreen({ route }: any) {
     } catch (error: any) {
       console.log("Error cargando clientes:", error.message);
     }
+  };
+
+  const abrirModalCliente = (cedula: string) => {
+    setClienteSeleccionado(cedula);
+    setEsRenovacion(false);
+    setPrestamoPadreSeleccionado(null);
+    setMonto("");
+    setModalPrestamoVisible(true);
   };
 
   const handleCambiarFrecuencia = (
@@ -328,7 +355,7 @@ export default function CrearPrestamoScreen({ route }: any) {
 
   const limpiarMontoParaCalculo = (val: string) => {
     if (!val) return 0;
-    let numStr = val.replace(/\./g, "");
+    const numStr = val.replace(/\./g, "");
     return parseInt(numStr, 10) || 0;
   };
 
@@ -338,7 +365,17 @@ export default function CrearPrestamoScreen({ route }: any) {
 
   const totalInteres = Math.round((montoNum * porcentajeNum) / 100);
   const montoTotal = montoNum + totalInteres;
-  const valorCuota = cuotasNum > 0 ? Math.round(montoTotal / cuotasNum) : 0;
+  // Redondeo hacia arriba al múltiplo de 100 más cercano (ej: 20.833 -> 20.900):
+  const valorCuota =
+    cuotasNum > 0 ? Math.ceil(montoTotal / cuotasNum / 100) * 100 : 0;
+
+  const prestamoPadreObj = prestamosActivosCliente.find(
+    (p) => p.id === prestamoPadreSeleccionado,
+  );
+  const saldoPendientePadre = Number(prestamoPadreObj?.saldo_pendiente || 0);
+  const efectivoAEntregarRenovacion = esRenovacion
+    ? Math.max(0, montoNum - saldoPendientePadre)
+    : montoNum;
 
   const mostrarMensaje = (tipo: "exito" | "error", mensaje: string) => {
     setTipoResultado(tipo);
@@ -394,9 +431,6 @@ export default function CrearPrestamoScreen({ route }: any) {
 
       if (cajaError) throw cajaError;
 
-      const saldoDisponible = Number(cajaInfo?.saldo_actual || 0);
-
-      // Estructura de datos a insertar con el soporte opcional de prestamo_padre_id
       const objetoPrestamo: any = {
         cedula: clienteSeleccionado,
         moneda: moneda,
@@ -428,10 +462,8 @@ export default function CrearPrestamoScreen({ route }: any) {
 
       if (errorPrestamo) throw errorPrestamo;
 
-      // Reiniciar formulario y campos de renovación
       setMonto("");
-      setClienteSeleccionado(null);
-      setNombreBusqueda("");
+      setModalPrestamoVisible(false);
       setUsarFechaManual(false);
       setFechaManual(new Date().toISOString().split("T")[0]);
       setEsRenovacion(false);
@@ -451,7 +483,7 @@ export default function CrearPrestamoScreen({ route }: any) {
         err.message ||
         "Ocurrió un error inesperado al intentar guardar el préstamo.";
       if (mensajeErrorFinal.toLowerCase().includes("numeric field overflow")) {
-        mensajeErrorFinal = `⚠️ El monto ingresado ($ ${formatearSinDecimales(montoNum)} ${moneda}) is demasiado grande y excede el límite permitido por la base de datos.`;
+        mensajeErrorFinal = `⚠️ El monto ingresado ($ ${formatearSinDecimales(montoNum)} ${moneda}) es demasiado grande y excede el límite permitido por la base de datos.`;
       }
 
       mostrarMensaje("error", mensajeErrorFinal);
@@ -460,10 +492,17 @@ export default function CrearPrestamoScreen({ route }: any) {
     }
   };
 
-  const clientesFiltrados = clientes.filter((c) =>
+  // Ordenar clientes alfabéticamente de la A a la Z y filtrar por búsqueda
+  const clientesOrdenadosAZ = [...clientes].sort((a, b) => {
+    const nombreA = `${a.nombres || ""} ${a.apellidos || ""}`.trim();
+    const nombreB = `${b.nombres || ""} ${b.apellidos || ""}`.trim();
+    return nombreA.localeCompare(nombreB, "es", { sensitivity: "base" });
+  });
+
+  const clientesFiltrados = clientesOrdenadosAZ.filter((c) =>
     `${c.nombres} ${c.apellidos} ${c.cedula}`
       .toLowerCase()
-      .includes(nombreBusqueda.toLowerCase()),
+      .includes(nombreBusqueda.trim().toLowerCase()),
   );
 
   const clienteObjetoSeleccionado = clientes.find(
@@ -485,414 +524,520 @@ export default function CrearPrestamoScreen({ route }: any) {
         keyboardShouldPersistTaps="handled"
         automaticallyAdjustKeyboardInsets={true}
       >
-        <View style={[styles.mainCard, isWebOrTablet && styles.mainCardWeb]}>
-          <Text style={styles.title}>Nuevo Préstamo</Text>
+        <View style={styles.innerWrapper}>
+          {/* BUSCADOR DE CLIENTES */}
+          <Text style={styles.sectionLabel}>Buscar cliente por nombre</Text>
+          <View style={styles.searchInputWrapper}>
+            <Text style={styles.searchIcon}>⌕</Text>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Escribe el nombre o cédula del cliente..."
+              placeholderTextColor="#94a3b8"
+              value={nombreBusqueda}
+              onChangeText={setNombreBusqueda}
+            />
+            {nombreBusqueda.length > 0 && (
+              <TouchableOpacity
+                onPress={() => setNombreBusqueda("")}
+                style={styles.clearSearchBtn}
+              >
+                <Text style={styles.clearSearchText}>✕</Text>
+              </TouchableOpacity>
+            )}
+          </View>
 
-          {usuarioActual && (
-            <View style={styles.userCard}>
-              <Text style={styles.userCardTitle}>
-                Registrado por ({usuarioActual.tipo}):
-              </Text>
-              <Text style={styles.userCardText}>
-                {usuarioActual.nombreCompleto}
+          <View style={styles.summaryStrip}>
+            <View style={styles.summaryDot} />
+            <Text style={styles.summaryHeader}>
+              Clientes disponibles (A - Z): {clientesFiltrados.length}
+            </Text>
+          </View>
+
+          {/* LISTA DE CLIENTES DE LA A A LA Z */}
+          {cargandoClientes ? (
+            <View style={styles.loadingBox}>
+              <ActivityIndicator size="large" color="#7c3aed" />
+              <Text style={styles.loadingText}>Cargando clientes...</Text>
+            </View>
+          ) : clientesFiltrados.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>
+                No se encontraron clientes coincidentes en esta ruta.
               </Text>
             </View>
-          )}
-
-          <Text style={styles.label}>1. Seleccionar Moneda</Text>
-          <View style={styles.rowSelector}>
-            {(["USD", "COP"] as const).map((m) => (
-              <TouchableOpacity
-                key={m}
-                style={[
-                  styles.selectChip,
-                  moneda === m && styles.selectChipActive,
-                ]}
-                onPress={() => handleCambiarMoneda(m)}
-              >
-                <Text
+          ) : (
+            clientesFiltrados.map((item) => {
+              const isSelected = clienteSeleccionado === item.cedula;
+              return (
+                <TouchableOpacity
+                  key={item.cedula}
                   style={[
-                    styles.selectChipTxt,
-                    moneda === m && styles.selectChipTxtActive,
+                    styles.clientCard,
+                    isSelected && styles.clientCardSelected,
                   ]}
+                  activeOpacity={0.8}
+                  onPress={() => abrirModalCliente(item.cedula)}
                 >
-                  {m === "USD" ? "💵 Dólares (USD)" : "🇨🇴 Pesos (COP)"}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={styles.label}>2. Método de Desembolso</Text>
-          <View style={styles.rowSelector}>
-            {[
-              { id: "efectivo", label: `Efectivo (${moneda})` },
-              { id: "transferencia", label: `Transferencia (${moneda})` },
-            ].map((t) => (
-              <TouchableOpacity
-                key={t.id}
-                style={[
-                  styles.selectChip,
-                  tipoPago === t.id && styles.selectChipActive,
-                ]}
-                onPress={() => setTipoPago(t.id as any)}
-              >
-                <Text
-                  style={[
-                    styles.selectChipTxt,
-                    tipoPago === t.id && styles.selectChipTxtActive,
-                  ]}
-                >
-                  {t.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={styles.label}>3. Cliente</Text>
-          <TouchableOpacity
-            style={styles.dropdownTrigger}
-            onPress={() => setModalVisible(true)}
-            activeOpacity={0.7}
-          >
-            {clienteObjetoSeleccionado ? (
-              <View style={{ flex: 1 }}>
-                <Text style={styles.dropdownTriggerTitle}>
-                  {clienteObjetoSeleccionado.nombres}{" "}
-                  {clienteObjetoSeleccionado.apellidos}
-                </Text>
-              </View>
-            ) : (
-              <Text style={styles.dropdownTriggerPlaceholder}>
-                Seleccionar cliente...
-              </Text>
-            )}
-            <Text style={styles.dropdownTriggerIcon}>▼</Text>
-          </TouchableOpacity>
-
-          {/* ======================================================== */}
-          {/* BLOQUE DE CHECKBOX DE RENOVACIÓN DE PRÉSTAMO            */}
-          {/* ======================================================== */}
-          <View style={styles.adminDateContainer}>
-            <TouchableOpacity
-              style={styles.checkboxRow}
-              onPress={() => setEsRenovacion(!esRenovacion)}
-              activeOpacity={0.8}
-            >
-              <View
-                style={[
-                  styles.checkboxBox,
-                  esRenovacion && styles.checkboxBoxActive,
-                ]}
-              >
-                {esRenovacion && <Text style={styles.checkboxCheck}>✓</Text>}
-              </View>
-              <Text style={styles.checkboxLabel}>
-                🔄 ¿Renovación del préstamo?
-              </Text>
-            </TouchableOpacity>
-
-            {esRenovacion && (
-              <View style={styles.datePickerWrapper}>
-                <Text style={styles.subLabel}>
-                  Seleccione el préstamo activo a renovar:
-                </Text>
-                {clienteSeleccionado ? (
-                  prestamosActivosCliente.length > 0 ? (
-                    prestamosActivosCliente.map((p) => {
-                      const isSelected = prestamoPadreSeleccionado === p.id;
-                      return (
-                        <TouchableOpacity
-                          key={p.id}
-                          style={[
-                            styles.selectChip,
-                            { marginBottom: 6, alignItems: "flex-start" },
-                            isSelected && styles.selectChipActive,
-                          ]}
-                          onPress={() => setPrestamoPadreSeleccionado(p.id)}
-                        >
-                          <Text
-                            style={[
-                              styles.selectChipTxt,
-                              isSelected && styles.selectChipTxtActive,
-                            ]}
-                          >
-                            Monto Total del prestamo: ${" "}
-                            {formatearSinDecimales(p.monto_total)} {p.moneda} |
-                            Saldo Pendiente: ${" "}
-                            {formatearSinDecimales(p.saldo_pendiente)}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })
-                  ) : (
-                    <Text
-                      style={{
-                        color: "#b45309",
-                        fontSize: 13,
-                        fontStyle: "italic",
-                      }}
-                    >
-                      Este cliente no tiene préstamos activos pendientes por
-                      cobrar.
+                  <View style={styles.clientCardBody}>
+                    <Text style={styles.clientCardName}>
+                      {item.nombres} {item.apellidos}
                     </Text>
-                  )
-                ) : (
-                  <Text
-                    style={{
-                      color: "#b45309",
-                      fontSize: 13,
-                      fontStyle: "italic",
-                    }}
-                  >
-                    Primero seleccione un cliente arriba para ver sus créditos
-                    activos.
-                  </Text>
-                )}
-              </View>
-            )}
-          </View>
-          {/* ======================================================== */}
+                    <Text style={styles.clientCardSub}>
+                      Cédula: {item.cedula}
+                      {item.telefono ? ` • Teléfono: ${item.telefono}` : ""}
+                    </Text>
+                  </View>
 
-          <Text style={styles.label}>4. Frecuencia de Pago</Text>
-          <View style={styles.rowSelector}>
-            {[
-              { id: "diario", label: "Diario" },
-              { id: "semanal", label: "Semanal" },
-              { id: "quincenal", label: "Quincenal" },
-              { id: "mensual", label: "Mensual" },
-            ].map((item) => (
-              <TouchableOpacity
-                key={item.id}
-                style={[
-                  styles.selectChip,
-                  frecuencia === item.id && styles.selectChipActive,
-                ]}
-                onPress={() => handleCambiarFrecuencia(item.id as any)}
-              >
-                <Text
-                  style={[
-                    styles.selectChipTxt,
-                    frecuencia === item.id && styles.selectChipTxtActive,
-                  ]}
-                >
-                  {item.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={styles.label}>5. Tasa de Interés (%)</Text>
-          <View style={styles.rowSelector}>
-            {["0.00", "10.00", "15.00", "20.00", "25.00"].map((tasa) => (
-              <TouchableOpacity
-                key={tasa}
-                style={[
-                  styles.selectChip,
-                  porcentaje === tasa && styles.selectChipActive,
-                ]}
-                onPress={() => setPorcentaje(tasa)}
-              >
-                <Text
-                  style={[
-                    styles.selectChipTxt,
-                    porcentaje === tasa && styles.selectChipTxtActive,
-                  ]}
-                >
-                  {tasa}%
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={styles.label}>6. Número de Cuotas</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Número de cuotas"
-            placeholderTextColor="#a4b0be"
-            keyboardType="numeric"
-            value={cuotas}
-            onChangeText={(text) => {
-              const soloDigitos = text.replace(/\D/g, "");
-              setCuotas(soloDigitos);
-            }}
-            maxLength={3}
-          />
-
-          <Text style={styles.label}>7. Monto del Préstamo</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Ingresa monto del prestamo"
-            placeholderTextColor="#a4b0be"
-            keyboardType="numeric"
-            value={monto}
-            onChangeText={handleMontoChange}
-            maxLength={15}
-          />
-
-          <View style={styles.calcBox}>
-            <Text style={styles.calcTitle}>Resumen de Operación</Text>
-            <View style={styles.calcRow}>
-              <Text style={styles.calcText}>Frecuencia:</Text>
-              <Text style={styles.bold}>{frecuencia.toUpperCase()}</Text>
-            </View>
-            <View style={styles.calcRow}>
-              <Text style={styles.calcText}>Total con Interés:</Text>
-              <Text style={styles.bold}>
-                $ {formatearSinDecimales(montoTotal)} {moneda}
-              </Text>
-            </View>
-            <View style={styles.calcRow}>
-              <Text style={styles.calcText}>
-                Valor por Cuota ({cuotas} cuotas):
-              </Text>
-              <Text style={styles.boldPrimary}>
-                $ {formatearSinDecimales(valorCuota)} {moneda}
-              </Text>
-            </View>
-          </View>
-
-          {/* ======================================================== */}
-          {/* BLOQUE EXCLUSIVO PARA ADMINISTRADOR: FECHA MANUAL        */}
-          {/* ======================================================== */}
-          {usuarioActual?.tipo === "Administrador" && (
-            <View style={styles.adminDateContainer}>
-              <TouchableOpacity
-                style={styles.checkboxRow}
-                onPress={() => setUsarFechaManual(!usarFechaManual)}
-                activeOpacity={0.8}
-              >
-                <View
-                  style={[
-                    styles.checkboxBox,
-                    usarFechaManual && styles.checkboxBoxActive,
-                  ]}
-                >
-                  {usarFechaManual && (
-                    <Text style={styles.checkboxCheck}>✓</Text>
-                  )}
-                </View>
-                <Text style={styles.checkboxLabel}>
-                  📅 Registrar fecha de préstamo (Manual)
-                </Text>
-              </TouchableOpacity>
-
-              {usarFechaManual && (
-                <View style={styles.datePickerWrapper}>
-                  <Text style={styles.subLabel}>
-                    Seleccione la fecha del préstamo:
-                  </Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="AAAA-MM-DD"
-                    value={fechaManual}
-                    onChangeText={setFechaManual}
-                  />
-                  <Text style={styles.helperText}>
-                    Formato requerido: AAAA-MM-DD (Ej: 2026-05-15)
-                  </Text>
-                </View>
-              )}
-            </View>
+                  <View style={styles.clientActionBtn}>
+                    <Text style={styles.clientActionBtnText}>Prestar</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })
           )}
-          {/* ======================================================== */}
-
-          <TouchableOpacity
-            style={[styles.button, loading && { opacity: 0.7 }]}
-            onPress={guardarPrestamo}
-            disabled={loading}
-            activeOpacity={0.7}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>
-                {esRenovacion ? "Registrar Renovación" : "Registrar Préstamo"}
-              </Text>
-            )}
-          </TouchableOpacity>
         </View>
 
-        {/* MODAL DE SELECCIÓN DE CLIENTE */}
+        {/* MODAL PRINCIPAL PARA CREAR PRÉSTAMO / RENOVACIÓN */}
         <Modal
           animationType="fade"
           transparent={true}
-          visible={modalVisible}
-          onRequestClose={() => setModalVisible(false)}
+          visible={modalPrestamoVisible}
+          onRequestClose={() => setModalPrestamoVisible(false)}
         >
           <View style={styles.modalOverlay}>
             <View style={styles.modalContainer}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>
-                  Buscar y Seleccionar Cliente
+                  {clienteObjetoSeleccionado
+                    ? `Préstamo para: ${clienteObjetoSeleccionado.nombres} ${clienteObjetoSeleccionado.apellidos}`
+                    : "Nuevo Préstamo"}
                 </Text>
                 <TouchableOpacity
-                  onPress={() => setModalVisible(false)}
+                  onPress={() => setModalPrestamoVisible(false)}
                   style={styles.closeBtn}
                 >
                   <Text style={styles.closeBtnText}>✕</Text>
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.searchBoxContainer}>
-                <TextInput
-                  style={styles.modalSearchInput}
-                  placeholder="🔍 Escribe nombre, apellido o cédula..."
-                  placeholderTextColor="#94a3b8"
-                  value={nombreBusqueda}
-                  onChangeText={setNombreBusqueda}
-                  autoFocus={true}
-                />
-              </View>
-
               <ScrollView
-                style={styles.modalList}
-                contentContainerStyle={styles.modalListContent}
+                style={styles.modalScroll}
+                contentContainerStyle={styles.modalScrollContent}
                 showsVerticalScrollIndicator={true}
                 keyboardShouldPersistTaps="handled"
               >
-                {clientesFiltrados.map((item) => {
-                  const isSelected = clienteSeleccionado === item.cedula;
-                  return (
-                    <TouchableOpacity
-                      key={item.cedula}
-                      style={[
-                        styles.modalClientCard,
-                        isSelected && styles.modalClientCardSelected,
-                      ]}
-                      onPress={() => {
-                        setClienteSeleccionado(item.cedula);
-                        setModalVisible(false);
-                      }}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text
-                          style={[
-                            styles.modalClientName,
-                            isSelected && styles.textWhite,
-                          ]}
-                        >
-                          {item.nombres} {item.apellidos}
-                        </Text>
-                      </View>
-                      {isSelected && (
-                        <View style={styles.badgeSelected}>
-                          <Text style={styles.badgeSelectedText}>
-                            ✓ Seleccionado
-                          </Text>
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-
-                {clientesFiltrados.length === 0 && (
-                  <View style={styles.emptyContainer}>
-                    <Text style={styles.emptyText}>
-                      No se encontraron clientes coincidentes en esta ruta.
+                {usuarioActual && (
+                  <View style={styles.userCard}>
+                    <Text style={styles.userCardTitle}>
+                      Registrado por ({usuarioActual.tipo}):{" "}
+                      <Text style={styles.boldViolet}>
+                        {usuarioActual.nombreCompleto}
+                      </Text>
                     </Text>
                   </View>
                 )}
+
+                <Text style={styles.label}>1. Seleccionar Moneda</Text>
+                <View style={styles.rowSelector}>
+                  {(["USD", "COP"] as const).map((m) => (
+                    <TouchableOpacity
+                      key={m}
+                      style={[
+                        styles.selectChip,
+                        moneda === m && styles.selectChipActive,
+                      ]}
+                      onPress={() => handleCambiarMoneda(m)}
+                    >
+                      <Text
+                        style={[
+                          styles.selectChipTxt,
+                          moneda === m && styles.selectChipTxtActive,
+                        ]}
+                      >
+                        {m === "USD" ? "💵 Dólares (USD)" : "🇨🇴 Pesos (COP)"}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <Text style={styles.label}>2. Método de Desembolso</Text>
+                <View style={styles.rowSelector}>
+                  {[
+                    { id: "efectivo", label: `Efectivo (${moneda})` },
+                    { id: "transferencia", label: `Transferencia (${moneda})` },
+                  ].map((t) => (
+                    <TouchableOpacity
+                      key={t.id}
+                      style={[
+                        styles.selectChip,
+                        tipoPago === t.id && styles.selectChipActive,
+                      ]}
+                      onPress={() => setTipoPago(t.id as any)}
+                    >
+                      <Text
+                        style={[
+                          styles.selectChipTxt,
+                          tipoPago === t.id && styles.selectChipTxtActive,
+                        ]}
+                      >
+                        {t.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* CHECKBOX DE RENOVACIÓN Y LISTA DE PRÉSTAMOS ACTIVOS DEL CLIENTE */}
+                <View style={styles.adminDateContainer}>
+                  <View style={styles.renewalTopRow}>
+                    <TouchableOpacity
+                      style={styles.checkboxRow}
+                      onPress={() => setEsRenovacion(!esRenovacion)}
+                      activeOpacity={0.8}
+                    >
+                      <View
+                        style={[
+                          styles.checkboxBox,
+                          esRenovacion && styles.checkboxBoxActive,
+                        ]}
+                      >
+                        {esRenovacion && (
+                          <Text style={styles.checkboxCheck}>✓</Text>
+                        )}
+                      </View>
+                      <Text style={styles.checkboxLabel}>
+                        🔄 ¿Renovación del préstamo?
+                      </Text>
+                    </TouchableOpacity>
+
+                    {esRenovacion && prestamoPadreObj && (
+                      <TouchableOpacity
+                        style={styles.infoRenovBtn}
+                        onPress={() => setModalInfoRenovacionVisible(true)}
+                      >
+                        <Text style={styles.infoRenovBtnText}>
+                          Ver detalle renovación
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {esRenovacion && (
+                    <View style={styles.datePickerWrapper}>
+                      <Text style={styles.subLabel}>
+                        Seleccione el préstamo activo a renovar:
+                      </Text>
+                      {clienteSeleccionado ? (
+                        prestamosActivosCliente.length > 0 ? (
+                          prestamosActivosCliente.map((p, idx) => {
+                            const isSelected =
+                              prestamoPadreSeleccionado === p.id;
+                            return (
+                              <TouchableOpacity
+                                key={p.id}
+                                style={[
+                                  styles.loanOptionCard,
+                                  isSelected && styles.loanOptionCardActive,
+                                ]}
+                                onPress={() =>
+                                  setPrestamoPadreSeleccionado(p.id)
+                                }
+                              >
+                                <Text
+                                  style={[
+                                    styles.loanOptionTitle,
+                                    isSelected && styles.selectChipTxtActive,
+                                  ]}
+                                >
+                                  Préstamo #{idx + 1} • Total: ${" "}
+                                  {formatearSinDecimales(p.monto_total)}{" "}
+                                  {p.moneda}
+                                </Text>
+                                <Text
+                                  style={[
+                                    styles.loanOptionSub,
+                                    isSelected && styles.selectChipTxtActive,
+                                  ]}
+                                >
+                                  Saldo Pendiente: ${" "}
+                                  {formatearSinDecimales(p.saldo_pendiente)}{" "}
+                                  {p.moneda}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })
+                        ) : (
+                          <Text style={styles.warningText}>
+                            Este cliente no tiene préstamos activos pendientes
+                            por cobrar.
+                          </Text>
+                        )
+                      ) : (
+                        <Text style={styles.warningText}>
+                          Seleccione un cliente para ver sus créditos activos.
+                        </Text>
+                      )}
+                    </View>
+                  )}
+                </View>
+
+                <Text style={styles.label}>3. Frecuencia de Pago</Text>
+                <View style={styles.rowSelector}>
+                  {[
+                    { id: "diario", label: "Diario" },
+                    { id: "semanal", label: "Semanal" },
+                    { id: "quincenal", label: "Quincenal" },
+                    { id: "mensual", label: "Mensual" },
+                  ].map((item) => (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={[
+                        styles.selectChip,
+                        frecuencia === item.id && styles.selectChipActive,
+                      ]}
+                      onPress={() => handleCambiarFrecuencia(item.id as any)}
+                    >
+                      <Text
+                        style={[
+                          styles.selectChipTxt,
+                          frecuencia === item.id && styles.selectChipTxtActive,
+                        ]}
+                      >
+                        {item.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <Text style={styles.label}>4. Tasa de Interés (%)</Text>
+                <View style={styles.rowSelector}>
+                  {["0.00", "10.00", "15.00", "20.00", "25.00"].map((tasa) => {
+                    const isSelected =
+                      parseFloat(porcentaje) === parseFloat(tasa);
+                    return (
+                      <TouchableOpacity
+                        key={tasa}
+                        style={[
+                          styles.selectChip,
+                          isSelected && styles.selectChipActive,
+                        ]}
+                        onPress={() => setPorcentaje(tasa)}
+                      >
+                        <Text
+                          style={[
+                            styles.selectChipTxt,
+                            isSelected && styles.selectChipTxtActive,
+                          ]}
+                        >
+                          {tasa}%
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <Text style={styles.label}>5. Número de Cuotas</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Número de cuotas"
+                  placeholderTextColor="#94a3b8"
+                  keyboardType="numeric"
+                  value={cuotas}
+                  onChangeText={(text) => {
+                    const soloDigitos = text.replace(/\D/g, "");
+                    setCuotas(soloDigitos);
+                  }}
+                  maxLength={3}
+                />
+
+                <Text style={styles.label}>6. Monto del Préstamo</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Ingresa monto del prestamo"
+                  placeholderTextColor="#94a3b8"
+                  keyboardType="numeric"
+                  value={monto}
+                  onChangeText={handleMontoChange}
+                  maxLength={15}
+                />
+
+                <View style={styles.calcBox}>
+                  <Text style={styles.calcTitle}>Resumen de Operación</Text>
+                  <View style={styles.calcRow}>
+                    <Text style={styles.calcText}>Frecuencia:</Text>
+                    <Text style={styles.bold}>{frecuencia.toUpperCase()}</Text>
+                  </View>
+                  {esRenovacion && prestamoPadreObj && (
+                    <>
+                      <View style={styles.calcRow}>
+                        <Text style={styles.calcText}>
+                          Saldo Pendiente Anterior:
+                        </Text>
+                        <Text style={styles.bold}>
+                          $ {formatearSinDecimales(saldoPendientePadre)}{" "}
+                          {moneda}
+                        </Text>
+                      </View>
+                      <View style={styles.calcRow}>
+                        <Text style={styles.calcText}>
+                          Efectivo a Entregar (Caja):
+                        </Text>
+                        <Text style={styles.boldEmerald}>
+                          $ {formatearSinDecimales(efectivoAEntregarRenovacion)}{" "}
+                          {moneda}
+                        </Text>
+                      </View>
+                    </>
+                  )}
+                  <View style={styles.calcRow}>
+                    <Text style={styles.calcText}>Total con Interés:</Text>
+                    <Text style={styles.bold}>
+                      $ {formatearSinDecimales(montoTotal)} {moneda}
+                    </Text>
+                  </View>
+                  <View style={[styles.calcRow, styles.calcRowLast]}>
+                    <Text style={styles.calcText}>
+                      Valor por Cuota ({cuotas} cuotas):
+                    </Text>
+                    <Text style={styles.boldViolet}>
+                      $ {formatearSinDecimales(valorCuota)} {moneda}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* BLOQUE EXCLUSIVO PARA ADMINISTRADOR: FECHA MANUAL */}
+                {usuarioActual?.tipo === "Administrador" && (
+                  <View style={styles.adminDateContainer}>
+                    <TouchableOpacity
+                      style={styles.checkboxRow}
+                      onPress={() => setUsarFechaManual(!usarFechaManual)}
+                      activeOpacity={0.8}
+                    >
+                      <View
+                        style={[
+                          styles.checkboxBox,
+                          usarFechaManual && styles.checkboxBoxActive,
+                        ]}
+                      >
+                        {usarFechaManual && (
+                          <Text style={styles.checkboxCheck}>✓</Text>
+                        )}
+                      </View>
+                      <Text style={styles.checkboxLabel}>
+                        📅 Registrar fecha de préstamo (Manual)
+                      </Text>
+                    </TouchableOpacity>
+
+                    {usarFechaManual && (
+                      <View style={styles.datePickerWrapper}>
+                        <Text style={styles.subLabel}>
+                          Seleccione la fecha del préstamo:
+                        </Text>
+                        <TextInput
+                          style={styles.input}
+                          placeholder="AAAA-MM-DD"
+                          value={fechaManual}
+                          onChangeText={setFechaManual}
+                        />
+                        <Text style={styles.helperText}>
+                          Formato requerido: AAAA-MM-DD (Ej: 2026-05-15)
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                <View style={styles.modalFooterActions}>
+                  <TouchableOpacity
+                    style={styles.cancelModalBtn}
+                    onPress={() => setModalPrestamoVisible(false)}
+                    disabled={loading}
+                  >
+                    <Text style={styles.cancelModalBtnText}>Cancelar</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.button, loading && { opacity: 0.7 }]}
+                    onPress={guardarPrestamo}
+                    disabled={loading}
+                    activeOpacity={0.7}
+                  >
+                    {loading ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.buttonText}>
+                        {esRenovacion
+                          ? "Registrar Renovación"
+                          : "Registrar Préstamo"}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
               </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
+        {/* MODAL DE INFORMACIÓN DE RENOVACIÓN */}
+        <Modal
+          animationType="fade"
+          transparent={true}
+          visible={modalInfoRenovacionVisible}
+          onRequestClose={() => setModalInfoRenovacionVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalExitoContainer}>
+              <Text style={styles.modalExitoTitle}>
+                Información de Renovación
+              </Text>
+              <View style={styles.infoRenovBox}>
+                <View style={styles.calcRow}>
+                  <Text style={styles.calcText}>Cliente:</Text>
+                  <Text style={styles.bold}>
+                    {clienteObjetoSeleccionado
+                      ? `${clienteObjetoSeleccionado.nombres} ${clienteObjetoSeleccionado.apellidos}`
+                      : "-"}
+                  </Text>
+                </View>
+                <View style={styles.calcRow}>
+                  <Text style={styles.calcText}>Saldo pendiente anterior:</Text>
+                  <Text style={styles.bold}>
+                    $ {formatearSinDecimales(saldoPendientePadre)} {moneda}
+                  </Text>
+                </View>
+                <View style={styles.calcRow}>
+                  <Text style={styles.calcText}>Nuevo monto prestado:</Text>
+                  <Text style={styles.bold}>
+                    $ {formatearSinDecimales(montoNum)} {moneda}
+                  </Text>
+                </View>
+                <View style={styles.calcRow}>
+                  <Text style={styles.calcText}>Efectivo a entregar caja:</Text>
+                  <Text style={styles.boldEmerald}>
+                    $ {formatearSinDecimales(efectivoAEntregarRenovacion)}{" "}
+                    {moneda}
+                  </Text>
+                </View>
+                <View style={styles.calcRow}>
+                  <Text style={styles.calcText}>
+                    Interés ({porcentajeNum}%):
+                  </Text>
+                  <Text style={styles.bold}>
+                    +$ {formatearSinDecimales(totalInteres)} {moneda}
+                  </Text>
+                </View>
+                <View style={[styles.calcRow, styles.calcRowLast]}>
+                  <Text style={styles.calcText}>Monto total nuevo:</Text>
+                  <Text style={styles.boldViolet}>
+                    $ {formatearSinDecimales(montoTotal)} {moneda}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.successButton}
+                onPress={() => setModalInfoRenovacionVisible(false)}
+              >
+                <Text style={styles.successButtonText}>Entendido</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </Modal>
@@ -912,7 +1057,12 @@ export default function CrearPrestamoScreen({ route }: any) {
                   tipoResultado === "error" && styles.errorIconContainer,
                 ]}
               >
-                <Text style={styles.successIconText}>
+                <Text
+                  style={[
+                    styles.successIconText,
+                    tipoResultado === "error" && styles.errorIconText,
+                  ]}
+                >
                   {tipoResultado === "exito" ? "✓" : "✕"}
                 </Text>
               </View>
@@ -940,370 +1090,462 @@ export default function CrearPrestamoScreen({ route }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f0f2f5",
+    backgroundColor: "#f8fafc",
   },
   contentContainer: {
-    padding: 12,
-    paddingBottom: 40,
+    padding: 16,
+    paddingBottom: 44,
   },
   contentContainerWeb: {
     alignItems: "center",
     padding: 24,
   },
-  mainCard: {
+  innerWrapper: {
     width: "100%",
-    backgroundColor: "#ffffff",
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
+    maxWidth: 1120,
   },
-  mainCardWeb: {
-    maxWidth: 750,
-    padding: 32,
-    borderWidth: 1,
-    borderColor: "#e4e7eb",
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: "bold",
-    marginBottom: 16,
-    color: "#1e293b",
-  },
-  userCard: {
-    backgroundColor: "#e0f2fe",
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: "#bae6fd",
-  },
-  userCardTitle: {
-    fontSize: 12,
-    color: "#0369a1",
-    fontWeight: "600",
-    marginBottom: 2,
-  },
-  userCardText: {
-    fontSize: 15,
-    fontWeight: "bold",
-    color: "#0c4a6e",
-  },
-  label: {
-    fontSize: 15,
-    fontWeight: "bold",
+  sectionLabel: {
+    fontSize: 13,
+    fontWeight: "700",
     color: "#334155",
     marginBottom: 8,
+  },
+  searchInputWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    marginBottom: 16,
+    height: 48,
+  },
+  searchIcon: {
+    fontSize: 18,
+    color: "#7c3aed",
+    marginRight: 10,
+    fontWeight: "bold",
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: "#0f172a",
+    height: "100%",
+  },
+  clearSearchBtn: {
+    padding: 6,
+  },
+  clearSearchText: {
+    color: "#64748b",
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  summaryStrip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 14,
+  },
+  summaryDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#10b981",
+  },
+  summaryHeader: {
+    fontSize: 13,
+    color: "#475569",
+    fontWeight: "600",
+  },
+  clientCard: {
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderLeftWidth: 4,
+    borderLeftColor: "#7c3aed",
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  clientCardSelected: {
+    borderColor: "#7c3aed",
+    backgroundColor: "#faf5ff",
+  },
+  clientCardBody: {
+    flex: 1,
+  },
+  clientCardName: {
+    fontSize: 15.5,
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+  clientCardSub: {
+    fontSize: 12.5,
+    color: "#64748b",
+    marginTop: 3,
+  },
+  clientActionBtn: {
+    backgroundColor: "#10b981",
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+  },
+  clientActionBtnText: {
+    color: "#ffffff",
+    fontWeight: "500",
+    fontSize: 13.5,
+  },
+  loadingBox: {
+    padding: 40,
+    alignItems: "center",
+  },
+  loadingText: {
     marginTop: 10,
+    color: "#64748b",
+    fontSize: 14,
+  },
+  userCard: {
+    backgroundColor: "#f5f3ff",
+    padding: 11,
+    borderRadius: 10,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#ddd6fe",
+  },
+  userCardTitle: {
+    fontSize: 13,
+    color: "#5b21b6",
+  },
+  boldViolet: {
+    fontWeight: "800",
+    color: "#7c3aed",
+  },
+  boldEmerald: {
+    fontWeight: "800",
+    color: "#059669",
+  },
+  label: {
+    fontSize: 13.5,
+    fontWeight: "700",
+    color: "#334155",
+    marginTop: 12,
+    marginBottom: 8,
   },
   subLabel: {
     fontSize: 13,
     fontWeight: "600",
     color: "#475569",
-    marginBottom: 6,
+    marginBottom: 8,
   },
   rowSelector: {
     flexDirection: "row",
-    gap: 10,
-    marginBottom: 12,
+    flexWrap: "wrap",
+    gap: 8,
   },
   selectChip: {
-    flex: 1,
-    backgroundColor: "#f8fafc",
-    paddingVertical: 12,
+    flexGrow: 1,
+    minWidth: "28%",
+    paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: "#cbd5e1",
+    backgroundColor: "#f8fafc",
     alignItems: "center",
+    justifyContent: "center",
   },
   selectChipActive: {
-    backgroundColor: "#0284c7",
-    borderColor: "#0284c7",
+    backgroundColor: "#7c3aed",
+    borderColor: "#7c3aed",
   },
   selectChipTxt: {
-    fontSize: 14,
-    color: "#475569",
-    fontWeight: "600",
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#334155",
   },
   selectChipTxtActive: {
-    color: "#fff",
-    fontWeight: "bold",
-  },
-  dropdownTrigger: {
-    backgroundColor: "#f8fafc",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-  dropdownTriggerTitle: {
-    fontSize: 15,
-    fontWeight: "bold",
-    color: "#0f172a",
-  },
-  dropdownTriggerPlaceholder: {
-    fontSize: 15,
-    color: "#94a3b8",
-  },
-  dropdownTriggerIcon: {
-    fontSize: 12,
-    color: "#0c4eab",
-    marginLeft: 8,
+    color: "#ffffff",
   },
   input: {
-    backgroundColor: "#f8fafc",
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 12,
     borderWidth: 1,
     borderColor: "#cbd5e1",
-    fontSize: 16,
-    color: "#1e293b",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: 15,
+    color: "#0f172a",
+    backgroundColor: "#ffffff",
   },
   calcBox: {
     backgroundColor: "#f8fafc",
-    padding: 16,
     borderRadius: 12,
+    padding: 14,
+    marginTop: 16,
     borderWidth: 1,
-    borderColor: "#cbd5e1",
-    marginBottom: 20,
+    borderColor: "#e2e8f0",
   },
   calcTitle: {
-    fontSize: 15,
-    fontWeight: "bold",
-    color: "#1e293b",
-    marginBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
-    paddingBottom: 6,
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#0f172a",
+    marginBottom: 8,
   },
   calcRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 8,
+    alignItems: "center",
+    paddingVertical: 4,
+  },
+  calcRowLast: {
+    borderTopWidth: 1,
+    borderTopColor: "#e2e8f0",
+    paddingTop: 8,
+    marginTop: 4,
   },
   calcText: {
-    fontSize: 14,
-    color: "#0e356d",
+    fontSize: 13.5,
+    color: "#475569",
   },
-  bold: { fontWeight: "bold", color: "#1e293b" },
-  boldPrimary: { fontWeight: "bold", color: "#0284c7", fontSize: 15 },
-
+  bold: {
+    fontSize: 13.5,
+    fontWeight: "700",
+    color: "#0f172a",
+  },
   adminDateContainer: {
-    backgroundColor: "#fffbeb",
+    backgroundColor: "#f5f3ff",
     borderWidth: 1,
-    borderColor: "#fde68a",
+    borderColor: "#ddd6fe",
     borderRadius: 12,
-    padding: 14,
-    marginBottom: 20,
+    padding: 12,
+    marginTop: 14,
+  },
+  renewalTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: 8,
   },
   checkboxRow: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 10,
   },
   checkboxBox: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: "#d97706",
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: "#7c3aed",
     backgroundColor: "#ffffff",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 10,
   },
   checkboxBoxActive: {
-    backgroundColor: "#d97706",
+    backgroundColor: "#7c3aed",
   },
   checkboxCheck: {
     color: "#ffffff",
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "bold",
   },
   checkboxLabel: {
-    fontSize: 14,
-    fontWeight: "bold",
-    color: "#92400e",
-    flex: 1,
+    fontSize: 13.5,
+    fontWeight: "700",
+    color: "#4c1d95",
+  },
+  infoRenovBtn: {
+    backgroundColor: "#ede9fe",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#c4b5fd",
+  },
+  infoRenovBtnText: {
+    color: "#5b21b6",
+    fontSize: 12,
+    fontWeight: "700",
   },
   datePickerWrapper: {
-    marginTop: 12,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: "#fef3c7",
+    marginTop: 10,
+  },
+  loanOptionCard: {
+    padding: 11,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    backgroundColor: "#ffffff",
+    marginBottom: 8,
+  },
+  loanOptionCardActive: {
+    backgroundColor: "#7c3aed",
+    borderColor: "#7c3aed",
+  },
+  loanOptionTitle: {
+    fontSize: 13.5,
+    fontWeight: "700",
+    color: "#0f172a",
+  },
+  loanOptionSub: {
+    fontSize: 12.5,
+    color: "#475569",
+    marginTop: 2,
+  },
+  warningText: {
+    color: "#b45309",
+    fontSize: 13,
+    fontStyle: "italic",
   },
   helperText: {
     fontSize: 12,
-    color: "#b45309",
-    fontStyle: "italic",
-    marginTop: -6,
-    marginBottom: 10,
+    color: "#64748b",
+    marginTop: 4,
   },
-
-  button: {
-    backgroundColor: "#0284c7",
-    padding: 16,
+  modalFooterActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 18,
+  },
+  cancelModalBtn: {
+    flex: 1,
+    backgroundColor: "#f1f5f9",
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    paddingVertical: 14,
     borderRadius: 12,
     alignItems: "center",
-    shadowColor: "#0284c7",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 3,
+    justifyContent: "center",
   },
-  buttonText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
+  cancelModalBtnText: {
+    color: "#334155",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  button: {
+    flex: 2,
+    backgroundColor: "#10b981",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  buttonText: {
+    color: "#ffffff",
+    fontSize: 15.5,
+    fontWeight: "600",
+  },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.5)",
+    backgroundColor: "rgba(15, 23, 42, 0.52)",
     justifyContent: "center",
     alignItems: "center",
     padding: 16,
   },
   modalContainer: {
-    backgroundColor: "#ffffff",
-    borderRadius: 20,
     width: "100%",
-    maxWidth: 680,
-    height: "80%",
-    maxHeight: 650,
-    padding: 24,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 8,
-    display: "flex",
-    flexDirection: "column",
+    maxWidth: 540,
+    maxHeight: "88%",
+    backgroundColor: "#ffffff",
+    borderRadius: 18,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
   },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
-    paddingBottom: 12,
+    borderBottomColor: "#e2e8f0",
+    backgroundColor: "#f8fafc",
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
+    fontSize: 17,
+    fontWeight: "100",
     color: "#0f172a",
+    flex: 1,
   },
   closeBtn: {
     padding: 6,
-    backgroundColor: "#f1f5f9",
-    borderRadius: 8,
   },
   closeBtnText: {
-    fontSize: 14,
-    fontWeight: "bold",
+    fontSize: 18,
     color: "#64748b",
+    fontWeight: "700",
   },
-  searchBoxContainer: {
-    marginBottom: 12,
+  modalScroll: {
+    flexGrow: 0,
   },
-  modalSearchInput: {
-    backgroundColor: "#f8fafc",
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    height: 46,
-    fontSize: 15,
-    color: "#1e293b",
-  },
-  modalList: {
-    flex: 1,
-  },
-  modalListContent: {
-    paddingBottom: 16,
-  },
-  modalClientCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 14,
-    borderRadius: 10,
-    backgroundColor: "#f8fafc",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    marginBottom: 8,
-  },
-  modalClientCardSelected: {
-    backgroundColor: "#0284c7",
-    borderColor: "#0284c7",
-  },
-  modalClientName: {
-    fontSize: 15,
-    fontWeight: "bold",
-    color: "#1e293b",
-  },
-  textWhite: {
-    color: "#ffffff",
-  },
-  badgeSelected: {
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  badgeSelectedText: {
-    color: "#ffffff",
-    fontSize: 12,
-    fontWeight: "bold",
+  modalScrollContent: {
+    padding: 18,
+    paddingBottom: 24,
   },
   emptyContainer: {
-    padding: 24,
+    backgroundColor: "#ffffff",
+    padding: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
     alignItems: "center",
   },
   emptyText: {
     color: "#64748b",
-    fontSize: 14,
+    fontSize: 13.5,
     textAlign: "center",
   },
   modalExitoContainer: {
-    backgroundColor: "#ffffff",
-    borderRadius: 20,
     width: "100%",
     maxWidth: 400,
+    backgroundColor: "#ffffff",
+    borderRadius: 18,
     padding: 24,
     alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 8,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  infoRenovBox: {
+    width: "100%",
+    backgroundColor: "#f8fafc",
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    marginBottom: 18,
   },
   successIconContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: "#dcfce7",
-    justifyContent: "center",
     alignItems: "center",
-    marginBottom: 16,
+    justifyContent: "center",
+    marginBottom: 14,
   },
   errorIconContainer: {
     backgroundColor: "#fee2e2",
   },
   successIconText: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: "bold",
-    color: "#16a34a",
+    color: "#059669",
+  },
+  errorIconText: {
+    color: "#dc2626",
   },
   modalExitoTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
+    fontSize: 18.5,
+    fontWeight: "100",
     color: "#0f172a",
-    marginBottom: 8,
+    marginBottom: 10,
     textAlign: "center",
   },
   modalExitoMessage: {
@@ -1311,22 +1553,20 @@ const styles = StyleSheet.create({
     color: "#475569",
     textAlign: "center",
     marginBottom: 20,
-    lineHeight: 20,
   },
   successButton: {
-    backgroundColor: "#16a34a",
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 10,
     width: "100%",
+    backgroundColor: "#10b981",
+    paddingVertical: 12,
+    borderRadius: 10,
     alignItems: "center",
   },
   errorButton: {
-    backgroundColor: "#dc2626",
+    backgroundColor: "#ef4444",
   },
   successButtonText: {
     color: "#ffffff",
     fontSize: 15,
-    fontWeight: "bold",
+    fontWeight: "100",
   },
 });

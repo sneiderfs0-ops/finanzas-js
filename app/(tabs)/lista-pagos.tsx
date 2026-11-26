@@ -1249,44 +1249,44 @@ const styles = StyleSheet.create({
   },
   headerText: {
     color: "#ffffff",
-    fontSize: 15,
+    fontSize: 11,
     fontWeight: "700",
   },
   cellText: {
-    fontSize: 15,
+    fontSize: 13,
     color: "#334155",
   },
   cellTextBold: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: "600",
     color: "#0f172a",
   },
   colFecha: {
-    width: 315,
+    width: 115,
   },
   colCliente: {
-    width: 250,
+    width: 190,
   },
   colMonto: {
-    width: 155,
+    width: 115,
   },
   colMoneda: {
-    width: 90,
+    width: 80,
   },
   colPorcentaje: {
-    width: 155,
+    width: 75,
   },
   colTotal: {
-    width: 480,
+    width: 120,
   },
   colEmpleado: {
-    width: 350,
+    width: 150,
   },
   colAccion: {
-    width: 465,
+    width: 245,
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 6,
   },
   badgeMoneda: {
     backgroundColor: "#e0f2fe",
@@ -1311,7 +1311,7 @@ const styles = StyleSheet.create({
   },
   btnVerAccion: {
     backgroundColor: "#f1f5f9",
-    paddingHorizontal: 5,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 6,
   },

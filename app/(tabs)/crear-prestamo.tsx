@@ -380,7 +380,23 @@ export default function CrearPrestamoScreen({ route }: any) {
   const mostrarMensaje = (tipo: "exito" | "error", mensaje: string) => {
     setTipoResultado(tipo);
     setMensajeResultado(mensaje);
-    setModalResultadoVisible(true);
+
+    if (modalPrestamoVisible) {
+      setModalPrestamoVisible(false);
+      setTimeout(() => {
+        setModalResultadoVisible(true);
+      }, 150);
+    } else {
+      setModalResultadoVisible(true);
+    }
+  };
+
+  const cerrarModalPrestamo = () => {
+    setModalPrestamoVisible(false);
+    setEsRenovacion(false);
+    setPrestamoPadreSeleccionado(null);
+    setPrestamosActivosCliente([]);
+    setUsarFechaManual(false);
   };
 
   const guardarPrestamo = async () => {
@@ -588,9 +604,13 @@ export default function CrearPrestamoScreen({ route }: any) {
                     </Text>
                   </View>
 
-                  <View style={styles.clientActionBtn}>
+                  <TouchableOpacity
+                    style={styles.clientActionBtn}
+                    activeOpacity={0.8}
+                    onPress={() => abrirModalCliente(item.cedula)}
+                  >
                     <Text style={styles.clientActionBtnText}>Prestar</Text>
-                  </View>
+                  </TouchableOpacity>
                 </TouchableOpacity>
               );
             })
@@ -748,8 +768,8 @@ export default function CrearPrestamoScreen({ route }: any) {
                                     isSelected && styles.selectChipTxtActive,
                                   ]}
                                 >
-                                  Préstamo #{idx + 1} • Total: ${" "}
-                                  {formatearSinDecimales(p.monto_total)}{" "}
+                                  Préstamo #{idx + 1} • Monto prestado: ${" "}
+                                  {formatearSinDecimales(p.monto_prestado)}{" "}
                                   {p.moneda}
                                 </Text>
                                 <Text

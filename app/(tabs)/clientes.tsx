@@ -433,49 +433,29 @@ export default function ClientesScreen() {
       <Modal
         animationType="fade"
         transparent={true}
+        statusBarTranslucent={true}
         visible={modalBloqueoVisible}
         onRequestClose={() => setModalBloqueoVisible(false)}
       >
-        <View style={globalStyles.modalOverlay}>
-          <View style={[globalStyles.modalContainer, { maxWidth: 380 }]}>
-            <Text
-              style={[
-                globalStyles.modalTitle,
-                { color: "#ea580c", marginBottom: 10 },
-              ]}
-            >
-              🚫 Acción No Permitida
-            </Text>
-            <Text
-              style={{
-                fontSize: 14,
-                color: colors.textSecondary,
-                marginBottom: 20,
-                lineHeight: 20,
-              }}
-            >
+        <View style={bloqueoModalStyles.overlay}>
+          <View style={bloqueoModalStyles.card}>
+            <View style={bloqueoModalStyles.iconBadge}>
+              <Text style={bloqueoModalStyles.iconText}>🚫</Text>
+            </View>
+
+            <Text style={bloqueoModalStyles.title}>Acción No Permitida</Text>
+
+            <Text style={bloqueoModalStyles.message}>
               Este cliente no es posible eliminarlo, cuenta con préstamos
               registrados en el sistema.
             </Text>
 
             <TouchableOpacity
-              style={[
-                styles.modalBtn,
-                {
-                  backgroundColor: "#ea580c",
-                  width: "100%",
-                  paddingVertical: 12,
-                  borderRadius: 10,
-                  alignItems: "center",
-                },
-              ]}
+              activeOpacity={0.85}
+              style={bloqueoModalStyles.button}
               onPress={() => setModalBloqueoVisible(false)}
             >
-              <Text
-                style={{ color: "#ffffff", fontSize: 16, fontWeight: "600" }}
-              >
-                Entendido
-              </Text>
+              <Text style={bloqueoModalStyles.buttonText}>Entendido</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -483,7 +463,74 @@ export default function ClientesScreen() {
     </ScrollView>
   );
 }
-
+const bloqueoModalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(2, 6, 23, 0.72)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  card: {
+    width: "100%",
+    maxWidth: 380,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    elevation: 8,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+  },
+  iconBadge: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "#FFF7ED",
+    borderWidth: 1,
+    borderColor: "#FDBA74",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 14,
+  },
+  iconText: {
+    fontSize: 26,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#EA580C",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  message: {
+    fontSize: 14,
+    color: "#475569",
+    textAlign: "center",
+    lineHeight: 21,
+    marginBottom: 22,
+  },
+  button: {
+    backgroundColor: "#EA580C",
+    width: "100%",
+    minHeight: 46,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  buttonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+});
 const styles = StyleSheet.create({
   container: {
     flex: 1,

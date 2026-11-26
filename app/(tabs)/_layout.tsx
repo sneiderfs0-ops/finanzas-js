@@ -452,6 +452,11 @@ export default function TabLayout() {
           backgroundColor: colors.background,
           width: 280,
         },
+        // Evita que un toque o deslizamiento accidental abra el menú en Android
+        swipeEnabled: false,
+        // Si prefieres permitir deslizar pero solo pegado al borde izquierdo, usa:
+        // swipeEnabled: true,
+        // swipeEdgeWidth: 20,
       }}
     >
       <Drawer.Screen

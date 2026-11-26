@@ -735,10 +735,7 @@ export default function CrearPagoScreen({ route }: any) {
         transparent={true}
         onRequestClose={() => setModalPagoVisible(false)}
       >
-        <KeyboardAvoidingView
-          style={styles.modalOverlay}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-        >
+        <View style={styles.modalOverlay}>
           <View style={styles.paymentModalContainer}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Registrar Pago</Text>
@@ -832,7 +829,6 @@ export default function CrearPagoScreen({ route }: any) {
                 onChangeText={handleMontoChange}
                 keyboardType="numeric"
                 maxLength={15}
-                autoFocus={true}
                 placeholderTextColor="#94a3b8"
               />
 
@@ -945,7 +941,7 @@ export default function CrearPagoScreen({ route }: any) {
               </TouchableOpacity>
             </ScrollView>
           </View>
-        </KeyboardAvoidingView>
+        </View>
       </Modal>
 
       {/* MODAL TASA DE CAMBIO */}

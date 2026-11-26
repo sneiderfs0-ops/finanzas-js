@@ -36,7 +36,6 @@ function CustomDrawerContent(props: any) {
 
       const email = session.user.email.trim().toLowerCase();
 
-      // Optimización: Consultar ambas tablas en paralelo para evitar bloqueos
       const [adminRes, secretariaRes] = await Promise.all([
         supabase
           .from("administradores")
@@ -62,8 +61,20 @@ function CustomDrawerContent(props: any) {
     }
   };
 
+  const closeDrawer = () => {
+    props.navigation?.closeDrawer?.();
+  };
+
+  const handleNavigate = (path: string) => {
+    closeDrawer();
+    setTimeout(() => {
+      router.push(path as any);
+    }, 60);
+  };
+
   const handleSignOut = async () => {
     try {
+      closeDrawer();
       await AsyncStorage.clear();
       const { error } = await supabase.auth.signOut({ scope: "local" });
       if (error) {
@@ -76,114 +87,133 @@ function CustomDrawerContent(props: any) {
   };
 
   return (
-    <ScrollView contentContainerStyle={localStyles.drawerContainer}>
-      <View style={localStyles.drawerHeader}>
-        <Text style={localStyles.drawerTitle}>💰 Sistema de Préstamos</Text>
-        <Text style={localStyles.drawerSubtitle}>Panel de Control</Text>
-      </View>
-
-      <View style={localStyles.navLinks}>
-        <Pressable
-          style={localStyles.navItem}
-          onPress={() => router.push("/(tabs)")}
-        >
-          <Text style={localStyles.navText}>🏠 Inicio</Text>
-        </Pressable>
-
-        {isAdmin && (
-          <Pressable
-            style={localStyles.navItem}
-            onPress={() => router.push("/(tabs)/caja")}
+    <ScrollView
+      contentContainerStyle={localStyles.drawerContainer}
+      keyboardShouldPersistTaps="handled"
+    >
+      <View>
+        {/* Encabezado con botón X para cerrar el menú */}
+        <View style={localStyles.drawerHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={localStyles.drawerTitle}> </Text>
+            <Text style={localStyles.drawerTitle}>💰 Finanzas</Text>
+            <Text style={localStyles.drawerSubtitle}>Panel de Control</Text>
+          </View>
+          <TouchableOpacity
+            onPress={closeDrawer}
+            style={localStyles.drawerCloseBtn}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Text style={localStyles.navText}>📊 Balance General</Text>
-          </Pressable>
-        )}
+            <Text style={localStyles.drawerTitle}></Text>
+            <Text style={localStyles.drawerCloseBtnText}>✕</Text>
+          </TouchableOpacity>
+        </View>
 
-        {isAdmin && (
+        <View style={localStyles.navLinks}>
           <Pressable
             style={localStyles.navItem}
-            onPress={() => router.push("/(tabs)/lista-prestamos")}
+            onPress={() => handleNavigate("/(tabs)")}
           >
-            <Text style={localStyles.navText}>📋 Lista de Préstamos</Text>
+            <Text style={localStyles.navText}>🏠 Inicio</Text>
           </Pressable>
-        )}
 
-        {canAccessPrivileged && (
+          {isAdmin && (
+            <Pressable
+              style={localStyles.navItem}
+              onPress={() => handleNavigate("/(tabs)/caja")}
+            >
+              <Text style={localStyles.navText}>📊 Balance General</Text>
+            </Pressable>
+          )}
+
+          {isAdmin && (
+            <Pressable
+              style={localStyles.navItem}
+              onPress={() => handleNavigate("/(tabs)/lista-prestamos")}
+            >
+              <Text style={localStyles.navText}>📋 Lista de Préstamos</Text>
+            </Pressable>
+          )}
+
+          {canAccessPrivileged && (
+            <Pressable
+              style={localStyles.navItem}
+              onPress={() => handleNavigate("/(tabs)/lista-pagos")}
+            >
+              <Text style={localStyles.navText}>
+                📋 Lista de Pagos de Clientes
+              </Text>
+            </Pressable>
+          )}
+
           <Pressable
             style={localStyles.navItem}
-            onPress={() => router.push("/(tabs)/lista-pagos")}
+            onPress={() => handleNavigate("/(tabs)/crear-clientes")}
+          >
+            <Text style={localStyles.navText}>📝 Registrar Nuevo Cliente</Text>
+          </Pressable>
+
+          <Pressable
+            style={localStyles.navItem}
+            onPress={() => handleNavigate("/(tabs)/crear-prestamo")}
+          >
+            <Text style={localStyles.navText}>📝 Registrar Nuevo Préstamo</Text>
+          </Pressable>
+
+          <Pressable
+            style={localStyles.navItem}
+            onPress={() => handleNavigate("/(tabs)/pagos")}
           >
             <Text style={localStyles.navText}>
-              📋 Lista de Pagos de Clientes
+              📝 Registrar Pago de Clientes
             </Text>
           </Pressable>
-        )}
 
-        <Pressable
-          style={localStyles.navItem}
-          onPress={() => router.push("/(tabs)/crear-clientes")}
-        >
-          <Text style={localStyles.navText}>📝 Registrar Nuevo Cliente</Text>
-        </Pressable>
-
-        <Pressable
-          style={localStyles.navItem}
-          onPress={() => router.push("/(tabs)/crear-prestamo")}
-        >
-          <Text style={localStyles.navText}>📝 Registrar Nuevo Préstamo</Text>
-        </Pressable>
-
-        <Pressable
-          style={localStyles.navItem}
-          onPress={() => router.push("/(tabs)/pagos")}
-        >
-          <Text style={localStyles.navText}>📝 Registrar Pago de Clientes</Text>
-        </Pressable>
-
-        <Pressable
-          style={localStyles.navItem}
-          onPress={() => router.push("/(tabs)/gastos")}
-        >
-          <Text style={localStyles.navText}>📉 Gastos</Text>
-        </Pressable>
-
-        <Pressable
-          style={localStyles.navItem}
-          onPress={() => router.push("/(tabs)/clientes")}
-        >
-          <Text style={localStyles.navText}>📇 Clientes</Text>
-        </Pressable>
-
-        <Pressable
-          style={localStyles.navItem}
-          onPress={() => router.push("/(tabs)/rutas")}
-        >
-          <Text style={localStyles.navText}>🗺️ Rutas de Cobro</Text>
-        </Pressable>
-
-        {canAccessPrivileged && (
           <Pressable
             style={localStyles.navItem}
-            onPress={() => router.push("/(tabs)/listas-rutas")}
+            onPress={() => handleNavigate("/(tabs)/gastos")}
           >
-            <Text style={localStyles.navText}>📋 Lista de Rutas</Text>
+            <Text style={localStyles.navText}>📉 Gastos</Text>
           </Pressable>
-        )}
 
-        {canAccessPrivileged && (
           <Pressable
             style={localStyles.navItem}
-            onPress={() => router.push("/(tabs)/empleados")}
+            onPress={() => handleNavigate("/(tabs)/clientes")}
           >
-            <Text style={localStyles.navText}>👥 Empleados</Text>
+            <Text style={localStyles.navText}>📇 Clientes</Text>
           </Pressable>
-        )}
+
+          <Pressable
+            style={localStyles.navItem}
+            onPress={() => handleNavigate("/(tabs)/rutas")}
+          >
+            <Text style={localStyles.navText}>🗺️ Rutas de Cobro</Text>
+          </Pressable>
+
+          {canAccessPrivileged && (
+            <Pressable
+              style={localStyles.navItem}
+              onPress={() => handleNavigate("/(tabs)/listas-rutas")}
+            >
+              <Text style={localStyles.navText}>📋 Lista de Rutas</Text>
+            </Pressable>
+          )}
+
+          {canAccessPrivileged && (
+            <Pressable
+              style={localStyles.navItem}
+              onPress={() => handleNavigate("/(tabs)/empleados")}
+            >
+              <Text style={localStyles.navText}>👥 Empleados</Text>
+            </Pressable>
+          )}
+        </View>
       </View>
 
       <View style={localStyles.drawerFooter}>
         <Pressable
           style={localStyles.navItem}
-          onPress={() => router.push("/(tabs)/informacion-perfil")}
+          onPress={() => handleNavigate("/(tabs)/informacion-perfil")}
         >
           <Text style={localStyles.navText}>Configuración</Text>
         </Pressable>
@@ -233,7 +263,6 @@ function NotificacionesEmpleadosHeader() {
 
   const cargarSolicitudesPendientes = async () => {
     try {
-      // Optimización: Ejecutar ambas consultas simultáneamente con Promise.all
       const [empRes, secRes] = await Promise.all([
         supabase.from("empleados").select("*").eq("aprobado", "pendiente"),
         supabase.from("secretaria").select("*").eq("aprobado", "pendiente"),
@@ -418,13 +447,10 @@ function NotificacionesEmpleadosHeader() {
 }
 
 export default function TabLayout() {
-  const router = useRouter();
-
   const renderHeaderRight = () => (
     <View style={localStyles.headerRightContainer}>
       <NotificacionesEmpleadosHeader />
 
-      {/* Se eliminó el botón duplicado que causaba re-renderizados innecesarios y se conservó el enlace limpio */}
       <Link href="/modal" asChild>
         <Pressable style={localStyles.iconButton}>
           {({ pressed }) => (
@@ -452,11 +478,7 @@ export default function TabLayout() {
           backgroundColor: colors.background,
           width: 280,
         },
-        // Evita que un toque o deslizamiento accidental abra el menú en Android
         swipeEnabled: false,
-        // Si prefieres permitir deslizar pero solo pegado al borde izquierdo, usa:
-        // swipeEnabled: true,
-        // swipeEdgeWidth: 20,
       }}
     >
       <Drawer.Screen
@@ -539,11 +561,30 @@ const localStyles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   drawerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingBottom: 15,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     marginBottom: 10,
+  },
+  drawerCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.cardBackground,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 10,
+  },
+  drawerCloseBtnText: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: "bold",
   },
   drawerTitle: {
     fontSize: 18,
@@ -691,7 +732,7 @@ const localStyles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 13,
     fontWeight: "bold",
-    textAlign: "center5",
+    textAlign: "center",
     textAlignVertical: "center",
   },
   closeButton: {

@@ -526,100 +526,101 @@ export default function CrearPrestamoScreen({ route }: any) {
   );
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
-    >
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={[
-          styles.contentContainer,
-          isWebOrTablet && styles.contentContainerWeb,
-        ]}
-        keyboardShouldPersistTaps="handled"
-        automaticallyAdjustKeyboardInsets={true}
+    <>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <View style={styles.innerWrapper}>
-          {/* BUSCADOR DE CLIENTES */}
-          <Text style={styles.sectionLabel}>Buscar cliente por nombre</Text>
-          <View style={styles.searchInputWrapper}>
-            <Text style={styles.searchIcon}>⌕</Text>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Escribe el nombre o cédula del cliente..."
-              placeholderTextColor="#94a3b8"
-              value={nombreBusqueda}
-              onChangeText={setNombreBusqueda}
-            />
-            {nombreBusqueda.length > 0 && (
-              <TouchableOpacity
-                onPress={() => setNombreBusqueda("")}
-                style={styles.clearSearchBtn}
-              >
-                <Text style={styles.clearSearchText}>✕</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          <View style={styles.summaryStrip}>
-            <View style={styles.summaryDot} />
-            <Text style={styles.summaryHeader}>
-              Clientes disponibles (A - Z): {clientesFiltrados.length}
-            </Text>
-          </View>
-
-          {/* LISTA DE CLIENTES DE LA A A LA Z */}
-          {cargandoClientes ? (
-            <View style={styles.loadingBox}>
-              <ActivityIndicator size="large" color="#7c3aed" />
-              <Text style={styles.loadingText}>Cargando clientes...</Text>
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={[
+            styles.contentContainer,
+            isWebOrTablet && styles.contentContainerWeb,
+          ]}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.innerWrapper}>
+            {/* BUSCADOR DE CLIENTES */}
+            <Text style={styles.sectionLabel}>Buscar cliente por nombre</Text>
+            <View style={styles.searchInputWrapper}>
+              <Text style={styles.searchIcon}>⌕</Text>
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Escribe el nombre o cédula del cliente..."
+                placeholderTextColor="#94a3b8"
+                value={nombreBusqueda}
+                onChangeText={setNombreBusqueda}
+              />
+              {nombreBusqueda.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => setNombreBusqueda("")}
+                  style={styles.clearSearchBtn}
+                >
+                  <Text style={styles.clearSearchText}>✕</Text>
+                </TouchableOpacity>
+              )}
             </View>
-          ) : clientesFiltrados.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>
-                No se encontraron clientes coincidentes en esta ruta.
+
+            <View style={styles.summaryStrip}>
+              <View style={styles.summaryDot} />
+              <Text style={styles.summaryHeader}>
+                Clientes disponibles (A - Z): {clientesFiltrados.length}
               </Text>
             </View>
-          ) : (
-            clientesFiltrados.map((item) => {
-              const isSelected = clienteSeleccionado === item.cedula;
-              return (
-                <View
-                  key={item.cedula}
-                  style={[
-                    styles.clientCard,
-                    isSelected && styles.clientCardSelected,
-                  ]}
-                >
-                  <View style={styles.clientCardBody}>
-                    <Text style={styles.clientCardName}>
-                      {item.nombres} {item.apellidos}
-                    </Text>
-                    <Text style={styles.clientCardSub}>
-                      Cédula: {item.cedula}
-                      {item.telefono ? ` • Teléfono: ${item.telefono}` : ""}
-                    </Text>
-                  </View>
 
-                  <TouchableOpacity
-                    style={styles.clientActionBtn}
-                    activeOpacity={0.8}
-                    onPress={() => abrirModalCliente(item.cedula)}
+            {/* LISTA DE CLIENTES DE LA A A LA Z */}
+            {cargandoClientes ? (
+              <View style={styles.loadingBox}>
+                <ActivityIndicator size="large" color="#7c3aed" />
+                <Text style={styles.loadingText}>Cargando clientes...</Text>
+              </View>
+            ) : clientesFiltrados.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>
+                  No se encontraron clientes coincidentes en esta ruta.
+                </Text>
+              </View>
+            ) : (
+              clientesFiltrados.map((item) => {
+                const isSelected = clienteSeleccionado === item.cedula;
+                return (
+                  <View
+                    key={item.cedula}
+                    style={[
+                      styles.clientCard,
+                      isSelected && styles.clientCardSelected,
+                    ]}
                   >
-                    <Text style={styles.clientActionBtnText}>Prestar</Text>
-                  </TouchableOpacity>
-                </View>
-              );
-            })
-          )}
-        </View>
-      </ScrollView>
+                    <View style={styles.clientCardBody}>
+                      <Text style={styles.clientCardName}>
+                        {item.nombres} {item.apellidos}
+                      </Text>
+                      <Text style={styles.clientCardSub}>
+                        Cédula: {item.cedula}
+                        {item.telefono ? ` • Teléfono: ${item.telefono}` : ""}
+                      </Text>
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.clientActionBtn}
+                      activeOpacity={0.8}
+                      onPress={() => abrirModalCliente(item.cedula)}
+                    >
+                      <Text style={styles.clientActionBtnText}>Prestar</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })
+            )}
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* MODAL PRINCIPAL PARA CREAR PRÉSTAMO / RENOVACIÓN */}
       <Modal
         animationType="fade"
         transparent={true}
+        statusBarTranslucent={true}
         visible={modalPrestamoVisible}
         onRequestClose={cerrarModalPrestamo}
       >
@@ -996,6 +997,7 @@ export default function CrearPrestamoScreen({ route }: any) {
       <Modal
         animationType="fade"
         transparent={true}
+        statusBarTranslucent={true}
         visible={modalInfoRenovacionVisible}
         onRequestClose={() => setModalInfoRenovacionVisible(false)}
       >
@@ -1059,6 +1061,7 @@ export default function CrearPrestamoScreen({ route }: any) {
       <Modal
         animationType="fade"
         transparent={true}
+        statusBarTranslucent={true}
         visible={modalResultadoVisible}
         onRequestClose={() => setModalResultadoVisible(false)}
       >
@@ -1095,7 +1098,7 @@ export default function CrearPrestamoScreen({ route }: any) {
           </View>
         </View>
       </Modal>
-    </KeyboardAvoidingView>
+    </>
   );
 }
 
@@ -1209,7 +1212,7 @@ const styles = StyleSheet.create({
   },
   clientActionBtnText: {
     color: "#ffffff",
-    fontWeight: "500",
+    fontWeight: "700",
     fontSize: 13.5,
   },
   loadingBox: {
@@ -1455,7 +1458,9 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.52)",
+    width: "100%",
+    height: "100%",
+    backgroundColor: "rgba(15, 23, 42, 0.65)",
     justifyContent: "center",
     alignItems: "center",
     padding: 16,
@@ -1482,9 +1487,10 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 17,
-    fontWeight: "100",
+    fontWeight: "600",
     color: "#0f172a",
     flex: 1,
+    fontWeight: "bold",
   },
   closeBtn: {
     padding: 6,
@@ -1555,7 +1561,7 @@ const styles = StyleSheet.create({
   },
   modalExitoTitle: {
     fontSize: 18.5,
-    fontWeight: "100",
+    fontWeight: "600",
     color: "#0f172a",
     marginBottom: 10,
     textAlign: "center",
@@ -1579,6 +1585,6 @@ const styles = StyleSheet.create({
   successButtonText: {
     color: "#ffffff",
     fontSize: 15,
-    fontWeight: "100",
+    fontWeight: "600",
   },
 });

@@ -99,11 +99,7 @@ function CustomDrawerContent(props: any) {
             <Text style={localStyles.drawerTitle}>💰 Finanzas</Text>
             <Text style={localStyles.drawerSubtitle}>Panel de Control</Text>
           </View>
-          <TouchableOpacity
-            onPress={closeDrawer}
-            style={localStyles.drawerCloseBtn}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
+          <TouchableOpacity onPress={closeDrawer}>
             <Text style={localStyles.drawerTitle}></Text>
             <Text style={localStyles.drawerCloseBtnText}>✕</Text>
           </TouchableOpacity>

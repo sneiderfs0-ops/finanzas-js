@@ -352,7 +352,16 @@ export default function CrearPagoScreen({ route }: any) {
   const mostrarMensaje = (tipo: "exito" | "error", mensaje: string) => {
     setTipoResultado(tipo);
     setMensajeResultado(mensaje);
-    setModalResultadoVisible(true);
+
+    if (modalPagoVisible || modalTasaVisible) {
+      setModalPagoVisible(false);
+      setModalTasaVisible(false);
+      setTimeout(() => {
+        setModalResultadoVisible(true);
+      }, 150);
+    } else {
+      setModalResultadoVisible(true);
+    }
   };
 
   const guardarPago = async () => {
@@ -731,8 +740,9 @@ export default function CrearPagoScreen({ route }: any) {
       {/* MODAL DE FORMULARIO DE PAGO AL PRESIONAR "PAGAR" */}
       <Modal
         visible={modalPagoVisible}
-        animationType="fade"
+        animationType="none"
         transparent={true}
+        statusBarTranslucent={true}
         onRequestClose={() => setModalPagoVisible(false)}
       >
         <View style={styles.modalOverlay}>
@@ -742,13 +752,16 @@ export default function CrearPagoScreen({ route }: any) {
               <TouchableOpacity
                 onPress={() => setModalPagoVisible(false)}
                 style={styles.closeBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 <Text style={styles.closeBtnText}>✕</Text>
               </TouchableOpacity>
             </View>
 
             <ScrollView
+              style={styles.modalScroll}
               contentContainerStyle={styles.paymentModalScroll}
+              showsVerticalScrollIndicator={true}
               keyboardShouldPersistTaps="handled"
             >
               {usuarioActual && (
@@ -940,6 +953,95 @@ export default function CrearPagoScreen({ route }: any) {
                 )}
               </TouchableOpacity>
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL TASA DE CAMBIO */}
+      <Modal
+        visible={modalTasaVisible}
+        animationType="fade"
+        transparent={true}
+        statusBarTranslucent={true}
+        onRequestClose={() => setModalTasaVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalExitoContainer, { maxWidth: 380 }]}>
+            <Text style={styles.modalExitoTitle}>Tasa de Cambio</Text>
+            <Text style={styles.modalExitoMessage}>
+              Ingrese la tasa de cambio actual (COP por 1 USD):
+            </Text>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  width: "100%",
+                  textAlign: "center",
+                  fontSize: 18,
+                  fontWeight: "bold",
+                },
+              ]}
+              placeholder="Ej: 4100"
+              keyboardType="numeric"
+              value={tasaInputTemp}
+              onChangeText={setTasaInputTemp}
+              placeholderTextColor="#94a3b8"
+            />
+            <TouchableOpacity
+              style={styles.successButton}
+              onPress={() => {
+                if (tasaInputTemp && parseFloat(tasaInputTemp) > 0) {
+                  setTasaCambioCopPorUsd(tasaInputTemp);
+                  setModalTasaVisible(false);
+                } else {
+                  mostrarMensaje("error", "Ingrese una tasa válida.");
+                }
+              }}
+            >
+              <Text style={styles.successButtonText}>Guardar Tasa</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL DE RESULTADO (PAGO REALIZADO / ERROR) */}
+      <Modal
+        visible={modalResultadoVisible}
+        animationType="fade"
+        transparent={true}
+        statusBarTranslucent={true}
+        onRequestClose={() => setModalResultadoVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalExitoContainer}>
+            <View
+              style={[
+                styles.successIconContainer,
+                tipoResultado === "error" && styles.errorIconContainer,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.successIconText,
+                  tipoResultado === "error" && styles.errorIconText,
+                ]}
+              >
+                {tipoResultado === "exito" ? "✓" : "✕"}
+              </Text>
+            </View>
+            <Text style={styles.modalExitoTitle}>
+              {tipoResultado === "exito" ? "¡Pago Realizado!" : "Atención"}
+            </Text>
+            <Text style={styles.modalExitoMessage}>{mensajeResultado}</Text>
+            <TouchableOpacity
+              style={[
+                styles.successButton,
+                tipoResultado === "error" && styles.errorButton,
+              ]}
+              onPress={() => setModalResultadoVisible(false)}
+            >
+              <Text style={styles.successButtonText}>Aceptar</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1553,7 +1655,7 @@ const styles = StyleSheet.create({
   },
   successButtonText: {
     color: "#ffffff",
-    fontWeight: "100",
+    fontWeight: "600",
     fontSize: 15,
   },
 });
